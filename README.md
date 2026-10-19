@@ -2,8 +2,11 @@
 
 This is a repo for new users getting started with Docker.
 
-You can try it out using the following command.
+Copy `.env.example` to `.env` and set a local database password, then start the app:
 
-```docker compose up -d```
+```sh
+cp .env.example .env
+docker compose up -d
+```
 
 And open http://localhost:3000 in your browser.
