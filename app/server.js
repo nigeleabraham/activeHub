@@ -3,7 +3,8 @@ const livereload = require('livereload');
 const connectLiveReload = require('connect-livereload');
 const app = require('express')();
 const moment = require('moment');
-const Todo = require('./models/Todo');
+const Facilities = require('./models/Facilities');
+const Courses = require('./models/Courses');
 
 // Live Reload configuration
 const liveReloadServer = livereload.createServer();
@@ -28,7 +29,8 @@ app.use(FrontRouter);
 
 
 const PORT = process.env.PORT || 3000;
-Todo.initialize()
+Facilities.initialize()
+    .then(() => Courses.initialize())
     .then(() => {
         console.log('PostgreSQL connected');
         app.listen(PORT, () => {

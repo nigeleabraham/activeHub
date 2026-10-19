@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Courses | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Courses</h1>
+                <p class="text-muted mb-0">Manage courses offered at facilities</p>
+            </div>
+            <nav class="mt-3 mt-md-0" aria-label="Main navigation">
+                <a class="btn btn-outline-secondary btn-sm" href="/">Facilities</a>
+                <a class="btn btn-primary btn-sm" href="/courses">Courses</a>
+            </nav>
+        </header>
+
+        <div class="row">
+            <section class="col-lg-4 mb-4" aria-labelledby="add-course-heading">
+                <div class="bg-white border rounded shadow-sm p-4">
+                    <h2 id="add-course-heading" class="h5 mb-4">Add course</h2>
+                    <% if (facilities.length) { %>
+                        <form method="POST" action="/courses">
+                            <div class="form-group">
+                                <label for="course-name">Course name</label>
+                                <input class="form-control" id="course-name" name="name" type="text" maxlength="160" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="course-facility">Facility</label>
+                                <select class="form-control" id="course-facility" name="facility_guid" required>
+                                    <% facilities.forEach(facility => { %>
+                                        <option value="<%= facility.guid %>"><%= facility.name %></option>
+                                    <% }); %>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" type="submit">Add course</button>
+                        </form>
+                    <% } else { %>
+                        <p class="text-muted mb-0">Add a facility before creating a course.</p>
+                    <% } %>
+                </div>
+            </section>
+
+            <section class="col-lg-8" aria-labelledby="course-list-heading">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h2 id="course-list-heading" class="h5 mb-0">Directory</h2>
+                    <span class="badge badge-secondary"><%= totalCourses %></span>
+                </div>
+                <% if (courseGroups.length) { %>
+                    <% courseGroups.forEach(group => { %>
+                        <article class="bg-white border rounded shadow-sm p-4 mb-3">
+                            <h3 class="h5 mb-1"><%= group.name %></h3>
+                            <p class="text-muted mb-3"><%= group.address %>, <%= group.postcode %></p>
+                            <% if (group.courses.length) { %>
+                                <div class="list-group list-group-flush">
+                                    <% group.courses.forEach(course => { %>
+                                        <div class="list-group-item px-0">
+                                            <div class="d-flex flex-wrap justify-content-between align-items-center">
+                                                <span class="mr-3"><%= course.name %></span>
+                                                <div class="d-flex align-items-center">
+                                                    <details class="mr-2">
+                                                        <summary class="btn btn-outline-secondary btn-sm">Edit</summary>
+                                                        <form class="mt-3 p-3 border rounded" method="POST" action="/courses/update">
+                                                            <input type="hidden" name="guid" value="<%= course.guid %>">
+                                                            <div class="form-group">
+                                                                <label for="edit-course-name-<%= course.guid %>">Course name</label>
+                                                                <input class="form-control" id="edit-course-name-<%= course.guid %>" name="name" type="text" maxlength="160" value="<%= course.name %>" required>
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="edit-course-facility-<%= course.guid %>">Facility</label>
+                                                                <select class="form-control" id="edit-course-facility-<%= course.guid %>" name="facility_guid" required>
+                                                                    <% facilities.forEach(facility => { %>
+                                                                        <option value="<%= facility.guid %>" <%= facility.guid === course.facility_guid ? 'selected' : '' %>><%= facility.name %></option>
+                                                                    <% }); %>
+                                                                </select>
+                                                            </div>
+                                                            <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                                        </form>
+                                                    </details>
+                                                    <form method="POST" action="/courses/destroy">
+                                                        <input type="hidden" name="guid" value="<%= course.guid %>">
+                                                        <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <% }); %>
+                                </div>
+                            <% } else { %>
+                                <p class="text-muted mb-0">No courses are attached to this facility.</p>
+                            <% } %>
+                        </article>
+                    <% }); %>
+                <% } else { %>
+                    <p class="text-muted border-top pt-3">Add a facility to start organizing courses.</p>
+                <% } %>
+            </section>
+        </div>
+    </main>
+</body>
+
+</html>

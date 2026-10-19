@@ -5,9 +5,13 @@
 # The app and PostgreSQL database run as separate services.
 
 services:
-  todo-app:
+  activeHub-app:
+    image: activehub-app
     build:
       context: ./app
+    container_name: activeHubApp
+    command: >-
+      sh -c "npm run import:camden || echo 'Camden facility import failed; continuing app startup.'; npm run dev"
     depends_on:
       db:
         condition: service_healthy

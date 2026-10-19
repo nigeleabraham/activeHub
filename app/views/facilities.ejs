@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facilities | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-end">
+                <div>
+                    <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                    <h1 class="h2 mb-1">Facilities</h1>
+                    <p class="text-muted mb-0">Facility directory</p>
+                </div>
+                <nav class="mt-3 mt-md-0" aria-label="Main navigation">
+                    <a class="btn btn-primary btn-sm" href="/">Facilities</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="/courses">Courses</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="row">
+            <section class="col-lg-5 mb-4" aria-labelledby="add-facility-heading">
+                <div class="bg-white border rounded shadow-sm p-4">
+                    <h2 id="add-facility-heading" class="h5 mb-4">Add facility</h2>
+                    <form method="POST" action="/facilities" data-facility-form>
+                        <div class="form-group">
+                            <label for="name">Name</label>
+                            <input class="form-control" id="name" name="name" type="text" maxlength="160" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="address">Address</label>
+                            <input class="form-control" id="address" name="address" type="text" maxlength="240" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="postcode">Postcode</label>
+                            <input class="form-control" id="postcode" name="postcode" type="text" maxlength="32" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="coordinates">Coordinates (latitude, longitude)</label>
+                            <input class="form-control" id="coordinates" name="coordinates" type="text" inputmode="decimal" placeholder="51.5074, -0.1278" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="booking-mode">Booking method</label>
+                            <select class="form-control" id="booking-mode" name="booking_mode" required>
+                                <option value="in_app">In-app booking</option>
+                                <option value="external">External booking site</option>
+                            </select>
+                        </div>
+                        <div class="form-group external-booking-field" hidden>
+                            <label for="external-booking-url">External booking URL</label>
+                            <input class="form-control" id="external-booking-url" name="external_booking_url" type="url" maxlength="2048" placeholder="https://example.com/book">
+                        </div>
+                        <div class="form-group">
+                            <label for="description">Long description</label>
+                            <textarea class="form-control" id="description" name="description" rows="5" maxlength="10000" required></textarea>
+                        </div>
+                        <button class="btn btn-primary" type="submit">
+                            <i class="fa fa-plus mr-1" aria-hidden="true"></i> Add facility
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="col-lg-7" aria-labelledby="facility-list-heading">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h2 id="facility-list-heading" class="h5 mb-0">Directory</h2>
+                    <span class="badge badge-secondary"><%= facilities.length %></span>
+                </div>
+
+                <% if (facilities.length) { %>
+                    <% facilities.forEach(facility => { %>
+                        <article class="bg-white border rounded shadow-sm p-4 mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="mr-3">
+                                    <h3 class="h5 mb-1"><%= facility.name %></h3>
+                                    <p class="text-muted mb-2"><%= facility.address %>, <%= facility.postcode %></p>
+                                </div>
+                                <form method="POST" action="/facilities/destroy">
+                                    <input type="hidden" name="guid" value="<%= facility.guid %>">
+                                    <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= facility.name %>">
+                                        <i class="fa fa-trash" aria-hidden="true"></i>
+                                    </button>
+                                </form>
+                            </div>
+                            <p class="text-muted small mb-2">Coordinates: <%= facility.latitude %>, <%= facility.longitude %></p>
+                            <a href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">
+                                <i class="fa fa-map-marker mr-1" aria-hidden="true"></i> Open in Google Maps
+                            </a>
+                            <p class="mt-2 mb-0">Booking method: <%= facility.booking_mode === 'external' ? 'External site' : 'In-app' %></p>
+                            <% if (facility.booking_mode === 'external' && facility.external_booking_url) { %>
+                                <a href="<%= facility.external_booking_url %>" target="_blank" rel="noopener noreferrer">Open external booking site</a>
+                            <% } %>
+                            <p class="mt-3 mb-2"><%= facility.description %></p>
+                            <small class="text-muted">GUID: <code><%= facility.guid %></code></small>
+                            <% if (facility.courses.length) { %>
+                            <details class="mt-3">
+                                <summary class="btn btn-outline-secondary btn-sm">Courses (<%= facility.courses.length %>)</summary>
+                                <ul class="list-group list-group-flush mt-2">
+                                    <% facility.courses.forEach(course => { %>
+                                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                            <span><%= course.name %></span>
+                                            <form method="POST" action="/facilities/courses/destroy">
+                                                <input type="hidden" name="guid" value="<%= course.guid %>">
+                                                <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">
+                                                    <i class="fa fa-trash" aria-hidden="true"></i>
+                                                </button>
+                                            </form>
+                                        </li>
+                                    <% }); %>
+                                </ul>
+                            </details>
+                            <% } %>
+                            <details class="mt-3">
+                                <summary class="btn btn-outline-secondary btn-sm">Edit facility</summary>
+                                <form class="mt-3 pt-3 border-top" method="POST" action="/facilities/update" data-facility-form>
+                                    <input type="hidden" name="guid" value="<%= facility.guid %>">
+                                    <div class="form-group">
+                                        <label for="edit-name-<%= facility.guid %>">Name</label>
+                                        <input class="form-control" id="edit-name-<%= facility.guid %>" name="name" type="text" maxlength="160" value="<%= facility.name %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-address-<%= facility.guid %>">Address</label>
+                                        <input class="form-control" id="edit-address-<%= facility.guid %>" name="address" type="text" maxlength="240" value="<%= facility.address %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-postcode-<%= facility.guid %>">Postcode</label>
+                                        <input class="form-control" id="edit-postcode-<%= facility.guid %>" name="postcode" type="text" maxlength="32" value="<%= facility.postcode %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-coordinates-<%= facility.guid %>">Coordinates (latitude, longitude)</label>
+                                        <input class="form-control" id="edit-coordinates-<%= facility.guid %>" name="coordinates" type="text" inputmode="decimal" value="<%= facility.latitude %>, <%= facility.longitude %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-booking-mode-<%= facility.guid %>">Booking method</label>
+                                        <select class="form-control" id="edit-booking-mode-<%= facility.guid %>" name="booking_mode" required>
+                                            <option value="in_app" <%= facility.booking_mode === 'in_app' ? 'selected' : '' %>>In-app booking</option>
+                                            <option value="external" <%= facility.booking_mode === 'external' ? 'selected' : '' %>>External booking site</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group external-booking-field" <% if (facility.booking_mode !== 'external') { %>hidden<% } %>>
+                                        <label for="edit-external-booking-url-<%= facility.guid %>">External booking URL</label>
+                                        <input class="form-control" id="edit-external-booking-url-<%= facility.guid %>" name="external_booking_url" type="url" maxlength="2048" value="<%= facility.external_booking_url || '' %>" placeholder="https://example.com/book">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-description-<%= facility.guid %>">Long description</label>
+                                        <textarea class="form-control" id="edit-description-<%= facility.guid %>" name="description" rows="5" maxlength="10000" required><%= facility.description %></textarea>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                </form>
+                            </details>
+                        </article>
+                    <% }); %>
+                <% } else { %>
+                    <p class="text-muted border-top pt-3">No facilities have been added.</p>
+                <% } %>
+            </section>
+        </div>
+    </main>
+    <script>
+        document.querySelectorAll('[data-facility-form]').forEach(form => {
+            const bookingMode = form.querySelector('[name="booking_mode"]');
+            const externalBookingField = form.querySelector('.external-booking-field');
+            const externalBookingUrl = form.querySelector('[name="external_booking_url"]');
+
+            function updateBookingFields() {
+                const usesExternalSite = bookingMode.value === 'external';
+                externalBookingField.hidden = !usesExternalSite;
+                externalBookingUrl.required = usesExternalSite;
+            }
+
+            bookingMode.addEventListener('change', updateBookingFields);
+            updateBookingFields();
+        });
+    </script>
+</body>
+
+</html>
