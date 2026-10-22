@@ -49,6 +49,7 @@ async function initialize() {
             description text NOT NULL,
             booking_mode text NOT NULL DEFAULT 'in_app',
             external_booking_url text,
+            opening_hours_template_guid uuid,
             source_url text UNIQUE,
             created_at timestamptz NOT NULL DEFAULT now()
         )
@@ -66,6 +67,7 @@ async function initialize() {
             ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '',
             ADD COLUMN IF NOT EXISTS booking_mode text NOT NULL DEFAULT 'in_app',
             ADD COLUMN IF NOT EXISTS external_booking_url text,
+            ADD COLUMN IF NOT EXISTS opening_hours_template_guid uuid,
             ADD COLUMN IF NOT EXISTS source_url text,
             ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()
     `);
@@ -118,46 +120,103 @@ async function findAll() {
         `SELECT facilities.guid, facilities.name, facilities.address, facilities.postcode,
                 facilities.latitude, facilities.longitude, facilities.google_maps_url,
                 facilities.description, facilities.booking_mode, facilities.external_booking_url,
+                facilities.opening_hours_template_guid,
+                opening_hours_templates.name AS opening_hours_template_name,
                 facilities.created_at,
-                COALESCE(
-                    json_agg(
-                        json_build_object('guid', courses.guid, 'name', courses.name)
-                        ORDER BY LOWER(courses.name)
-                    ) FILTER (WHERE courses.guid IS NOT NULL),
-                    '[]'::json
-                ) AS courses
+                COALESCE(course_data.courses, '[]'::json) AS courses,
+                COALESCE(sport_data.sports, '[]'::json) AS sports
          FROM facilities
-         LEFT JOIN courses ON courses.facility_guid = facilities.guid
-         GROUP BY facilities.guid
+         LEFT JOIN opening_hours_templates
+             ON opening_hours_templates.guid = facilities.opening_hours_template_guid
+         LEFT JOIN LATERAL (
+             SELECT json_agg(
+                 json_build_object('guid', courses.guid, 'name', courses.name)
+                 ORDER BY LOWER(courses.name)
+             ) AS courses
+             FROM courses
+             WHERE courses.facility_guid = facilities.guid
+         ) AS course_data ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT json_agg(
+                 json_build_object('guid', sports.guid, 'name', sports.name)
+                 ORDER BY LOWER(sports.name)
+             ) AS sports
+             FROM facility_sports
+             JOIN sports ON sports.guid = facility_sports.sport_guid
+             WHERE facility_sports.facility_guid = facilities.guid
+         ) AS sport_data ON TRUE
          ORDER BY LOWER(facilities.name)`
     );
     return rows;
 }
 
-async function create({ name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url }) {
+async function create({ name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, sport_guids }) {
     const googleMapsUrl = createGoogleMapsUrl(latitude, longitude);
-
-    const { rows } = await pool.query(
-        `INSERT INTO facilities (name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
-        [name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url]
-    );
-    return rows[0];
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+            `INSERT INTO facilities (name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, opening_hours_template_guid)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
+            [name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid]
+        );
+        await replaceSports(client, rows[0].guid, sport_guids);
+        await client.query('COMMIT');
+        return rows[0];
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
-async function update(guid, { name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url }) {
+async function update(guid, { name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, sport_guids }) {
     const googleMapsUrl = createGoogleMapsUrl(latitude, longitude);
-    const { rows } = await pool.query(
-        `UPDATE facilities
-         SET name = $2, address = $3, postcode = $4, latitude = $5,
-             longitude = $6, google_maps_url = $7, description = $8,
-             booking_mode = $9, external_booking_url = $10
-         WHERE guid = $1
-         RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
-        [guid, name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url]
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+            `UPDATE facilities
+             SET name = $2, address = $3, postcode = $4, latitude = $5,
+                 longitude = $6, google_maps_url = $7, description = $8,
+                 booking_mode = $9, external_booking_url = $10,
+                 opening_hours_template_guid = $11
+             WHERE guid = $1
+             RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
+            [guid, name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid]
+        );
+        if (!rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        await replaceSports(client, guid, sport_guids);
+        await client.query('COMMIT');
+        return rows[0];
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function replaceSports(client, facilityGuid, sportGuids = []) {
+    await client.query(
+        `DELETE FROM facility_sports
+         WHERE facility_guid = $1 AND NOT (sport_guid = ANY($2::uuid[]))`,
+        [facilityGuid, sportGuids]
     );
-    return rows[0] || null;
+    if (sportGuids.length) {
+        await client.query(
+            `INSERT INTO facility_sports (facility_guid, sport_guid)
+             SELECT $1, selected.sport_guid
+             FROM UNNEST($2::uuid[]) AS selected(sport_guid)
+             ON CONFLICT DO NOTHING`,
+            [facilityGuid, sportGuids]
+        );
+    }
 }
 
 async function upsertImported(facility) {
@@ -174,9 +233,7 @@ async function upsertImported(facility) {
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
             google_maps_url = EXCLUDED.google_maps_url,
-            description = EXCLUDED.description,
-            booking_mode = EXCLUDED.booking_mode,
-            external_booking_url = EXCLUDED.external_booking_url
+            description = EXCLUDED.description
          RETURNING guid`,
         [
             facility.name,
@@ -199,7 +256,27 @@ async function close() {
 }
 
 async function remove(guid) {
-    await pool.query('DELETE FROM facilities WHERE guid = $1', [guid]);
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM bookings WHERE facility_guid = $1', [guid]);
+        await client.query(
+            `DELETE FROM bookable_option_resources
+             WHERE option_guid IN (
+                 SELECT guid FROM bookable_options WHERE facility_guid = $1
+             )`,
+            [guid]
+        );
+        await client.query('DELETE FROM bookable_options WHERE facility_guid = $1', [guid]);
+        await client.query('DELETE FROM booking_resources WHERE facility_guid = $1', [guid]);
+        await client.query('DELETE FROM facilities WHERE guid = $1', [guid]);
+        await client.query('COMMIT');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 module.exports = { initialize, findAll, create, update, upsertImported, close, remove };

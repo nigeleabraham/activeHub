@@ -5,6 +5,9 @@ const app = require('express')();
 const moment = require('moment');
 const Facilities = require('./models/Facilities');
 const Courses = require('./models/Courses');
+const Sports = require('./models/Sports');
+const Bookings = require('./models/Bookings');
+const OpeningHours = require('./models/OpeningHours');
 
 // Live Reload configuration
 const liveReloadServer = livereload.createServer();
@@ -30,7 +33,10 @@ app.use(FrontRouter);
 
 const PORT = process.env.PORT || 3000;
 Facilities.initialize()
+    .then(() => OpeningHours.initialize())
     .then(() => Courses.initialize())
+    .then(() => Sports.initialize())
+    .then(() => Bookings.initialize())
     .then(() => {
         console.log('PostgreSQL connected');
         app.listen(PORT, () => {

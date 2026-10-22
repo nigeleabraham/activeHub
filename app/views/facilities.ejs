@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <%- include('partials/accessibility-styles') %>
 </head>
 
 <body class="bg-light">
@@ -19,10 +20,7 @@
                     <h1 class="h2 mb-1">Facilities</h1>
                     <p class="text-muted mb-0">Facility directory</p>
                 </div>
-                <nav class="mt-3 mt-md-0" aria-label="Main navigation">
-                    <a class="btn btn-primary btn-sm" href="/">Facilities</a>
-                    <a class="btn btn-outline-secondary btn-sm" href="/courses">Courses</a>
-                </nav>
+                <%- include('partials/navigation') %>
             </div>
         </header>
 
@@ -47,11 +45,37 @@
                             <label for="coordinates">Coordinates (latitude, longitude)</label>
                             <input class="form-control" id="coordinates" name="coordinates" type="text" inputmode="decimal" placeholder="51.5074, -0.1278" required>
                         </div>
+                        <fieldset class="form-group">
+                            <legend class="col-form-label">Sports at this facility <small class="text-muted">Optional</small></legend>
+                            <% if (sports.length) { %>
+                                <div class="row">
+                                    <% sports.forEach(sport => { %>
+                                        <div class="col-4 mb-2">
+                                            <div class="custom-control custom-checkbox">
+                                                <input class="custom-control-input" id="sport-<%= sport.guid %>" name="sport_guids" type="checkbox" value="<%= sport.guid %>">
+                                                <label class="custom-control-label" for="sport-<%= sport.guid %>"><%= sport.name %></label>
+                                            </div>
+                                        </div>
+                                    <% }); %>
+                                </div>
+                            <% } else { %>
+                                <p class="text-muted mb-0">No sports defined. <a href="/sports">Manage sports</a>.</p>
+                            <% } %>
+                        </fieldset>
                         <div class="form-group">
                             <label for="booking-mode">Booking method</label>
                             <select class="form-control" id="booking-mode" name="booking_mode" required>
                                 <option value="in_app">In-app booking</option>
                                 <option value="external">External booking site</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="opening-hours-template">Opening hours template</label>
+                            <select class="form-control" id="opening-hours-template" name="opening_hours_template_guid">
+                                <option value="">No template assigned</option>
+                                <% openingHoursTemplates.forEach(template => { %>
+                                    <option value="<%= template.guid %>"><%= template.name %></option>
+                                <% }); %>
                             </select>
                         </div>
                         <div class="form-group external-booking-field" hidden>
@@ -90,19 +114,28 @@
                                     </button>
                                 </form>
                             </div>
-                            <p class="text-muted small mb-2">Coordinates: <%= facility.latitude %>, <%= facility.longitude %></p>
                             <a href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">
                                 <i class="fa fa-map-marker mr-1" aria-hidden="true"></i> Open in Google Maps
                             </a>
-                            <p class="mt-2 mb-0">Booking method: <%= facility.booking_mode === 'external' ? 'External site' : 'In-app' %></p>
+                            <div class="d-flex flex-wrap align-items-center mt-2">
+                                <p class="mb-0">Booking method: <%= facility.booking_mode === 'external' ? 'External site' : 'In-app' %></p>
+                                <% if (facility.booking_mode === 'in_app') { %>
+                                    <a class="btn btn-outline-secondary btn-sm ml-2" href="/bookings#facility-<%= facility.guid %>">Manage bookings</a>
+                                <% } %>
+                            </div>
                             <% if (facility.booking_mode === 'external' && facility.external_booking_url) { %>
                                 <a href="<%= facility.external_booking_url %>" target="_blank" rel="noopener noreferrer">Open external booking site</a>
                             <% } %>
-                            <p class="mt-3 mb-2"><%= facility.description %></p>
-                            <small class="text-muted">GUID: <code><%= facility.guid %></code></small>
+                            <% if (facility.opening_hours_template_guid) { %>
+                                <% if (facility.today_opening_hours && !facility.today_opening_hours.is_closed) { %>
+                                    <p class="text-muted mt-2 mb-0">Today: <%= facility.today_opening_hours.opens_at %>–<%= facility.today_opening_hours.closes_at %></p>
+                                <% } else { %>
+                                    <p class="text-muted mt-2 mb-0">Closed today · <%= facility.opening_hours_template_name %></p>
+                                <% } %>
+                            <% } %>
                             <% if (facility.courses.length) { %>
                             <details class="mt-3">
-                                <summary class="btn btn-outline-secondary btn-sm">Courses (<%= facility.courses.length %>)</summary>
+                                <summary class="h5 mb-3">Courses (<%= facility.courses.length %>)</summary>
                                 <ul class="list-group list-group-flush mt-2">
                                     <% facility.courses.forEach(course => { %>
                                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
@@ -116,10 +149,11 @@
                                         </li>
                                     <% }); %>
                                 </ul>
+                                <a class="btn btn-outline-secondary btn-sm mt-3" href="/courses#facility-<%= facility.guid %>">View courses</a>
                             </details>
                             <% } %>
                             <details class="mt-3">
-                                <summary class="btn btn-outline-secondary btn-sm">Edit facility</summary>
+                                <summary class="h5 mb-3">Edit facility</summary>
                                 <form class="mt-3 pt-3 border-top" method="POST" action="/facilities/update" data-facility-form>
                                     <input type="hidden" name="guid" value="<%= facility.guid %>">
                                     <div class="form-group">
@@ -138,11 +172,37 @@
                                         <label for="edit-coordinates-<%= facility.guid %>">Coordinates (latitude, longitude)</label>
                                         <input class="form-control" id="edit-coordinates-<%= facility.guid %>" name="coordinates" type="text" inputmode="decimal" value="<%= facility.latitude %>, <%= facility.longitude %>" required>
                                     </div>
+                                    <fieldset class="form-group">
+                                        <legend class="col-form-label">Sports at this facility <small class="text-muted">Optional</small></legend>
+                                        <% if (sports.length) { %>
+                                            <div class="row">
+                                                <% sports.forEach(sport => { %>
+                                                    <div class="col-4 mb-2">
+                                                        <div class="custom-control custom-checkbox">
+                                                            <input class="custom-control-input" id="edit-sport-<%= facility.guid %>-<%= sport.guid %>" name="sport_guids" type="checkbox" value="<%= sport.guid %>" <%= facility.sports.some(assignedSport => assignedSport.guid === sport.guid) ? 'checked' : '' %>>
+                                                            <label class="custom-control-label" for="edit-sport-<%= facility.guid %>-<%= sport.guid %>"><%= sport.name %></label>
+                                                        </div>
+                                                    </div>
+                                                <% }); %>
+                                            </div>
+                                        <% } else { %>
+                                            <p class="text-muted mb-0">No sports defined. <a href="/sports">Manage sports</a>.</p>
+                                        <% } %>
+                                    </fieldset>
                                     <div class="form-group">
                                         <label for="edit-booking-mode-<%= facility.guid %>">Booking method</label>
                                         <select class="form-control" id="edit-booking-mode-<%= facility.guid %>" name="booking_mode" required>
                                             <option value="in_app" <%= facility.booking_mode === 'in_app' ? 'selected' : '' %>>In-app booking</option>
                                             <option value="external" <%= facility.booking_mode === 'external' ? 'selected' : '' %>>External booking site</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-opening-hours-template-<%= facility.guid %>">Opening hours template</label>
+                                        <select class="form-control" id="edit-opening-hours-template-<%= facility.guid %>" name="opening_hours_template_guid">
+                                            <option value="">No template assigned</option>
+                                            <% openingHoursTemplates.forEach(template => { %>
+                                                <option value="<%= template.guid %>" <%= template.guid === facility.opening_hours_template_guid ? 'selected' : '' %>><%= template.name %></option>
+                                            <% }); %>
                                         </select>
                                     </div>
                                     <div class="form-group external-booking-field" <% if (facility.booking_mode !== 'external') { %>hidden<% } %>>

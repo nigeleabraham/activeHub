@@ -10,14 +10,16 @@ async function initialize() {
             guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             facility_guid uuid NOT NULL REFERENCES facilities(guid) ON DELETE CASCADE,
             name text NOT NULL,
+            description text,
             created_at timestamptz NOT NULL DEFAULT now()
         )
     `);
+    await pool.query('ALTER TABLE courses ADD COLUMN IF NOT EXISTS description text');
 }
 
 async function findAll() {
     const { rows } = await pool.query(`
-        SELECT courses.guid, courses.facility_guid, courses.name,
+        SELECT courses.guid, courses.facility_guid, courses.name, courses.description,
                facilities.name AS facility_name, courses.created_at
         FROM courses
         JOIN facilities ON facilities.guid = courses.facility_guid
@@ -26,23 +28,23 @@ async function findAll() {
     return rows;
 }
 
-async function create({ name, facility_guid }) {
+async function create({ name, facility_guid, description }) {
     const { rows } = await pool.query(
-        `INSERT INTO courses (name, facility_guid)
-         VALUES ($1, $2)
-         RETURNING guid, name, facility_guid, created_at`,
-        [name, facility_guid]
+        `INSERT INTO courses (name, facility_guid, description)
+         VALUES ($1, $2, $3)
+         RETURNING guid, name, facility_guid, description, created_at`,
+        [name, facility_guid, description]
     );
     return rows[0];
 }
 
-async function update(guid, { name, facility_guid }) {
+async function update(guid, { name, facility_guid, description }) {
     const { rows } = await pool.query(
         `UPDATE courses
-         SET name = $2, facility_guid = $3
+         SET name = $2, facility_guid = $3, description = $4
          WHERE guid = $1
-         RETURNING guid, name, facility_guid, created_at`,
-        [guid, name, facility_guid]
+         RETURNING guid, name, facility_guid, description, created_at`,
+        [guid, name, facility_guid, description]
     );
     return rows[0] || null;
 }
