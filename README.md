@@ -1,6 +1,4 @@
-# Multi Containers App
-
-This is a repo for new users getting started with Docker.
+# ActiveHub app - Docker
 
 Copy `.env.example` to `.env` and set a local database password, then start the app:
 
