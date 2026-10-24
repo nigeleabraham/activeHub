@@ -12,6 +12,8 @@
 </head>
 
 <body class="bg-light">
+    <a class="skip-link" href="#add-facility-section">Skip to add facility form</a>
+    <a class="skip-link" href="#facility-directory">Skip to facility directory</a>
     <main class="container py-5">
         <header class="mb-4">
             <div class="d-flex flex-wrap justify-content-between align-items-end">
@@ -25,7 +27,7 @@
         </header>
 
         <div class="row">
-            <section class="col-lg-5 mb-4" aria-labelledby="add-facility-heading">
+            <section id="add-facility-section" tabindex="-1" class="col-lg-5 mb-4" aria-labelledby="add-facility-heading">
                 <div class="bg-white border rounded shadow-sm p-4">
                     <h2 id="add-facility-heading" class="h5 mb-4">Add facility</h2>
                     <form method="POST" action="/facilities" data-facility-form>
@@ -50,7 +52,7 @@
                             <% if (sports.length) { %>
                                 <div class="row">
                                     <% sports.forEach(sport => { %>
-                                        <div class="col-4 mb-2">
+                                        <div class="col-6 mb-2">
                                             <div class="custom-control custom-checkbox">
                                                 <input class="custom-control-input" id="sport-<%= sport.guid %>" name="sport_guids" type="checkbox" value="<%= sport.guid %>">
                                                 <label class="custom-control-label" for="sport-<%= sport.guid %>"><%= sport.name %></label>
@@ -93,7 +95,7 @@
                 </div>
             </section>
 
-            <section class="col-lg-7" aria-labelledby="facility-list-heading">
+            <section id="facility-directory" tabindex="-1" class="col-lg-7" aria-labelledby="facility-list-heading">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <h2 id="facility-list-heading" class="h5 mb-0">Directory</h2>
                     <span class="badge badge-secondary"><%= facilities.length %></span>
@@ -101,18 +103,10 @@
 
                 <% if (facilities.length) { %>
                     <% facilities.forEach(facility => { %>
-                        <article class="bg-white border rounded shadow-sm p-4 mb-3">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div class="mr-3">
-                                    <h3 class="h5 mb-1"><%= facility.name %></h3>
-                                    <p class="text-muted mb-2"><%= facility.address %>, <%= facility.postcode %></p>
-                                </div>
-                                <form method="POST" action="/facilities/destroy">
-                                    <input type="hidden" name="guid" value="<%= facility.guid %>">
-                                    <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= facility.name %>">
-                                        <i class="fa fa-trash" aria-hidden="true"></i>
-                                    </button>
-                                </form>
+                        <article class="bg-white border rounded shadow-sm p-4 mb-3 position-relative">
+                            <div class="pr-5">
+                                <h3 class="h5 mb-1"><%= facility.name %></h3>
+                                <p class="text-muted mb-2"><%= facility.address %>, <%= facility.postcode %></p>
                             </div>
                             <a href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">
                                 <i class="fa fa-map-marker mr-1" aria-hidden="true"></i> Open in Google Maps
@@ -177,7 +171,7 @@
                                         <% if (sports.length) { %>
                                             <div class="row">
                                                 <% sports.forEach(sport => { %>
-                                                    <div class="col-4 mb-2">
+                                                    <div class="col-6 mb-2">
                                                         <div class="custom-control custom-checkbox">
                                                             <input class="custom-control-input" id="edit-sport-<%= facility.guid %>-<%= sport.guid %>" name="sport_guids" type="checkbox" value="<%= sport.guid %>" <%= facility.sports.some(assignedSport => assignedSport.guid === sport.guid) ? 'checked' : '' %>>
                                                             <label class="custom-control-label" for="edit-sport-<%= facility.guid %>-<%= sport.guid %>"><%= sport.name %></label>
@@ -214,8 +208,16 @@
                                         <textarea class="form-control" id="edit-description-<%= facility.guid %>" name="description" rows="5" maxlength="10000" required><%= facility.description %></textarea>
                                     </div>
                                     <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                    <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                 </form>
                             </details>
+                            <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                            <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/facilities/destroy">
+                                <input type="hidden" name="guid" value="<%= facility.guid %>">
+                                <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= facility.name %>">
+                                    <i class="fa fa-trash" aria-hidden="true"></i>
+                                </button>
+                            </form>
                         </article>
                     <% }); %>
                 <% } else { %>

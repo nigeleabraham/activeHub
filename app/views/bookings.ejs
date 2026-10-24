@@ -9,6 +9,19 @@
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
     <style>
+        .booking-toast {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            z-index: 1080;
+            width: 28rem;
+            max-width: calc(100% - 2rem);
+            transform: translateX(-50%);
+            border-left: 6px solid #00703c;
+            border-radius: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+
         .booking-calendar-slot {
             min-height: 48px;
             text-align: left;
@@ -83,7 +96,13 @@
                 <% } %>
             </div>
         <% } else if (created) { %>
-            <div class="alert alert-success" role="status">Booking created.</div>
+            <div class="alert alert-success booking-toast d-flex align-items-start" role="status" data-booking-toast>
+                <div class="mr-3">
+                    <strong><%= created === 1 ? 'Booking confirmed' : created + ' bookings confirmed' %></strong>
+                    <div class="small">Your <%= created === 1 ? 'slot has' : 'slots have' %> been booked successfully. You can see <%= created === 1 ? 'it' : 'them' %> under Bookings for the facility.</div>
+                </div>
+                <button type="button" class="close ml-auto" data-dismiss-toast aria-label="Dismiss notification"><span aria-hidden="true">&times;</span></button>
+            </div>
         <% } %>
 
         <% if (facilities.length) { %>
@@ -94,9 +113,9 @@
                         <p class="text-muted mb-0"><%= facility.address %>, <%= facility.postcode %></p>
                     </header>
 
-                    <div class="row">
-                        <div class="col-lg-5 mb-4">
-                            <details open>
+                    <div>
+                        <div class="mb-4">
+                            <details>
                                 <summary class="h5 mb-3">Resources (<%= facility.resources.length %>)</summary>
                                 <p class="text-muted small">Resources are exclusive booking claims. Courts sharing a resource block each other. Use a separate resource for each court-pair conflict so unrelated courts remain available.</p>
                                 <form class="form-inline mb-3" method="POST" action="/bookings/resources">
@@ -120,6 +139,7 @@
                                                                 <label class="sr-only" for="resource-name-<%= resource.guid %>">Resource name</label>
                                                                 <input class="form-control form-control-sm mb-2" id="resource-name-<%= resource.guid %>" name="name" type="text" maxlength="120" value="<%= resource.name %>" required>
                                                                 <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                                                                <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                                             </form>
                                                         </details>
                                                         <form method="POST" action="/bookings/resources/destroy">
@@ -138,8 +158,8 @@
                             </details>
                         </div>
 
-                        <div class="col-lg-7 mb-4">
-                            <details open>
+                        <div class="mb-4">
+                            <details>
                                 <summary class="h5 mb-3">Bookable courts (<%= facility.options.length %>)</summary>
                                 <% if (facility.sports.length && facility.resources.length) { %>
                                     <form class="border rounded p-3 mb-4" method="POST" action="/bookings/options">
@@ -215,6 +235,7 @@
                                                         <% }); %>
                                                     </fieldset>
                                                     <button class="btn btn-primary btn-sm" type="submit">Save court</button>
+                                                    <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                                 </form>
                                             </details>
                                         </article>
@@ -224,7 +245,7 @@
                         </div>
                     </div>
 
-                    <details <%= facility.bookings.length ? 'open' : '' %>>
+                    <details>
                         <summary class="h5 mb-3">Bookings (<%= facility.bookings.length %>)</summary>
                         <% if (facility.options.length) { %>
                             <div class="booking-calendar border rounded p-3 mb-3" data-booking-calendar data-facility-guid="<%= facility.guid %>">
@@ -245,14 +266,14 @@
                                 </div>
                                 <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
                                 <div class="booking-calendar-slots mb-3" data-calendar-slots role="group" aria-label="Booking times"></div>
-                                <p class="small mb-2" data-calendar-selection aria-live="polite">Select an available time slot.</p>
+                                <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
                                 <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
-                                <form method="POST" action="/bookings/create" data-booking-form>
+                                <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
+                                <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
+                                <form method="POST" action="/bookings/create-batch" data-booking-form>
                                     <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                    <input type="hidden" name="option_guid" data-selected-option>
-                                    <input type="hidden" name="starts_at" data-selected-start>
-                                    <input type="hidden" name="ends_at" data-selected-end>
-                                    <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Book selected slot</button>
+                                    <input type="hidden" name="slots" data-selected-slots>
+                                    <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Book selected slots</button>
                                     <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
                                 </form>
                             </div>
@@ -274,7 +295,7 @@
                                                     <form method="POST" action="/bookings/cancel">
                                                         <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                                         <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
-                                                        <button class="btn btn-outline-danger btn-sm" type="submit">Cancel</button>
+                                                        <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
                                                     </form>
                                                 </td>
                                             </tr>
@@ -298,6 +319,13 @@
         if (savedResourceFormScroll !== null) {
             sessionStorage.removeItem(resourceFormScrollKey);
             requestAnimationFrame(() => window.scrollTo(0, Number(savedResourceFormScroll)));
+        }
+
+        const bookingToast = document.querySelector('[data-booking-toast]');
+        if (bookingToast) {
+            const dismissToast = () => bookingToast.remove();
+            bookingToast.querySelector('[data-dismiss-toast]').addEventListener('click', dismissToast);
+            setTimeout(dismissToast, 10000);
         }
 
         const calendarDatePartsFormatter = new Intl.DateTimeFormat(undefined, {
@@ -404,16 +432,54 @@
             let options = [];
             let bookings = [];
             let schedules = null;
-            let selectedSlot = null;
+            let pendingSlots = [];
+            const pendingList = calendar.querySelector('[data-pending-list]');
+            const pendingCount = calendar.querySelector('[data-pending-count]');
+            const slotsInput = bookingForm.querySelector('[data-selected-slots]');
             const calendarError = calendar.querySelector('[data-calendar-error]');
 
-            function clearSelectedSlot() {
-                selectedSlot = null;
-                bookingForm.querySelector('[name="option_guid"]').value = '';
-                bookingForm.querySelector('[name="starts_at"]').value = '';
-                bookingForm.querySelector('[name="ends_at"]').value = '';
-                selectionLabel.textContent = 'Select an available time slot.';
-                submitButton.disabled = true;
+            function overlaps(slot, start, end) {
+                return new Date(slot.starts_at) < end && new Date(slot.ends_at) > start;
+            }
+
+            function slotResources(optionGuid) {
+                const option = options.find(item => item.guid === optionGuid);
+                return new Set((option?.resources || []).map(resource => resource.guid));
+            }
+
+            function renderPending() {
+                pendingSlots.sort((first, second) => first.starts_at.localeCompare(second.starts_at));
+                pendingList.replaceChildren();
+                for (const slot of pendingSlots) {
+                    const item = document.createElement('li');
+                    item.className = 'list-group-item px-0 py-2 d-flex justify-content-between align-items-center';
+                    const label = document.createElement('span');
+                    label.textContent = `${slot.option_name} · ${formatCalendarDateTime(new Date(slot.starts_at))}`;
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'btn btn-outline-danger btn-sm';
+                    remove.textContent = 'Remove';
+                    remove.setAttribute('aria-label', `Remove ${label.textContent}`);
+                    remove.addEventListener('click', () => {
+                        pendingSlots = pendingSlots.filter(candidate => candidate !== slot);
+                        renderPending();
+                        buildCalendar();
+                    });
+                    item.append(label, remove);
+                    pendingList.append(item);
+                }
+                if (!pendingSlots.length) {
+                    const empty = document.createElement('li');
+                    empty.className = 'list-group-item px-0 py-2 text-muted small';
+                    empty.textContent = 'No slots selected.';
+                    pendingList.append(empty);
+                }
+                pendingCount.textContent = String(pendingSlots.length);
+                slotsInput.value = JSON.stringify(pendingSlots.map(({ option_guid, starts_at, ends_at }) => ({ option_guid, starts_at, ends_at })));
+                submitButton.disabled = !pendingSlots.length;
+                selectionLabel.textContent = pendingSlots.length
+                    ? `${pendingSlots.length} slot${pendingSlots.length === 1 ? '' : 's'} selected.`
+                    : 'Select available time slots to add them to your list.';
             }
 
             function isWithinOpeningHours(start, end) {
@@ -441,6 +507,11 @@
                     booking.resource_guids.some(resourceGuid => claimedResources.has(resourceGuid)) &&
                     new Date(booking.starts_at) < slotEnd && new Date(booking.ends_at) > slotStart
                 );
+                const existingPending = pendingSlots.find(slot =>
+                    slot.option_guid === selectedOption.guid && slot.starts_at === slotStart.toISOString());
+                const pendingConflict = !existingPending && pendingSlots.some(slot =>
+                    overlaps(slot, slotStart, slotEnd) &&
+                    [...slotResources(slot.option_guid)].some(resourceGuid => claimedResources.has(resourceGuid)));
                 const isPast = slotEnd <= new Date();
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -456,23 +527,33 @@
                     button.classList.add('btn-light', 'text-muted');
                     status = 'Past';
                     button.disabled = true;
+                } else if (pendingConflict) {
+                    button.classList.add('btn-light', 'text-muted');
+                    status = 'Held';
+                    button.title = 'Conflicts with a slot in your selected list';
+                    button.disabled = true;
                 } else {
                     button.classList.add('btn-outline-success');
                     status = 'Avail.';
-                    const isSelected = selectedSlot?.starts_at === slotStart.toISOString();
+                    const isSelected = Boolean(existingPending);
                     button.setAttribute('aria-pressed', String(isSelected));
-                    if (isSelected) button.classList.add('active');
+                    if (isSelected) {
+                        button.classList.remove('btn-outline-success');
+                        button.classList.add('btn-success', 'active');
+                        status = 'Selected';
+                    }
                     button.addEventListener('click', () => {
-                        selectedSlot = {
-                            option_guid: selectedOption.guid,
-                            starts_at: slotStart.toISOString(),
-                            ends_at: slotEnd.toISOString()
-                        };
-                        bookingForm.querySelector('[name="option_guid"]').value = selectedSlot.option_guid;
-                        bookingForm.querySelector('[name="starts_at"]').value = selectedSlot.starts_at;
-                        bookingForm.querySelector('[name="ends_at"]').value = selectedSlot.ends_at;
-                        selectionLabel.textContent = `Selected: ${selectedOption.name} · ${formatCalendarDateTime(slotStart)}`;
-                        submitButton.disabled = false;
+                        if (existingPending) {
+                            pendingSlots = pendingSlots.filter(slot => slot !== existingPending);
+                        } else {
+                            pendingSlots.push({
+                                option_guid: selectedOption.guid,
+                                option_name: selectedOption.name,
+                                starts_at: slotStart.toISOString(),
+                                ends_at: slotEnd.toISOString()
+                            });
+                        }
+                        renderPending();
                         buildCalendar();
                     });
                 }
@@ -530,7 +611,6 @@
                 const nextCount = Math.max(1, Math.min(7, Math.floor(slotsList.clientWidth / 200)));
                 if (nextCount === visibleDayCount) return;
                 visibleDayCount = nextCount;
-                clearSelectedSlot();
                 loadAvailability();
             }
 
@@ -558,7 +638,8 @@
                     if (options.some(option => option.guid === currentOption)) {
                         optionSelect.value = currentOption;
                     } else {
-                        clearSelectedSlot();
+                        pendingSlots = pendingSlots.filter(slot => options.some(option => option.guid === slot.option_guid));
+                        renderPending();
                     }
                     buildCalendar();
                 } catch (error) {
@@ -570,7 +651,6 @@
             }
 
             optionSelect.addEventListener('change', () => {
-                clearSelectedSlot();
                 buildCalendar();
             });
             previousDayButton.addEventListener('click', () => {
@@ -578,12 +658,10 @@
                 if (selectedDate <= today) return;
                 const previousStart = addCalendarDays(selectedDate, -visibleDayCount);
                 selectedDate = previousStart < today ? today : previousStart;
-                clearSelectedSlot();
                 loadAvailability();
             });
             nextDayButton.addEventListener('click', () => {
                 selectedDate = addCalendarDays(selectedDate, visibleDayCount);
-                clearSelectedSlot();
                 loadAvailability();
             });
             const calendarResizeObserver = new ResizeObserver(updateVisibleDayCount);
@@ -592,7 +670,7 @@
 
             bookingForm.addEventListener('submit', async event => {
                 event.preventDefault();
-                if (!selectedSlot) return;
+                if (!pendingSlots.length) return;
                 bookingError.hidden = true;
                 bookingError.textContent = '';
                 submitButton.disabled = true;
@@ -603,7 +681,15 @@
                     });
                     if (response.status === 409) {
                         await loadAvailability();
-                        bookingError.textContent = "Slot taken. Can't overbook another booking";
+                        pendingSlots = pendingSlots.filter(slot => {
+                            const resources = slotResources(slot.option_guid);
+                            return !bookings.some(booking =>
+                                booking.resource_guids.some(resourceGuid => resources.has(resourceGuid)) &&
+                                overlaps(booking, new Date(slot.starts_at), new Date(slot.ends_at)));
+                        });
+                        renderPending();
+                        buildCalendar();
+                        bookingError.textContent = "A selected slot was just taken, so nothing was booked. Taken slots were removed; review your list and try again.";
                         bookingError.hidden = false;
                         return;
                     }
@@ -620,6 +706,7 @@
                 }
             });
 
+            renderPending();
             loadAvailability();
         });
     </script>

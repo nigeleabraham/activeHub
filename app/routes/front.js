@@ -363,7 +363,7 @@ router.get('/bookings', async (req, res) => {
         res.render('bookings', {
             facilities,
             error: req.query.error,
-            created: req.query.created === '1',
+            created: Number.parseInt(req.query.created, 10) || 0,
             activePage: 'bookings'
         });
     } catch (error) {
@@ -500,6 +500,55 @@ router.post('/bookings/create', async (req, res) => {
             ends_at: endDate.toISOString()
         });
         return res.redirect('/bookings?created=1');
+    } catch (error) {
+        if (error.code === '23P01') return res.status(409).json({ code: 'booking-conflict' });
+        return res.redirect('/bookings?error=invalid-booking');
+    }
+});
+
+const MAX_BATCH_BOOKINGS = 50;
+
+router.post('/bookings/create-batch', async (req, res) => {
+    const { facility_guid } = req.body;
+    let slots;
+    try {
+        slots = JSON.parse(req.body.slots || '[]');
+    } catch (error) {
+        return res.sendStatus(400);
+    }
+    if (!GUID_PATTERN.test(facility_guid || '') || !Array.isArray(slots) ||
+        !slots.length || slots.length > MAX_BATCH_BOOKINGS) {
+        return res.sendStatus(400);
+    }
+    const bookings = [];
+    for (const slot of slots) {
+        const startDate = new Date(slot?.starts_at);
+        const endDate = new Date(slot?.ends_at);
+        if (!GUID_PATTERN.test(slot?.option_guid || '') ||
+            !Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate <= startDate) {
+            return res.sendStatus(400);
+        }
+        bookings.push({
+            facility_guid,
+            option_guid: slot.option_guid,
+            starts_at: startDate.toISOString(),
+            ends_at: endDate.toISOString()
+        });
+    }
+    try {
+        const facilities = await Bookings.findInAppFacilities();
+        const facility = facilities.find(item => item.guid === facility_guid);
+        if (!facility) return res.sendStatus(404);
+        for (const booking of bookings) {
+            const withinOpeningHours = await OpeningHours.isBookingWithinHours(
+                facility.opening_hours_template_guid,
+                new Date(booking.starts_at),
+                new Date(booking.ends_at)
+            );
+            if (!withinOpeningHours) return res.redirect('/bookings?error=outside-opening-hours');
+        }
+        await Bookings.createBookings(bookings);
+        return res.redirect(`/bookings?created=${bookings.length}`);
     } catch (error) {
         if (error.code === '23P01') return res.status(409).json({ code: 'booking-conflict' });
         return res.redirect('/bookings?error=invalid-booking');

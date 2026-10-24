@@ -293,48 +293,62 @@ async function removeOption(facilityGuid, optionGuid) {
     return result.rowCount > 0;
 }
 
-async function createBooking({ facility_guid, option_guid, starts_at, ends_at }) {
+async function insertBooking(client, { facility_guid, option_guid, starts_at, ends_at }) {
+    const option = await client.query(
+        `SELECT guid FROM bookable_options
+         WHERE guid = $1 AND facility_guid = $2
+         FOR UPDATE`,
+        [option_guid, facility_guid]
+    );
+    if (!option.rowCount) {
+        throw new Error('The selected court option does not belong to this facility.');
+    }
+
+    const resources = await client.query(
+        'SELECT resource_guid FROM bookable_option_resources WHERE option_guid = $1 ORDER BY resource_guid',
+        [option_guid]
+    );
+    if (!resources.rowCount) {
+        throw new Error('The selected court option has no resource claims.');
+    }
+
+    const booking = await client.query(
+        `INSERT INTO bookings (facility_guid, option_guid, starts_at, ends_at)
+         VALUES ($1, $2, $3, $4)
+         RETURNING guid, starts_at, ends_at`,
+        [facility_guid, option_guid, starts_at, ends_at]
+    );
+    await client.query(
+        `INSERT INTO booking_reservations (booking_guid, resource_guid, starts_at, ends_at)
+         SELECT $1, selected.resource_guid, $2, $3
+         FROM UNNEST($4::uuid[]) AS selected(resource_guid)`,
+        [booking.rows[0].guid, starts_at, ends_at, resources.rows.map(row => row.resource_guid)]
+    );
+    return booking.rows[0];
+}
+
+// All bookings are created in one transaction: if any slot fails, none are saved.
+async function createBookings(bookings) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const option = await client.query(
-            `SELECT guid FROM bookable_options
-             WHERE guid = $1 AND facility_guid = $2
-             FOR UPDATE`,
-            [option_guid, facility_guid]
-        );
-        if (!option.rowCount) {
-            throw new Error('The selected court option does not belong to this facility.');
+        const created = [];
+        for (const booking of bookings) {
+            created.push(await insertBooking(client, booking));
         }
-
-        const resources = await client.query(
-            'SELECT resource_guid FROM bookable_option_resources WHERE option_guid = $1 ORDER BY resource_guid',
-            [option_guid]
-        );
-        if (!resources.rowCount) {
-            throw new Error('The selected court option has no resource claims.');
-        }
-
-        const booking = await client.query(
-            `INSERT INTO bookings (facility_guid, option_guid, starts_at, ends_at)
-             VALUES ($1, $2, $3, $4)
-             RETURNING guid, starts_at, ends_at`,
-            [facility_guid, option_guid, starts_at, ends_at]
-        );
-        await client.query(
-            `INSERT INTO booking_reservations (booking_guid, resource_guid, starts_at, ends_at)
-             SELECT $1, selected.resource_guid, $2, $3
-             FROM UNNEST($4::uuid[]) AS selected(resource_guid)`,
-            [booking.rows[0].guid, starts_at, ends_at, resources.rows.map(row => row.resource_guid)]
-        );
         await client.query('COMMIT');
-        return booking.rows[0];
+        return created;
     } catch (error) {
         await client.query('ROLLBACK');
         throw error;
     } finally {
         client.release();
     }
+}
+
+async function createBooking(booking) {
+    const [created] = await createBookings([booking]);
+    return created;
 }
 
 async function removeBooking(facilityGuid, bookingGuid) {
@@ -359,5 +373,6 @@ module.exports = {
     updateOption,
     removeOption,
     createBooking,
+    createBookings,
     removeBooking
 };

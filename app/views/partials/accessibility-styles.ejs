@@ -1,82 +1,263 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
+    /* Camden Council design system (lbcamden-frontend) palette */
+    :root {
+        --camden-text: #0b0c0c;
+        --camden-blue: #003e90;
+        --camden-navy: #113255;
+        --camden-focus: #ffde02;
+        --camden-bg: #f2f5f9;
+        --camden-border: #b1b4b6;
+        --camden-secondary-text: #505a5f;
+        --camden-error: #a81010;
+        --camden-success: #00703c;
+    }
+
+    body,
+    body.bg-light {
+        font-family: "Inter", Arial, sans-serif;
+        color: var(--camden-text);
+        background-color: var(--camden-bg) !important;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        font-weight: 700;
+    }
+
+    main.container > header {
+        padding-bottom: 1rem;
+        border-bottom: 5px solid var(--camden-blue);
+    }
+
+    main.container > header .text-uppercase {
+        color: var(--camden-navy) !important;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+    }
+
+    /* Square, flat cards with a navy accent like Camden's panels */
+    .bg-white.border.rounded {
+        border-radius: 0 !important;
+        border-color: var(--camden-border) !important;
+        border-top: 4px solid var(--camden-navy) !important;
+        box-shadow: none !important;
+    }
+
+    .form-control,
+    .custom-select {
+        border: 2px solid var(--camden-text);
+        border-radius: 0;
+    }
+
+    label {
+        font-weight: 600;
+    }
+
+    .text-muted {
+        color: var(--camden-secondary-text) !important;
+    }
+
+    .text-danger {
+        color: var(--camden-error) !important;
+    }
+
     a:not(.btn) {
-        color: #0056b3;
+        color: var(--camden-blue);
         text-decoration: underline;
         text-underline-offset: 0.12em;
     }
 
-    a:not(.btn):hover,
-    a:not(.btn):focus {
-        color: #004085;
+    a:not(.btn):hover {
+        color: var(--camden-navy);
     }
 
-    .text-muted {
-        color: #59636e !important;
+    /* Camden/GOV.UK focus: yellow with a dark underline */
+    a:focus,
+    .btn:focus,
+    .btn.focus,
+    summary:focus-visible,
+    .form-control:focus,
+    .custom-select:focus,
+    .form-check-input:focus {
+        outline: 3px solid transparent;
+        color: var(--camden-text);
+        background-color: var(--camden-focus);
+        border-color: var(--camden-text);
+        box-shadow: 0 -2px var(--camden-focus), 0 4px var(--camden-text);
+        text-decoration: none;
     }
 
-    .text-danger {
-        color: #b02a37 !important;
+    .skip-link {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        z-index: 2000;
+        padding: 0.75rem 1rem;
+        font-weight: 600;
+    }
+
+    .skip-link:focus {
+        left: 0;
+        color: var(--camden-text);
+        background-color: var(--camden-focus);
+    }
+
+    [tabindex="-1"]:focus {
+        outline: none;
+    }
+
+    /* Custom checkboxes hide the real input, so show focus on the drawn box */
+    .custom-control-input:focus ~ .custom-control-label::before {
+        border-color: var(--camden-text);
+        background-color: var(--camden-focus);
+        box-shadow: 0 0 0 3px var(--camden-text);
+    }
+
+    .custom-control-input:focus:checked ~ .custom-control-label::before {
+        background-color: var(--camden-blue);
+    }
+
+    .custom-control-label::before {
+        border: 2px solid var(--camden-text);
+        border-radius: 0;
+    }
+
+    .btn {
+        border-radius: 0;
+        font-weight: 600;
+        border-width: 2px;
     }
 
     .btn-primary {
         color: #fff;
-        background-color: #0056b3;
-        border-color: #0050a8;
+        background-color: var(--camden-blue);
+        border-color: var(--camden-blue);
+        box-shadow: 0 2px 0 var(--camden-navy);
     }
 
-    .btn-primary:hover,
-    .btn-primary:focus {
+    .btn-primary:hover {
         color: #fff;
-        background-color: #004085;
-        border-color: #003768;
+        background-color: var(--camden-navy);
+        border-color: var(--camden-navy);
     }
 
     .btn-primary:not(:disabled):not(.disabled):active,
     .btn-primary:not(:disabled):not(.disabled).active {
         color: #fff;
-        background-color: #003768;
-        border-color: #002d57;
+        background-color: var(--camden-navy);
+        border-color: var(--camden-navy);
     }
 
     .btn-outline-secondary {
-        color: #59636e;
-        border-color: #59636e;
+        color: var(--camden-blue);
+        background-color: #fff;
+        border-color: var(--camden-blue);
     }
 
     .btn-outline-secondary:hover,
-    .btn-outline-secondary:focus,
     .btn-outline-secondary:not(:disabled):not(.disabled):active,
     .btn-outline-secondary:not(:disabled):not(.disabled).active {
         color: #fff;
-        background-color: #59636e;
-        border-color: #59636e;
+        background-color: var(--camden-blue);
+        border-color: var(--camden-blue);
     }
 
     .btn-outline-success {
-        color: #176b2c;
-        border-color: #176b2c;
+        color: var(--camden-success);
+        border-color: var(--camden-success);
     }
 
     .btn-outline-success:hover,
-    .btn-outline-success:focus,
     .btn-outline-success:not(:disabled):not(.disabled):active,
     .btn-outline-success:not(:disabled):not(.disabled).active {
         color: #fff;
-        background-color: #176b2c;
-        border-color: #176b2c;
+        background-color: var(--camden-success);
+        border-color: var(--camden-success);
     }
 
     .btn-outline-danger {
-        color: #b02a37;
-        border-color: #b02a37;
+        color: var(--camden-error);
+        border-color: var(--camden-error);
     }
 
     .btn-outline-danger:hover,
-    .btn-outline-danger:focus,
     .btn-outline-danger:not(:disabled):not(.disabled):active,
     .btn-outline-danger:not(:disabled):not(.disabled).active {
         color: #fff;
-        background-color: #b02a37;
-        border-color: #b02a37;
+        background-color: var(--camden-error);
+        border-color: var(--camden-error);
+    }
+
+    .badge {
+        border-radius: 0;
+        font-weight: 600;
+    }
+
+    .badge-secondary {
+        background-color: var(--camden-navy);
+        color: #fff;
+    }
+
+    summary {
+        cursor: pointer;
+    }
+
+    /* Mouse/touch focus on a summary should not leave the focus highlight behind */
+    summary:focus:not(:focus-visible) {
+        outline: none;
+        box-shadow: none;
+        background-color: transparent;
+        color: inherit;
+    }
+
+    summary.btn:focus:not(:focus-visible) {
+        color: var(--camden-blue);
+        background-color: #fff;
+        border-color: var(--camden-blue);
     }
 </style>
+<script>
+    // A dropdown keeps focus after a choice; release it so the yellow highlight only shows while in use
+    document.addEventListener('change', function (event) {
+        if (event.target.matches('select')) { event.target.blur(); }
+    });
+
+    document.addEventListener('click', function (event) {
+        var toggle = event.target.closest('[data-edit-toggle]');
+        if (toggle) {
+            var panel = document.getElementById(toggle.getAttribute('aria-controls'));
+            var open = panel.hidden;
+            panel.hidden = !open;
+            toggle.setAttribute('aria-expanded', String(open));
+            toggle.blur();
+            return;
+        }
+        var cancel = event.target.closest('[data-cancel-edit]');
+        if (!cancel) { return; }
+        var details = cancel.closest('details');
+        var editPanel = cancel.closest('[data-edit-panel]');
+        var form = cancel.closest('form');
+        if (form) {
+            form.reset();
+            form.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+                box.dispatchEvent(new Event('change'));
+            });
+        }
+        if (editPanel) {
+            editPanel.hidden = true;
+            var editToggle = document.querySelector('[data-edit-toggle][aria-controls="' + editPanel.id + '"]');
+            if (editToggle) {
+                editToggle.setAttribute('aria-expanded', 'false');
+                editToggle.focus();
+            }
+            return;
+        }
+        if (details) {
+            details.removeAttribute('open');
+            var summary = details.querySelector('summary');
+            if (summary) { summary.focus(); }
+        }
+    });
+</script>
