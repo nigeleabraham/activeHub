@@ -15,21 +15,20 @@ ENV NODE_ENV production
 WORKDIR /usr/src/app
 
 # Download dependencies as a separate step to take advantage of Docker's caching.
-# Leverage a cache mount to /root/.npm to speed up subsequent builds.
-# Leverage a bind mounts to package.json and package-lock.json to avoid having to copy them into
-# into this layer.
+# Lifecycle scripts are disabled so installed packages cannot run arbitrary code during the build.
+# nodemon is a pinned devDependency, so it is installed from the lockfile here.
 RUN --mount=type=bind,source=package.json,target=package.json \
     --mount=type=bind,source=package-lock.json,target=package-lock.json \
+    --mount=type=bind,source=.npmrc,target=.npmrc \
     --mount=type=cache,target=/root/.npm \
-    npm ci --include=dev
+    npm ci --include=dev --ignore-scripts
 
-# install nodemon for hot-reloading
-COPY .npmrc .
-RUN npm install -g nodemon
-
-# Copy the rest of the source files into the image.
-COPY . .
-
+# Copy only the application files explicitly so stray local files (env files, keys, tests) never enter the image.
+COPY package.json package-lock.json .npmrc server.js facilityUtils.js ./
+COPY models ./models
+COPY routes ./routes
+COPY scripts ./scripts
+COPY views ./views
 
 # Run the application as a non-root user.
 RUN  chown -R node /usr/src/app
@@ -39,4 +38,4 @@ USER node
 EXPOSE 3000
 
 # Run the application in dev mode to use with Compose watch feature
-CMD npm run dev
+CMD ["npm", "run", "dev"]

@@ -22,6 +22,7 @@ const FrontRouter = require('./routes/front');
 
 // Set ejs template engine
 app.set('view engine', 'ejs');
+app.disable('x-powered-by');
 
 app.use(connectLiveReload())
 

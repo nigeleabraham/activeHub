@@ -127,10 +127,13 @@ async function fetchPage(url) {
 }
 
 async function geocodeAddress(address, postcode, name) {
+    // Whitespace is normalised first so the suffix patterns need no backtracking-prone \s+.
     const mapSearchName = name
-        .replace(/\s+tennis courts?$/i, '')
-        .replace(/\s+tennis court \d+$/i, '')
-        .replace(/\s+multi-use games area$/i, '');
+        .replace(/\s/g, ' ')
+        .replace(/ tennis courts?$/i, '')
+        .replace(/ tennis court \d+$/i, '')
+        .replace(/ multi-use games area$/i, '')
+        .trim();
     const queries = [
         `${address}, ${postcode}, Camden, United Kingdom`,
         `${mapSearchName}, Camden, London, United Kingdom`,
@@ -199,11 +202,34 @@ function extractCoordinates($, html) {
     return null;
 }
 
+function extractFullAddress(bodyText) {
+    const label = /Full Address\s+/i.exec(bodyText);
+    if (!label) {
+        return null;
+    }
+    const start = label.index + label[0].length;
+    const rest = bodyText.slice(start, start + 242);
+    const end = /\s(?:Directions|Location Description|Book court)\b/i.exec(rest);
+    if (!end || end.index < 1 || end.index > 240) {
+        return null;
+    }
+    const address = rest.slice(0, end.index).trimEnd();
+    return address && !/[\r\n]/.test(address) ? address : null;
+}
+
+function trimTrailingSeparators(value) {
+    let end = value.length;
+    while (end > 0 && /[,;\s]/.test(value[end - 1])) {
+        end -= 1;
+    }
+    return value.slice(0, end);
+}
+
 function extractAddress($, bodyText, name) {
-    const fullAddress = bodyText.match(/Full Address\s+(.{1,240}?)(?=\s+Directions\b|\s+Location Description\b|\s+Book court\b)/i);
+    const fullAddress = extractFullAddress(bodyText);
     const candidates = [];
     if (fullAddress) {
-        candidates.push(fullAddress[1]);
+        candidates.push(fullAddress);
     }
     const statedAddress = bodyText.match(/Our address is\s*(.{1,180}?\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})/i);
     if (statedAddress) {
@@ -229,7 +255,7 @@ function extractAddress($, bodyText, name) {
         if (address.toLowerCase().startsWith(name.toLowerCase())) {
             address = address.slice(name.length).trim();
         }
-        address = address.replace(/[,;\s]+$/, '').trim();
+        address = trimTrailingSeparators(address).trim();
         if (address.length >= 4) {
             return { address, postcode: postcodeMatch[1].replace(/\s+/g, ' ').toUpperCase() };
         }
