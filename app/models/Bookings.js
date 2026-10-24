@@ -75,6 +75,12 @@ async function initialize() {
     `);
 
     await pool.query(`
+        ALTER TABLE bookings
+        ADD COLUMN IF NOT EXISTS profile_guid uuid REFERENCES profiles(guid) ON DELETE SET NULL
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS bookings_profile_idx ON bookings (profile_guid)');
+
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS booking_reservations (
             booking_guid uuid NOT NULL REFERENCES bookings(guid) ON DELETE CASCADE,
             resource_guid uuid NOT NULL REFERENCES booking_resources(guid) ON DELETE RESTRICT,
@@ -150,6 +156,7 @@ async function findOptions(facilityGuid) {
 async function findBookings(facilityGuid, startsAt = null, endsAt = null) {
     const { rows } = await pool.query(
         `SELECT bookings.guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
+                bookings.profile_guid, profiles.name AS profile_name,
                 options.name AS option_name, sports.name AS sport_name,
                 COALESCE(
                     json_agg(resources.name ORDER BY LOWER(resources.name))
@@ -164,12 +171,13 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null) {
          FROM bookings
          JOIN bookable_options AS options ON options.guid = bookings.option_guid
          JOIN sports ON sports.guid = options.sport_guid
+         LEFT JOIN profiles ON profiles.guid = bookings.profile_guid
          LEFT JOIN booking_reservations AS reservations ON reservations.booking_guid = bookings.guid
          LEFT JOIN booking_resources AS resources ON resources.guid = reservations.resource_guid
                  WHERE bookings.facility_guid = $1
                      AND ($2::timestamptz IS NULL OR bookings.ends_at > $2)
                      AND ($3::timestamptz IS NULL OR bookings.starts_at < $3)
-         GROUP BY bookings.guid, options.name, sports.name
+         GROUP BY bookings.guid, options.name, sports.name, profiles.name
          ORDER BY bookings.starts_at`,
                 [facilityGuid, startsAt, endsAt]
     );
@@ -293,7 +301,7 @@ async function removeOption(facilityGuid, optionGuid) {
     return result.rowCount > 0;
 }
 
-async function insertBooking(client, { facility_guid, option_guid, starts_at, ends_at }) {
+async function insertBooking(client, { facility_guid, option_guid, starts_at, ends_at, profile_guid = null }) {
     const option = await client.query(
         `SELECT guid FROM bookable_options
          WHERE guid = $1 AND facility_guid = $2
@@ -313,10 +321,10 @@ async function insertBooking(client, { facility_guid, option_guid, starts_at, en
     }
 
     const booking = await client.query(
-        `INSERT INTO bookings (facility_guid, option_guid, starts_at, ends_at)
-         VALUES ($1, $2, $3, $4)
-         RETURNING guid, starts_at, ends_at`,
-        [facility_guid, option_guid, starts_at, ends_at]
+        `INSERT INTO bookings (facility_guid, option_guid, starts_at, ends_at, profile_guid)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING guid, option_guid, starts_at, ends_at, profile_guid`,
+        [facility_guid, option_guid, starts_at, ends_at, profile_guid]
     );
     await client.query(
         `INSERT INTO booking_reservations (booking_guid, resource_guid, starts_at, ends_at)
@@ -351,6 +359,29 @@ async function createBooking(booking) {
     return created;
 }
 
+async function findBooking(facilityGuid, bookingGuid) {
+    const { rows } = await pool.query(
+        `SELECT bookings.guid, bookings.facility_guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
+                bookings.profile_guid, profiles.name AS profile_name,
+                options.name AS option_name, facilities.name AS facility_name
+         FROM bookings
+         JOIN bookable_options AS options ON options.guid = bookings.option_guid
+         JOIN facilities ON facilities.guid = bookings.facility_guid
+         LEFT JOIN profiles ON profiles.guid = bookings.profile_guid
+         WHERE bookings.facility_guid = $1 AND bookings.guid = $2`,
+        [facilityGuid, bookingGuid]
+    );
+    return rows[0] || null;
+}
+
+async function assignBooking(facilityGuid, bookingGuid, profileGuid) {
+    const result = await pool.query(
+        'UPDATE bookings SET profile_guid = $3 WHERE facility_guid = $1 AND guid = $2',
+        [facilityGuid, bookingGuid, profileGuid]
+    );
+    return result.rowCount > 0;
+}
+
 async function removeBooking(facilityGuid, bookingGuid) {
     const result = await pool.query(
         'DELETE FROM bookings WHERE facility_guid = $1 AND guid = $2',
@@ -374,5 +405,7 @@ module.exports = {
     removeOption,
     createBooking,
     createBookings,
+    findBooking,
+    assignBooking,
     removeBooking
 };

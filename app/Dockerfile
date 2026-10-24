@@ -25,6 +25,7 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 
 # Copy only the application files explicitly so stray local files (env files, keys, tests) never enter the image.
 COPY package.json package-lock.json .npmrc server.js facilityUtils.js ./
+COPY middleware ./middleware
 COPY models ./models
 COPY routes ./routes
 COPY scripts ./scripts

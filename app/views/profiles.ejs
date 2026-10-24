@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profiles | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Profiles</h1>
+                <p class="text-muted mb-0">Manage who can sign in and their role</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+
+        <% const messages = {
+            'invalid-profile': 'Enter a name, a valid email address and a role.',
+            'duplicate-email': 'A profile with that email address already exists.',
+            'last-administrator': 'There must always be at least one Administrator.',
+            'delete-self': 'You cannot delete the profile you are signed in with.'
+        }; %>
+        <% if (error && messages[error]) { %>
+            <div class="alert alert-danger" role="alert"><%= messages[error] %></div>
+        <% } %>
+
+        <section class="mb-3" aria-labelledby="add-profile-heading">
+            <div class="bg-white border rounded shadow-sm p-3">
+                <h2 id="add-profile-heading" class="h5 mb-2">Add profile</h2>
+                <form class="form-row align-items-end" method="POST" action="/profiles">
+                    <div class="form-group col-md">
+                        <label for="profile-name">Name</label>
+                        <input class="form-control" id="profile-name" name="name" type="text" maxlength="120" required>
+                    </div>
+                    <div class="form-group col-md">
+                        <label for="profile-email">Email address</label>
+                        <input class="form-control" id="profile-email" name="email" type="email" maxlength="254" required>
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label for="profile-role">Role</label>
+                        <select class="form-control" id="profile-role" name="role" required>
+                            <% roles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group col-md-auto">
+                        <button class="btn btn-primary" type="submit">Add profile</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section aria-labelledby="profiles-list-heading">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h2 id="profiles-list-heading" class="h5 mb-0">Directory</h2>
+                <span class="badge badge-secondary"><%= profiles.length %></span>
+            </div>
+            <article class="bg-white border rounded shadow-sm p-4 mb-3">
+                <ul class="list-group list-group-flush">
+                    <% profiles.forEach(profile => { %>
+                        <li class="list-group-item px-0">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;">
+                                <div class="mr-3">
+                                    <span class="text-break"><%= profile.name %></span>
+                                    <span class="badge badge-secondary ml-1"><%= profile.role %></span>
+                                    <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
+                                </div>
+                                <div class="d-flex align-items-center flex-shrink-0">
+                                    <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-profile-<%= profile.guid %>">Edit</button>
+                                    <% if (profile.guid !== currentProfile.guid) { %>
+                                    <form method="POST" action="/profiles/destroy">
+                                        <input type="hidden" name="guid" value="<%= profile.guid %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= profile.name %>">Delete</button>
+                                    </form>
+                                    <% } %>
+                                </div>
+                            </div>
+                            <div id="edit-profile-<%= profile.guid %>" data-edit-panel hidden>
+                                <form class="mt-3 p-3 border rounded" method="POST" action="/profiles/update">
+                                    <input type="hidden" name="guid" value="<%= profile.guid %>">
+                                    <div class="form-group">
+                                        <label for="edit-profile-name-<%= profile.guid %>">Name</label>
+                                        <input class="form-control" id="edit-profile-name-<%= profile.guid %>" name="name" type="text" maxlength="120" value="<%= profile.name %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-profile-email-<%= profile.guid %>">Email address</label>
+                                        <input class="form-control" id="edit-profile-email-<%= profile.guid %>" name="email" type="email" maxlength="254" value="<%= profile.email %>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-profile-role-<%= profile.guid %>">Role</label>
+                                        <select class="form-control" id="edit-profile-role-<%= profile.guid %>" name="role" required>
+                                            <% roles.forEach(role => { %><option value="<%= role %>"<%= role === profile.role ? ' selected' : '' %>><%= role %></option><% }); %>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                    <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                </form>
+                            </div>
+                        </li>
+                    <% }); %>
+                </ul>
+            </article>
+        </section>
+    </main>
+</body>
+
+</html>

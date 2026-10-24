@@ -8,6 +8,8 @@ const Courses = require('./models/Courses');
 const Sports = require('./models/Sports');
 const Bookings = require('./models/Bookings');
 const OpeningHours = require('./models/OpeningHours');
+const Profiles = require('./models/Profiles');
+const AuditLog = require('./models/AuditLog');
 
 // Live Reload configuration
 const liveReloadServer = livereload.createServer();
@@ -29,6 +31,7 @@ app.use(connectLiveReload())
 app.use(express.urlencoded({ extended: false }));
 app.locals.moment = moment;
 
+app.use(require('./middleware/auth').loadProfile);
 app.use(FrontRouter);
 
 
@@ -37,6 +40,8 @@ Facilities.initialize()
     .then(() => OpeningHours.initialize())
     .then(() => Courses.initialize())
     .then(() => Sports.initialize())
+    .then(() => Profiles.initialize())
+    .then(() => AuditLog.initialize())
     .then(() => Bookings.initialize())
     .then(() => {
         console.log('PostgreSQL connected');

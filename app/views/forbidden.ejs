@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Not permitted | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Not permitted</h1>
+                <p class="text-muted mb-0">Your profile does not have permission to do that.</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+        <a class="btn btn-primary" href="/bookings">Back to bookings</a>
+    </main>
+</body>
+
+</html>

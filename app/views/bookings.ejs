@@ -113,6 +113,7 @@
                         <p class="text-muted mb-0"><%= facility.address %>, <%= facility.postcode %></p>
                     </header>
 
+                    <% if (isAdmin) { %>
                     <div>
                         <div class="mb-4">
                             <details>
@@ -244,6 +245,7 @@
                             </details>
                         </div>
                     </div>
+                    <% } %>
 
                     <details>
                         <summary class="h5 mb-3">Bookings (<%= facility.bookings.length %>)</summary>
@@ -283,7 +285,7 @@
                         <% if (facility.bookings.length) { %>
                             <div class="table-responsive">
                                 <table class="table table-sm bg-white">
-                                    <thead><tr><th>Court</th><th>Start (local)</th><th>End (local)</th><th>Resources held</th><th></th></tr></thead>
+                                    <thead><tr><th>Court</th><th>Start (local)</th><th>End (local)</th><th>Resources held</th><th>Booked by</th><th></th></tr></thead>
                                     <tbody>
                                         <% facility.bookings.forEach(booking => { %>
                                             <tr>
@@ -292,11 +294,31 @@
                                                 <td><time data-local-booking-time datetime="<%= moment.utc(booking.ends_at).toISOString() %>"><%= moment.utc(booking.ends_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
                                                 <td><%= booking.resource_names.join(', ') %></td>
                                                 <td>
-                                                    <form method="POST" action="/bookings/cancel">
-                                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                        <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
-                                                        <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
-                                                    </form>
+                                                    <% if (isAdmin) { %>
+                                                        <form class="form-inline flex-nowrap" method="POST" action="/bookings/assign">
+                                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                                            <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                                            <label class="sr-only" for="assign-<%= booking.guid %>">Assign booking to profile</label>
+                                                            <select class="form-control form-control-sm mr-2" id="assign-<%= booking.guid %>" name="profile_guid">
+                                                                <option value="">Unassigned</option>
+                                                                <% profiles.forEach(profile => { %>
+                                                                    <option value="<%= profile.guid %>"<%= profile.guid === booking.profile_guid ? ' selected' : '' %>><%= profile.name %> (<%= profile.role %>)</option>
+                                                                <% }); %>
+                                                            </select>
+                                                            <button class="btn btn-outline-secondary btn-sm" type="submit">Assign</button>
+                                                        </form>
+                                                    <% } else { %>
+                                                        <%= booking.profile_name || 'Unassigned' %>
+                                                    <% } %>
+                                                </td>
+                                                <td>
+                                                    <% if (isAdmin || (currentProfile && booking.profile_guid === currentProfile.guid)) { %>
+                                                        <form method="POST" action="/bookings/cancel">
+                                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                                            <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                                            <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
+                                                        </form>
+                                                    <% } %>
                                                 </td>
                                             </tr>
                                         <% }); %>

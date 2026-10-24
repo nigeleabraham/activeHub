@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Audit</h1>
+                <p class="text-muted mb-0">What each profile has done, newest first</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+
+        <% const totalPages = Math.max(1, Math.ceil(total / pageSize));
+           const pageLink = target => '/audit?' + new URLSearchParams({
+               ...(filters.profile ? { profile: filters.profile } : {}),
+               ...(filters.action ? { action: filters.action } : {}),
+               page: target
+           }).toString(); %>
+
+        <section class="mb-3" aria-labelledby="audit-filter-heading">
+            <div class="bg-white border rounded shadow-sm p-3">
+                <h2 id="audit-filter-heading" class="h5 mb-2">Filter</h2>
+                <form class="form-row align-items-end" method="GET" action="/audit">
+                    <div class="form-group col-md">
+                        <label for="audit-profile">Profile</label>
+                        <select class="form-control" id="audit-profile" name="profile">
+                            <option value="">All profiles</option>
+                            <% profiles.forEach(profile => { %>
+                                <option value="<%= profile.guid %>"<%= filters.profile === profile.guid ? ' selected' : '' %>><%= profile.name %> (<%= profile.role %>)</option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group col-md">
+                        <label for="audit-action">Action</label>
+                        <select class="form-control" id="audit-action" name="action">
+                            <option value="">All actions</option>
+                            <% actions.forEach(action => { %>
+                                <option value="<%= action %>"<%= filters.action === action ? ' selected' : '' %>><%= action %></option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group col-md-auto">
+                        <button class="btn btn-primary" type="submit">Apply</button>
+                        <a class="btn btn-outline-secondary ml-1" href="/audit">Clear</a>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section aria-labelledby="audit-list-heading">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h2 id="audit-list-heading" class="h5 mb-0">Activity</h2>
+                <span class="badge badge-secondary"><%= total %></span>
+            </div>
+            <% if (entries.length) { %>
+                <div class="bg-white border rounded shadow-sm p-4 mb-3">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>When (local)</th><th>Profile</th><th>Action</th><th>Item</th><th>Details</th></tr></thead>
+                            <tbody>
+                                <% entries.forEach(entry => { %>
+                                    <tr>
+                                        <td><time data-local-booking-time datetime="<%= moment.utc(entry.created_at).toISOString() %>"><%= moment.utc(entry.created_at).format('D MMM YYYY, HH:mm:ss [UTC]') %></time></td>
+                                        <td><%= entry.profile_name %> <span class="text-muted small">(<%= entry.profile_role %>)</span></td>
+                                        <td><code><%= entry.action %></code></td>
+                                        <td><%= entry.entity_label || entry.entity_type %></td>
+                                        <td class="small text-muted text-break">
+                                            <%= Object.entries(entry.details || {}).map(([key, value]) => key + ': ' + (value && typeof value === 'object' ? JSON.stringify(value) : value)).join(' · ') %>
+                                        </td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <% if (totalPages > 1) { %>
+                    <nav aria-label="Audit pages" class="d-flex align-items-center">
+                        <% if (page > 1) { %><a class="btn btn-outline-secondary btn-sm mr-2" href="<%= pageLink(page - 1) %>">Previous</a><% } %>
+                        <span class="small mr-2">Page <%= page %> of <%= totalPages %></span>
+                        <% if (page < totalPages) { %><a class="btn btn-outline-secondary btn-sm" href="<%= pageLink(page + 1) %>">Next</a><% } %>
+                    </nav>
+                <% } %>
+            <% } else { %>
+                <p class="text-muted border-top pt-3">No activity recorded.</p>
+            <% } %>
+        </section>
+    </main>
+    <script>
+        document.querySelectorAll('[data-local-booking-time]').forEach(el => {
+            const date = new Date(el.getAttribute('datetime'));
+            if (!Number.isNaN(date.getTime())) {
+                el.textContent = date.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+        });
+    </script>
+</body>
+
+</html>

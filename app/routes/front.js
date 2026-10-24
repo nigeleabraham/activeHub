@@ -4,6 +4,9 @@ const Courses = require('./../models/Courses');
 const Sports = require('./../models/Sports');
 const Bookings = require('./../models/Bookings');
 const OpeningHours = require('./../models/OpeningHours');
+const Profiles = require('./../models/Profiles');
+const AuditLog = require('./../models/AuditLog');
+const auth = require('./../middleware/auth');
 const { parseFacilityInput } = require('./../facilityUtils');
 
 const router = express.Router();
@@ -95,6 +98,186 @@ async function parseFacilityForm(body) {
         opening_hours_template_guid: openingHoursTemplateGuid
     };
 }
+
+
+async function recordAudit(profile, entry) {
+    try {
+        await AuditLog.record(profile, entry);
+    } catch (error) {
+        console.error('Unable to write audit log:', error);
+    }
+}
+
+// Management actions: admin only, audited once the handler has redirected without an error.
+const labelFrom = body => (typeof body.name === 'string' ? body.name.trim() : null);
+const findLabel = async (list, guid) => (await list).find(item => item.guid === guid)?.name || null;
+
+const MANAGEMENT_ACTIONS = {
+    '/facilities': { action: 'facility.create', entity: 'facility', label: labelFrom },
+    '/facilities/update': { action: 'facility.update', entity: 'facility', label: labelFrom },
+    '/facilities/destroy': { action: 'facility.delete', entity: 'facility', label: b => findLabel(Facilities.findAll(), b.guid) },
+    '/courses': { action: 'course.create', entity: 'course', label: labelFrom },
+    '/courses/update': { action: 'course.update', entity: 'course', label: labelFrom },
+    '/courses/destroy': { action: 'course.delete', entity: 'course', label: b => findLabel(Courses.findAll(), b.guid) },
+    '/facilities/courses/destroy': { action: 'course.delete', entity: 'course', label: b => findLabel(Courses.findAll(), b.guid) },
+    '/sports': { action: 'sport.create', entity: 'sport', label: labelFrom },
+    '/sports/update': { action: 'sport.update', entity: 'sport', label: labelFrom },
+    '/sports/destroy': { action: 'sport.delete', entity: 'sport', label: b => findLabel(Sports.findAll(), b.guid) },
+    '/opening-hours': { action: 'opening_hours.create', entity: 'opening_hours', label: labelFrom },
+    '/opening-hours/update': { action: 'opening_hours.update', entity: 'opening_hours', label: labelFrom },
+    '/opening-hours/destroy': { action: 'opening_hours.delete', entity: 'opening_hours', label: b => findLabel(OpeningHours.findAll(), b.guid) },
+    '/bookings/resources': { action: 'resource.create', entity: 'resource', label: labelFrom },
+    '/bookings/resources/update': { action: 'resource.update', entity: 'resource', label: labelFrom, guid: b => b.guid },
+    '/bookings/resources/destroy': { action: 'resource.delete', entity: 'resource', guid: b => b.resource_guid,
+        label: b => findLabel(Bookings.findResources(b.facility_guid), b.resource_guid) },
+    '/bookings/options': { action: 'option.create', entity: 'bookable_option', label: labelFrom },
+    '/bookings/options/update': { action: 'option.update', entity: 'bookable_option', label: labelFrom, guid: b => b.guid },
+    '/bookings/options/destroy': { action: 'option.delete', entity: 'bookable_option', guid: b => b.option_guid,
+        label: b => findLabel(Bookings.findOptions(b.facility_guid), b.option_guid) }
+};
+
+for (const [path, definition] of Object.entries(MANAGEMENT_ACTIONS)) {
+    router.post(path, auth.requireAdministrator, async (req, res, next) => {
+        const body = req.body || {};
+        let label = null;
+        try {
+            label = (await definition.label(body)) || null;
+        } catch (error) {
+            // The audit label is best effort.
+        }
+        const entityGuid = definition.guid ? definition.guid(body) : body.guid || null;
+        res.on('finish', () => {
+            const location = res.getHeader('Location') || '';
+            if (res.statusCode >= 300 && res.statusCode < 400 && !String(location).includes('error=')) {
+                recordAudit(req.profile, {
+                    action: definition.action,
+                    entityType: definition.entity,
+                    entityGuid: GUID_PATTERN.test(entityGuid || '') ? entityGuid : null,
+                    entityLabel: label
+                });
+            }
+        });
+        next();
+    });
+}
+
+router.get('/login', async (req, res) => {
+    try {
+        res.render('login', { profiles: await Profiles.findAll(), activePage: '' });
+    } catch (error) {
+        res.sendStatus(500);
+    }
+});
+
+router.post('/login', async (req, res) => {
+    const guid = req.body.profile_guid;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.sendStatus(400);
+    try {
+        const profile = await Profiles.findByGuid(guid);
+        if (!profile) return res.sendStatus(404);
+        auth.setSession(res, profile.guid);
+        await recordAudit(profile, { action: 'auth.login', entityType: 'profile', entityGuid: profile.guid, entityLabel: profile.name });
+        return res.redirect('/');
+    } catch (error) {
+        return res.sendStatus(500);
+    }
+});
+
+router.post('/logout', async (req, res) => {
+    if (req.profile) {
+        await recordAudit(req.profile, { action: 'auth.logout', entityType: 'profile', entityGuid: req.profile.guid, entityLabel: req.profile.name });
+    }
+    auth.clearSession(res);
+    res.redirect('/login');
+});
+
+router.use(auth.requireLogin);
+
+router.get('/profiles', auth.requireAdministrator, async (req, res) => {
+    try {
+        res.render('profiles', { profiles: await Profiles.findAll(), roles: Profiles.ROLES, error: req.query.error, activePage: 'profiles' });
+    } catch (error) {
+        res.sendStatus(500);
+    }
+});
+
+function parseProfileInput(body) {
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!name || name.length > 120 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        !Profiles.ROLES.includes(body.role)) {
+        return null;
+    }
+    return { name, email, role: body.role };
+}
+
+router.post('/profiles', auth.requireAdministrator, async (req, res) => {
+    const profile = parseProfileInput(req.body);
+    if (!profile) return res.redirect('/profiles?error=invalid-profile');
+    try {
+        const created = await Profiles.create(profile);
+        await recordAudit(req.profile, { action: 'profile.create', entityType: 'profile', entityGuid: created.guid, entityLabel: created.name, details: { email: created.email, role: created.role } });
+        return res.redirect('/profiles');
+    } catch (error) {
+        return res.redirect('/profiles?error=duplicate-email');
+    }
+});
+
+router.post('/profiles/update', auth.requireAdministrator, async (req, res) => {
+    const profile = parseProfileInput(req.body);
+    const guid = req.body.guid;
+    if (!profile || typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.redirect('/profiles?error=invalid-profile');
+    try {
+        const existing = await Profiles.findByGuid(guid);
+        if (!existing) return res.sendStatus(404);
+        if (existing.role === auth.ADMINISTRATOR && profile.role !== auth.ADMINISTRATOR &&
+            await Profiles.countAdministrators() <= 1) {
+            return res.redirect('/profiles?error=last-administrator');
+        }
+        const updated = await Profiles.update(guid, profile);
+        await recordAudit(req.profile, {
+            action: 'profile.update', entityType: 'profile', entityGuid: guid, entityLabel: updated.name,
+            details: { from: { name: existing.name, email: existing.email, role: existing.role }, to: profile }
+        });
+        return res.redirect('/profiles');
+    } catch (error) {
+        return res.redirect('/profiles?error=duplicate-email');
+    }
+});
+
+router.post('/profiles/destroy', auth.requireAdministrator, async (req, res) => {
+    const guid = req.body.guid;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.sendStatus(400);
+    try {
+        const existing = await Profiles.findByGuid(guid);
+        if (!existing) return res.sendStatus(404);
+        if (guid === req.profile.guid) return res.redirect('/profiles?error=delete-self');
+        if (existing.role === auth.ADMINISTRATOR && await Profiles.countAdministrators() <= 1) {
+            return res.redirect('/profiles?error=last-administrator');
+        }
+        await Profiles.remove(guid);
+        await recordAudit(req.profile, { action: 'profile.delete', entityType: 'profile', entityGuid: guid, entityLabel: existing.name, details: { email: existing.email, role: existing.role } });
+        return res.redirect('/profiles');
+    } catch (error) {
+        return res.sendStatus(500);
+    }
+});
+
+router.get('/audit', auth.requireAdministrator, async (req, res) => {
+    const profileGuid = GUID_PATTERN.test(req.query.profile || '') ? req.query.profile : null;
+    const action = typeof req.query.action === 'string' && req.query.action.length <= 60 ? req.query.action || null : null;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    try {
+        const [result, actions, profiles] = await Promise.all([
+            AuditLog.search({ profileGuid, action, page }),
+            AuditLog.findActions(),
+            Profiles.findAll()
+        ]);
+        res.render('audit', { ...result, actions, profiles, filters: { profile: profileGuid, action }, page, activePage: 'audit' });
+    } catch (error) {
+        res.sendStatus(500);
+    }
+});
 
 // Home page route
 router.get('/', async (req, res) => {
@@ -362,6 +545,7 @@ router.get('/bookings', async (req, res) => {
         }));
         res.render('bookings', {
             facilities,
+            profiles: req.profile.role === auth.ADMINISTRATOR ? await Profiles.findAll() : [],
             error: req.query.error,
             created: Number.parseInt(req.query.created, 10) || 0,
             activePage: 'bookings'
@@ -493,11 +677,16 @@ router.post('/bookings/create', async (req, res) => {
         );
         if (!withinOpeningHours) return res.redirect('/bookings?error=outside-opening-hours');
 
-        await Bookings.createBooking({
+        const created = await Bookings.createBooking({
             facility_guid,
             option_guid,
             starts_at: startDate.toISOString(),
-            ends_at: endDate.toISOString()
+            ends_at: endDate.toISOString(),
+            profile_guid: req.profile.guid
+        });
+        await recordAudit(req.profile, {
+            action: 'booking.create', entityType: 'booking', entityGuid: created?.guid,
+            entityLabel: facility.name, details: { starts_at: created?.starts_at, ends_at: created?.ends_at, option_guid }
         });
         return res.redirect('/bookings?created=1');
     } catch (error) {
@@ -532,7 +721,8 @@ router.post('/bookings/create-batch', async (req, res) => {
             facility_guid,
             option_guid: slot.option_guid,
             starts_at: startDate.toISOString(),
-            ends_at: endDate.toISOString()
+            ends_at: endDate.toISOString(),
+            profile_guid: req.profile.guid
         });
     }
     try {
@@ -547,7 +737,13 @@ router.post('/bookings/create-batch', async (req, res) => {
             );
             if (!withinOpeningHours) return res.redirect('/bookings?error=outside-opening-hours');
         }
-        await Bookings.createBookings(bookings);
+        const createdBookings = await Bookings.createBookings(bookings);
+        for (const [index, booking] of bookings.entries()) {
+            await recordAudit(req.profile, {
+                action: 'booking.create', entityType: 'booking', entityGuid: createdBookings?.[index]?.guid,
+                entityLabel: facility.name, details: { starts_at: booking.starts_at, ends_at: booking.ends_at, option_guid: booking.option_guid }
+            });
+        }
         return res.redirect(`/bookings?created=${bookings.length}`);
     } catch (error) {
         if (error.code === '23P01') return res.status(409).json({ code: 'booking-conflict' });
@@ -561,8 +757,38 @@ router.post('/bookings/cancel', async (req, res) => {
         return res.sendStatus(400);
     }
     try {
+        const booking = await Bookings.findBooking(facility_guid, booking_guid);
+        if (!booking) return res.sendStatus(404);
+        if (!auth.canCancelBooking(req.profile, booking)) return res.status(403).render('forbidden', { activePage: '' });
         const removed = await Bookings.removeBooking(facility_guid, booking_guid);
-        return removed ? res.redirect('/bookings') : res.sendStatus(404);
+        if (!removed) return res.sendStatus(404);
+        await recordAudit(req.profile, {
+            action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
+            details: { option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_by: booking.profile_name }
+        });
+        return res.redirect('/bookings');
+    } catch (error) {
+        return res.sendStatus(500);
+    }
+});
+
+router.post('/bookings/assign', auth.requireAdministrator, async (req, res) => {
+    const { facility_guid, booking_guid } = req.body;
+    const profileGuid = req.body.profile_guid || null;
+    if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(booking_guid || '') ||
+        (profileGuid && !GUID_PATTERN.test(profileGuid))) {
+        return res.sendStatus(400);
+    }
+    try {
+        const booking = await Bookings.findBooking(facility_guid, booking_guid);
+        const assignee = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
+        if (!booking || (profileGuid && !assignee)) return res.sendStatus(404);
+        await Bookings.assignBooking(facility_guid, booking_guid, profileGuid);
+        await recordAudit(req.profile, {
+            action: 'booking.assign', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
+            details: { from: booking.profile_name || null, to: assignee?.name || null, starts_at: booking.starts_at }
+        });
+        return res.redirect('/bookings');
     } catch (error) {
         return res.sendStatus(500);
     }

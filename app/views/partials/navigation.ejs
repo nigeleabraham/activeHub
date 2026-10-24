@@ -4,9 +4,21 @@
     { key: 'sports', label: 'Sports', href: '/sports' },
     { key: 'opening-hours', label: 'Opening hours', href: '/opening-hours' },
     { key: 'bookings', label: 'Bookings', href: '/bookings' }
-]; %>
-<nav class="mt-3 mt-md-0" aria-label="Main navigation">
-    <% navigationItems.forEach(item => { %>
-        <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
-    <% }); %>
-</nav>
+];
+if (isAdmin) {
+    navigationItems.push({ key: 'profiles', label: 'Profiles', href: '/profiles' });
+    navigationItems.push({ key: 'audit', label: 'Audit', href: '/audit' });
+} %>
+<div class="mt-3 mt-md-0 text-md-right">
+    <% if (currentProfile) { %>
+        <form class="d-flex flex-wrap align-items-center justify-content-md-end mb-2" method="POST" action="/logout">
+            <span class="small mr-2">Signed in as <strong><%= currentProfile.name %></strong> (<%= currentProfile.role %>)</span>
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Log out</button>
+        </form>
+    <% } %>
+    <nav aria-label="Main navigation">
+        <% navigationItems.forEach(item => { %>
+            <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
+        <% }); %>
+    </nav>
+</div>

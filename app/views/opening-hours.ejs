@@ -21,6 +21,7 @@
             <%- include('partials/navigation') %>
         </header>
 
+        <% if (isAdmin) { %>
         <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="new-template-heading">
             <h2 id="new-template-heading" class="h5 mb-3">Create template</h2>
             <form method="POST" action="/opening-hours" data-hours-form>
@@ -54,6 +55,7 @@
                 <button class="btn btn-primary" type="submit">Create template</button>
             </form>
         </section>
+        <% } %>
 
         <section aria-labelledby="templates-heading">
             <div class="d-flex align-items-center justify-content-between mb-3">
@@ -74,6 +76,7 @@
                                     <% } %>
                                 </p>
                             </div>
+                            <% if (isAdmin) { %>
                             <div class="d-flex align-items-center flex-shrink-0">
                                 <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-template-<%= template.guid %>">Edit template</button>
                                 <form method="POST" action="/opening-hours/destroy">
@@ -81,7 +84,9 @@
                                     <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= template.name %>">Delete template</button>
                                 </form>
                             </div>
+                            <% } %>
                         </div>
+                        <% if (isAdmin) { %>
                         <div id="edit-template-<%= template.guid %>" data-edit-panel hidden>
                             <form class="mt-3 pt-3 border-top" method="POST" action="/opening-hours/update" data-hours-form>
                                 <input type="hidden" name="guid" value="<%= template.guid %>">
@@ -116,6 +121,7 @@
                                 <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                             </form>
                         </div>
+                        <% } %>
                     </article>
                 <% }); %>
             <% } else { %>

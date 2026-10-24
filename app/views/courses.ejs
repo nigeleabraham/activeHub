@@ -42,6 +42,7 @@
                                                         <p class="text-muted small mb-0"><%= course.description %></p>
                                                     <% } %>
                                                 </div>
+                                                <% if (isAdmin) { %>
                                                 <div class="d-flex align-items-center">
                                                     <details class="mr-2">
                                                         <summary class="btn btn-outline-secondary btn-sm">Edit</summary>
@@ -72,6 +73,7 @@
                                                         <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
                                                     </form>
                                                 </div>
+                                                <% } %>
                                             </div>
                                         </div>
                                     <% }); %>
@@ -79,6 +81,7 @@
                             <% } else { %>
                                 <p class="text-muted mb-0">No courses are attached to this facility.</p>
                             <% } %>
+                            <% if (isAdmin) { %>
                             <details class="border-top mt-3 pt-3">
                                 <summary class="h5 mb-3">Add course</summary>
                                 <form method="POST" action="/courses">
@@ -94,6 +97,7 @@
                                     <button class="btn btn-primary btn-sm" type="submit">Add course</button>
                                 </form>
                             </details>
+                            <% } %>
                         </article>
                     <% }); %>
                 <% } else { %>

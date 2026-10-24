@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="mb-4">
+            <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+            <h1 class="h2 mb-1">Sign in</h1>
+            <p class="text-muted mb-0">Simulated login: choose a profile to continue. This will be replaced by a real sign-in later.</p>
+        </header>
+
+        <section aria-labelledby="profiles-heading">
+            <h2 id="profiles-heading" class="h5 mb-3">Choose a profile</h2>
+            <% if (profiles.length) { %>
+                <div class="bg-white border rounded shadow-sm p-4">
+                    <ul class="list-group list-group-flush">
+                        <% profiles.forEach(profile => { %>
+                            <li class="list-group-item px-0">
+                                <form class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;" method="POST" action="/login">
+                                    <input type="hidden" name="profile_guid" value="<%= profile.guid %>">
+                                    <div class="mr-3">
+                                        <span class="text-break"><%= profile.name %></span>
+                                        <span class="badge badge-secondary ml-1"><%= profile.role %></span>
+                                        <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" type="submit" aria-label="Sign in as <%= profile.name %>">Sign in</button>
+                                </form>
+                            </li>
+                        <% }); %>
+                    </ul>
+                </div>
+            <% } else { %>
+                <p class="text-muted">No profiles exist.</p>
+            <% } %>
+        </section>
+    </main>
+</body>
+
+</html>
