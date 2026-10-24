@@ -1,7 +1,7 @@
-const bodyParse = require('body-parser');
 const livereload = require('livereload');
 const connectLiveReload = require('connect-livereload');
-const app = require('express')();
+const express = require('express');
+const app = express();
 const moment = require('moment');
 const Facilities = require('./models/Facilities');
 const Courses = require('./models/Courses');
@@ -25,7 +25,7 @@ app.set('view engine', 'ejs');
 
 app.use(connectLiveReload())
 
-app.use(bodyParse.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false }));
 app.locals.moment = moment;
 
 app.use(FrontRouter);
