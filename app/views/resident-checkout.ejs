@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head h1 { font-size: 2.25rem; font-weight: 700; }
+        .page-head a { color: #fff; }
+        .panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-bottom: 2rem; }
+        .panel.first { margin-top: -1.5rem; }
+        .btn-brand { background: #113255; color: #fff; border-radius: 0; }
+        .btn-brand:hover { background: #0b0c0c; color: #fff; }
+        .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
+        .text-muted { color: #505a5f !important; }
+        .sim-banner { background: #fff9cc; border-left: 0.4rem solid #ffde02; padding: 0.75rem 1rem; }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+
+    <header class="page-head">
+        <div class="container">
+            <p class="mb-2"><a href="/bookings">&larr; Back to bookings</a></p>
+            <h1 class="mb-2">Payment</h1>
+            <p class="lead mb-0">Review your booking and pay to confirm it.</p>
+        </div>
+    </header>
+
+    <main class="container pb-5">
+        <div class="row">
+            <div class="col-lg-6">
+                <section class="panel first" aria-labelledby="order">
+                    <h2 id="order" class="h4 mb-3">Your booking</h2>
+                    <p class="mb-2"><strong><%= facility.name %></strong></p>
+                    <ul class="list-group list-group-flush mb-3">
+                        <% items.forEach(item => { %>
+                            <li class="list-group-item px-0 d-flex justify-content-between">
+                                <span><%= item.option_name %> ·
+                                    <time data-local-time datetime="<%= item.starts_at %>"><%= item.starts_at %></time></span>
+                                <span><%= unitPrice %></span>
+                            </li>
+                        <% }) %>
+                    </ul>
+                    <p class="d-flex justify-content-between mb-1"><span>Total</span><span><%= total %></span></p>
+                    <% if (credit !== '£0.00') { %>
+                        <p class="d-flex justify-content-between mb-1"><span>Account credit applied</span><span>&minus;<%= credit %></span></p>
+                    <% } %>
+                    <p class="h5 d-flex justify-content-between mb-0"><span>To pay</span><span><%= due %></span></p>
+                </section>
+            </div>
+            <div class="col-lg-6">
+                <section class="panel first" aria-labelledby="card">
+                    <h2 id="card" class="h4 mb-3"><%= fullyCovered ? 'Confirm booking' : 'Pay by card' %></h2>
+                    <% if (fullyCovered) { %>
+                        <p>Your account credit of <strong><%= credit %></strong> covers this booking, so no card payment is needed.</p>
+                        <form method="POST" action="/bookings/pay">
+                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                            <input type="hidden" name="slots" value="<%= slotsJson %>">
+                            <button class="btn btn-brand btn-block" type="submit">Confirm booking using credit</button>
+                        </form>
+                    <% } else { %>
+                    <% if (credit !== '£0.00' && !fullyCovered) { %>
+                        <p>Your account credit of <strong><%= credit %></strong> has been applied. Pay the remaining <strong><%= due %></strong> by card.</p>
+                    <% } %>
+                    <div class="sim-banner mb-3" role="note">
+                        <strong>This is a simulated payment.</strong> No money is taken and nothing is sent to a payment provider.
+                        Use <code>4242 4242 4242 4242</code> to succeed or <code>4000 0000 0000 0002</code> to see a declined card.
+                        Any future expiry date and any 3 digit code will work.
+                    </div>
+                    <% if (cardError) { %>
+                        <div class="alert alert-danger" role="alert"><%= cardError %></div>
+                    <% } %>
+                    <form method="POST" action="/bookings/pay" autocomplete="off">
+                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                        <input type="hidden" name="slots" value="<%= slotsJson %>">
+                        <div class="form-group">
+                            <label for="card-name" class="font-weight-bold">Name on card</label>
+                            <input class="form-control" id="card-name" name="card_name" type="text" maxlength="100" autocomplete="cc-name" value="<%= values.card_name || '' %>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="card-number" class="font-weight-bold">Card number</label>
+                            <input class="form-control" id="card-number" name="card_number" type="text" inputmode="numeric" maxlength="23" autocomplete="cc-number" placeholder="4242 4242 4242 4242" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-6">
+                                <label for="card-expiry" class="font-weight-bold">Expiry (MM/YY)</label>
+                                <input class="form-control" id="card-expiry" name="card_expiry" type="text" inputmode="numeric" maxlength="5" autocomplete="cc-exp" placeholder="12/30" required>
+                            </div>
+                            <div class="form-group col-6">
+                                <label for="card-cvc" class="font-weight-bold">Security code</label>
+                                <input class="form-control" id="card-cvc" name="card_cvc" type="password" inputmode="numeric" maxlength="4" autocomplete="cc-csc" required>
+                            </div>
+                        </div>
+                        <button class="btn btn-brand btn-block" type="submit">Pay <%= due %></button>
+                    </form>
+                    <% } %>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        var formatter = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        document.querySelectorAll('[data-local-time]').forEach(function (time) {
+            var instant = new Date(time.dateTime);
+            if (Number.isFinite(instant.getTime())) time.textContent = formatter.format(instant);
+        });
+    </script>
+</body>
+
+</html>

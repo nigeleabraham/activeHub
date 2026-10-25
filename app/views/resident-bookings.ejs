@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookings | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <%- include('partials/booking-flow-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head h1 { font-size: 2.25rem; font-weight: 700; }
+        .page-head a { color: #fff; }
+        .panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-bottom: 2rem; }
+        .panel:first-of-type { margin-top: -1.5rem; }
+        .booking-item { border-left: 0.4rem solid #113255; background: #f8f9fa; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+        .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
+        .text-muted { color: #505a5f !important; }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+
+    <header class="page-head">
+        <div class="container">
+            <p class="mb-2"><a href="/">&larr; Back to home</a></p>
+            <h1 class="mb-2">Bookings</h1>
+            <p class="lead mb-0">See your upcoming bookings and book a court or space.</p>
+        </div>
+    </header>
+
+    <main class="container pb-5">
+        <%- include('partials/booking-messages') %>
+
+        <section class="panel" aria-labelledby="my-bookings">
+            <h2 id="my-bookings" class="h4 mb-3">My bookings (<%= myBookings.length %>)</h2>
+            <% if (myBookings.length) { %>
+                <ul class="list-unstyled mb-0">
+                    <% myBookings.forEach(booking => { %>
+                        <li class="booking-item">
+                            <strong><%= booking.facility_name %></strong> · <%= booking.option_name %> · <%= booking.sport_name %> <span class="text-muted small">Ref <code><%= booking.booking_ref %></code></span><br>
+                            <time data-local-booking-time datetime="<%= new Date(booking.starts_at).toISOString() %>"><%= new Date(booking.starts_at).toISOString() %></time>
+                            to <time data-local-booking-end datetime="<%= new Date(booking.ends_at).toISOString() %>"><%= new Date(booking.ends_at).toISOString() %></time>
+                            <span class="d-block small"><%= booking.payment_status === 'paid' ? 'Paid £' + ((booking.amount_pence - booking.credit_applied_pence) / 100).toFixed(2) + (booking.credit_applied_pence ? ' + £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit' : '') + ' · ref ' + booking.payment_reference : booking.payment_status === 'credit' ? 'Paid with credit £' + (booking.credit_applied_pence / 100).toFixed(2) + ' · ref ' + booking.payment_reference : 'No payment required' %></span>
+                            <span class="d-block text-muted small"><%= booking.address %>, <%= booking.postcode %> ·
+                                <a href="<%= booking.google_maps_url %>" target="_blank" rel="noopener noreferrer">Directions<span class="sr-only"> to <%= booking.facility_name %> (opens in a new tab)</span></a></span>
+                        </li>
+                    <% }) %>
+                </ul>
+                <p class="text-muted small mt-3 mb-0">To change or cancel a booking, please contact the facility.</p>
+            <% } else { %>
+                <p class="text-muted mb-0">You have no upcoming bookings.</p>
+            <% } %>
+        </section>
+
+        <section class="panel" aria-labelledby="make-booking">
+            <h2 id="make-booking" class="h4 mb-3">Make a booking</h2>
+            <% if (creditBalance > 0) { %>
+                <p class="font-weight-bold">You have £<%= (creditBalance / 100).toFixed(2) %> of booking credit. It is used automatically at checkout.</p>
+            <% } %>
+            <% if (facilities.length) { %>
+                <p class="text-muted">Bookings are for you only, you can book up to one month in advance, and each facility limits how many upcoming bookings you can hold. Pick several slots to book them together.</p>
+                <div class="form-group">
+                    <label for="facility-picker" class="font-weight-bold">Facility</label>
+                    <select id="facility-picker" class="form-control">
+                        <% facilities.forEach(facility => { %>
+                            <option value="<%= facility.guid %>"><%= facility.name %></option>
+                        <% }) %>
+                    </select>
+                </div>
+                <% facilities.forEach((facility, index) => { %>
+                    <div data-facility-panel="<%= facility.guid %>" <%= index ? 'hidden' : '' %>>
+                        <p class="text-muted small"><%= facility.address %>, <%= facility.postcode %></p>
+                        <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> of <%= facility.limit %> upcoming bookings at this facility<%= facility.used >= facility.limit ? '. You have reached the limit.' : '.' %></p>
+                        <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>">
+                            <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
+                                <div class="form-group mb-2 mr-3">
+                                    <label for="calendar-option-<%= facility.guid %>">Court or space</label>
+                                    <select class="form-control form-control-sm" id="calendar-option-<%= facility.guid %>" data-calendar-option>
+                                        <% facility.options.forEach(option => { %>
+                                            <option value="<%= option.guid %>"><%= option.name %> · <%= option.sport_name %></option>
+                                        <% }); %>
+                                    </select>
+                                </div>
+                                <div class="booking-calendar-day-nav mb-2">
+                                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-previous aria-label="Previous day">&lt;</button>
+                                    <strong class="booking-calendar-day-nav__date" data-calendar-date aria-live="polite" aria-atomic="true"></strong>
+                                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-next aria-label="Next day">&gt;</button>
+                                </div>
+                            </div>
+                            <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
+                            <div class="booking-calendar-slots mb-3" data-calendar-slots role="group" aria-label="Booking times"></div>
+                            <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
+                            <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
+                            <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
+                            <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
+                            <form method="POST" action="/bookings/checkout" data-booking-form data-native-submit>
+                                <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                <input type="hidden" name="slots" data-selected-slots>
+                                <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Continue to payment</button>
+                                <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
+                            </form>
+                        </div>
+                    </div>
+                <% }) %>
+            <% } else { %>
+                <p class="text-muted mb-0">No facilities are open for online booking yet.</p>
+            <% } %>
+        </section>
+    </main>
+
+    <%- include('partials/booking-flow-script') %>
+    <script>
+        (function () {
+            document.querySelectorAll('[data-local-booking-end]').forEach(function (time) {
+                var instant = new Date(time.dateTime);
+                if (Number.isFinite(instant.getTime())) time.textContent = formatCalendarDateTime(instant);
+            });
+            var picker = document.getElementById('facility-picker');
+            if (!picker) return;
+            picker.addEventListener('change', function () {
+                document.querySelectorAll('[data-facility-panel]').forEach(function (panel) {
+                    panel.hidden = panel.dataset.facilityPanel !== picker.value;
+                });
+            });
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit requests | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Credit requests</h1>
+                <p class="text-muted mb-0">Residents asking for credit on a past booking because of inclement weather</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+
+        <% if (decision) { %>
+            <div class="alert alert-success" role="status">Request for booking <strong><%= decisionRef %></strong> was <%= decision %>.<%= decision === 'approved' ? ' The amount paid has been added to the profile\'s credit.' : '' %></div>
+        <% } else if (error) { %>
+            <div class="alert alert-warning" role="alert">That request could not be processed. It may already have been decided, or the booking may already be credited.</div>
+        <% } %>
+
+        <% const money = pence => '£' + (pence / 100).toFixed(2); %>
+        <% const pending = requests.filter(request => request.status === 'pending'); %>
+        <% const decided = requests.filter(request => request.status !== 'pending'); %>
+
+        <section class="mb-4" aria-labelledby="pending-heading">
+            <h2 id="pending-heading" class="h5 mb-3">Waiting for a decision (<%= pending.length %>)</h2>
+            <% if (pending.length) { %>
+                <div class="table-responsive bg-white border rounded shadow-sm">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Paid</th><th>Note</th><th></th></tr></thead>
+                        <tbody>
+                            <% pending.forEach(request => { %>
+                                <tr>
+                                    <td><code><%= request.booking_ref %></code></td>
+                                    <td><%= request.profile_name || 'Unknown' %><br><span class="small text-muted"><%= request.profile_email %></span><br>
+                                        <span class="small text-muted"><time data-local-time datetime="<%= new Date(request.requested_at).toISOString() %>"><%= new Date(request.requested_at).toISOString() %></time></span></td>
+                                    <td><%= request.facility_name %><br><span class="small text-muted"><%= request.option_name %> · <%= request.sport_name %></span><br>
+                                        <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time></td>
+                                    <td><%= money(request.amount_paid_pence) %></td>
+                                    <td class="small"><%= request.note || '—' %></td>
+                                    <td>
+                                        <form method="POST" action="/admin/credit-requests/decide">
+                                            <input type="hidden" name="request_guid" value="<%= request.guid %>">
+                                            <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve and add credit</button>
+                                            <button class="btn btn-outline-secondary btn-sm mb-1" type="submit" name="decision" value="decline" data-confirm="Decline the request for booking <%= request.booking_ref %>?">Decline</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            <% } else { %>
+                <p class="text-muted">No requests are waiting.</p>
+            <% } %>
+        </section>
+
+        <% if (decided.length) { %>
+            <section aria-labelledby="decided-heading">
+                <h2 id="decided-heading" class="h5 mb-3">Decided</h2>
+                <div class="table-responsive bg-white border rounded shadow-sm">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Outcome</th></tr></thead>
+                        <tbody>
+                            <% decided.forEach(request => { %>
+                                <tr>
+                                    <td><code><%= request.booking_ref %></code></td>
+                                    <td><%= request.profile_name || 'Unknown' %></td>
+                                    <td><%= request.facility_name %> · <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time></td>
+                                    <td><span class="badge badge-<%= request.status === 'approved' ? 'success' : 'secondary' %>"><%= request.status === 'approved' ? 'Credited ' + money(request.amount_paid_pence) : 'Declined' %></span>
+                                        <span class="small text-muted"><%= request.decided_by_name ? 'by ' + request.decided_by_name : '' %></span></td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        <% } %>
+    </main>
+
+    <script>
+        var timeFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        document.querySelectorAll('[data-local-time]').forEach(function (time) {
+            var instant = new Date(time.dateTime);
+            if (Number.isFinite(instant.getTime())) time.textContent = timeFormat.format(instant);
+        });
+        document.querySelectorAll('form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                var button = event.submitter;
+                if (button && button.dataset.confirm && !window.confirm(button.dataset.confirm)) event.preventDefault();
+            });
+        });
+    </script>
+</body>
+
+</html>

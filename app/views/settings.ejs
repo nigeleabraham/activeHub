@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Settings</h1>
+                <p class="text-muted mb-0">Configure the public-facing site</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+
+        <% if (saved) { %><div class="alert alert-success" role="status">Settings saved.</div><% } %>
+        <% if (error) { %><div class="alert alert-danger" role="alert">The title is required and must be <%= maxLength %> characters or fewer.</div><% } %>
+
+        <section class="bg-white border rounded shadow-sm p-3" aria-labelledby="site-title-heading">
+            <h2 class="h5" id="site-title-heading">Site title</h2>
+            <form method="POST" action="/admin/settings">
+                <div class="form-group">
+                    <label for="site_title">Title shown at the top of the home page</label>
+                    <input class="form-control" id="site_title" name="site_title" type="text" maxlength="<%= maxLength %>" required value="<%= siteTitle %>" aria-describedby="site-title-help">
+                    <small class="form-text text-muted" id="site-title-help">Up to <%= maxLength %> characters.</small>
+                </div>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </form>
+        </section>
+
+        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="site-logo-heading">
+            <h2 class="h5" id="site-logo-heading">Logo</h2>
+            <% if (hasLogo) { %>
+                <div class="border rounded p-3 mb-3 bg-light d-inline-block"><img src="/site-logo?v=<%= Date.now() %>" alt="Current logo" style="height: 3rem; width: auto; max-width: 16rem;"></div>
+            <% } else { %>
+                <p class="text-muted">No logo set. Only the site title is shown.</p>
+            <% } %>
+            <div class="form-group">
+                <label for="site_logo">Upload a logo</label>
+                <input class="form-control-file" id="site_logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="site-logo-help">
+                <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears beside the title in the header.</small>
+            </div>
+            <p class="text-danger" id="logo-error" role="alert" hidden></p>
+            <button class="btn btn-primary" type="button" id="logo-upload">Upload logo</button>
+            <% if (hasLogo) { %>
+                <form class="d-inline ml-2" method="POST" action="/admin/settings/logo/remove">
+                    <button class="btn btn-outline-danger" type="submit">Remove logo</button>
+                </form>
+            <% } %>
+        </section>
+    </main>
+    <script>
+        document.getElementById('logo-upload').addEventListener('click', async () => {
+            const input = document.getElementById('site_logo');
+            const error = document.getElementById('logo-error');
+            const file = input.files[0];
+            error.hidden = true;
+            const fail = message => { error.textContent = message; error.hidden = false; };
+            if (!file) return fail('Choose an image first.');
+            if (file.size > <%= 512 * 1024 %>) return fail('That file is larger than 512 KB.');
+            const response = await fetch('/admin/settings/logo', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+            if (response.ok) return window.location.assign('/admin/settings?saved=1');
+            fail(response.status === 415 ? 'Use a PNG, JPEG, WebP or SVG image.' : 'The logo could not be saved.');
+        });
+    </script>
+</body>
+
+</html>

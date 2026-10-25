@@ -1,10 +1,12 @@
 const crypto = require('crypto');
 const Profiles = require('./../models/Profiles');
+const Roles = require('./../models/Roles');
 
 // Simulated login: a signed cookie identifies the selected profile. Replace this module
 // (cookie handling and loadProfile) with Auth0 later; routes only rely on req.profile and the permission helpers.
 const COOKIE_NAME = 'activehub_profile';
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VIEW_AS_COOKIE = 'activehub_view_as';
 const ADMINISTRATOR = 'Administrator';
 
 const secret = process.env.SESSION_SECRET ||
@@ -58,21 +60,60 @@ function clearSession(res) {
     res.append('Set-Cookie', `${COOKIE_NAME}=; ${cookieAttributes()}; Max-Age=0`);
 }
 
+// "View as" lets a real administrator experience the tool as another role. The cookie is signed against the
+// administrator's guid, and is ignored unless the signed-in profile is genuinely an administrator.
+function setViewAs(res, profileGuid, roleName) {
+    const encoded = Buffer.from(roleName).toString('base64url');
+    res.append('Set-Cookie', `${VIEW_AS_COOKIE}=${encoded}.${sign(`view-as:${profileGuid}:${roleName}`)}; ${cookieAttributes()}`);
+}
+
+function clearViewAs(res) {
+    res.append('Set-Cookie', `${VIEW_AS_COOKIE}=; ${cookieAttributes()}; Max-Age=0`);
+}
+
+function readViewAs(value, profileGuid) {
+    if (typeof value !== 'string') return null;
+    const separator = value.lastIndexOf('.');
+    if (separator < 1) return null;
+    const roleName = Buffer.from(value.slice(0, separator), 'base64url').toString();
+    const signature = Buffer.from(value.slice(separator + 1));
+    const expected = Buffer.from(sign(`view-as:${profileGuid}:${roleName}`));
+    if (!roleName || signature.length !== expected.length || !crypto.timingSafeEqual(signature, expected)) return null;
+    return roleName;
+}
+
 function isAdministrator(profile) {
     return Boolean(profile) && profile.role === ADMINISTRATOR;
 }
 
-// Administrators can do everything; Residents and Coaches can book and cancel their own bookings.
-function canCancelBooking(profile, booking) {
-    if (!profile || !booking) return false;
-    return isAdministrator(profile) || booking.profile_guid === profile.guid;
+// Administrators always hold every permission; other roles hold what the Roles page grants them.
+function can(profile, permission) {
+    if (!profile) return false;
+    return isAdministrator(profile) || (profile.permissions || []).includes(permission);
 }
 
 async function loadProfile(req, res, next) {
     try {
         const profileGuid = readSessionValue(parseCookies(req.headers.cookie)[COOKIE_NAME]);
-        req.profile = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
+        const cookies = parseCookies(req.headers.cookie);
+        req.realProfile = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
+        req.profile = req.realProfile;
+        res.locals.canSwitchRole = false;
+        res.locals.viewingAs = null;
+        if (req.profile) {
+            const isRealAdmin = req.profile.role === ADMINISTRATOR;
+            const viewAs = isRealAdmin ? readViewAs(cookies[VIEW_AS_COOKIE], req.profile.guid) : null;
+            const roleNames = isRealAdmin ? await Roles.names() : [];
+            if (viewAs && viewAs !== ADMINISTRATOR && roleNames.includes(viewAs)) {
+                req.profile = { ...req.profile, role: viewAs, actualRole: ADMINISTRATOR };
+                res.locals.viewingAs = viewAs;
+            }
+            req.profile.permissions = await Roles.permissionsFor(req.profile.role);
+            res.locals.canSwitchRole = isRealAdmin;
+            res.locals.switchableRoles = roleNames;
+        }
         res.locals.currentProfile = req.profile;
+        res.locals.can = permission => can(req.profile, permission);
         res.locals.isAdmin = isAdministrator(req.profile);
         next();
     } catch (error) {
@@ -86,10 +127,14 @@ function requireLogin(req, res, next) {
     return res.sendStatus(401);
 }
 
-function requireAdministrator(req, res, next) {
-    if (isAdministrator(req.profile)) return next();
+function deny(req, res) {
     if (!req.profile) return res.sendStatus(401);
     return res.status(403).render('forbidden', { activePage: '' });
+}
+
+function requireAdministrator(req, res, next) {
+    if (isAdministrator(req.profile)) return next();
+    return deny(req, res);
 }
 
 module.exports = {
@@ -100,8 +145,11 @@ module.exports = {
     parseCookies,
     setSession,
     clearSession,
+    setViewAs,
+    clearViewAs,
+    readViewAs,
     isAdministrator,
-    canCancelBooking,
+    can,
     loadProfile,
     requireLogin,
     requireAdministrator

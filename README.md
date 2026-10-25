@@ -9,20 +9,21 @@ docker compose up -d
 
 And open http://localhost:3000 in your browser.
 
-## Camden facility import
+## Seed data
 
-The app imports or updates Camden facilities each time its container starts. Imported entries are matched by source URL, so startup imports do not create duplicates. If the source site is unavailable, the app still starts and the importer error is logged.
+The database is populated from `app/seed/data.json`, a snapshot of the reference data: sports, opening hours, facilities, bookable courts and options, roles and their responsibilities, profiles, site settings and the site logo. Bookings and the audit log are not included.
 
-To preview source data without database writes:
+The app seeds the database when its container starts. Seeding runs once per database and is then recorded, so later restarts never overwrite edits made in the admin pages.
 
-```sh
-docker compose exec activeHub-app npm run import:camden -- --dry-run
-```
-
-Import or update the facilities with complete address and location data:
+To add any rows that are missing from an already-seeded database (existing rows are left alone):
 
 ```sh
-docker compose exec activeHub-app npm run import:camden
+docker compose exec activeHub-app npm run seed -- --force
 ```
 
-The importer skips incomplete records and is safe to rerun; it matches imported facilities by source URL.
+To refresh the snapshot from the current database, export it and copy it back to the repository:
+
+```sh
+docker compose exec activeHub-app npm run seed:export
+docker cp activeHubApp:/usr/src/app/seed/data.json app/seed/data.json
+```

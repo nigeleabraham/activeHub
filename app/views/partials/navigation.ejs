@@ -1,24 +1,54 @@
-<% const navigationItems = [
-    { key: 'facilities', label: 'Facilities', href: '/' },
-    { key: 'courses', label: 'Courses', href: '/courses' },
-    { key: 'sports', label: 'Sports', href: '/sports' },
-    { key: 'opening-hours', label: 'Opening hours', href: '/opening-hours' },
-    { key: 'bookings', label: 'Bookings', href: '/bookings' }
+<%
+const adminItems = [
+    { key: 'admin-home', label: 'Admin home', href: '/admin' },
+    { key: 'external-home', label: 'External home', href: '/' },
+    { key: 'facilities', label: 'Facilities', href: '/admin/facilities' },
+    { key: 'courses', label: 'Courses', href: '/admin/courses' },
+    { key: 'sports', label: 'Sports', href: '/admin/sports' },
+    { key: 'opening-hours', label: 'Opening hours', href: '/admin/opening-hours' },
+    { key: 'bookings', label: 'Bookings', href: '/admin/bookings' },
+    { key: 'credit-requests', label: 'Credit requests', href: '/admin/credit-requests' },
+    { key: 'refunds', label: 'Refunds', href: '/admin/refunds' },
+    { key: 'profiles', label: 'Profiles', href: '/admin/profiles' },
+    { key: 'roles', label: 'Roles', href: '/admin/roles' },
+    { key: 'settings', label: 'Settings', href: '/admin/settings' },
+    { key: 'audit', label: 'Audit', href: '/admin/audit' }
 ];
-if (isAdmin) {
-    navigationItems.push({ key: 'profiles', label: 'Profiles', href: '/profiles' });
-    navigationItems.push({ key: 'audit', label: 'Audit', href: '/audit' });
-} %>
-<div class="mt-3 mt-md-0 text-md-right">
+const adminArea = locals.area === 'admin';
+const navigationItems = currentProfile && isAdmin && adminArea ? adminItems : [];
+%>
+<div class="mt-3 mt-md-0 ml-auto text-right">
     <% if (currentProfile) { %>
-        <form class="d-flex flex-wrap align-items-center justify-content-md-end mb-2" method="POST" action="/logout">
-            <span class="small mr-2">Signed in as <strong><%= currentProfile.name %></strong> (<%= currentProfile.role %>)</span>
+        <form class="d-flex flex-wrap align-items-center justify-content-end mb-2" method="POST" action="/logout">
+            <span class="small mr-2">Signed in as <% if (adminArea) { %><strong><%= currentProfile.name %></strong><% } else { %><a href="/profile"><strong><%= currentProfile.name %></strong></a><% } %> (<%= currentProfile.actualRole || currentProfile.role %>)</span>
             <button class="btn btn-outline-secondary btn-sm" type="submit">Log out</button>
         </form>
     <% } %>
-    <nav aria-label="Main navigation">
-        <% navigationItems.forEach(item => { %>
-            <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
-        <% }); %>
-    </nav>
+    <% if (canSwitchRole && !adminArea) { %>
+        <form class="d-flex flex-wrap align-items-center justify-content-end mb-2" style="gap: 0.5rem;" method="POST" action="/view-as">
+            <label class="small mb-0" for="view-as-role">View as role</label>
+            <select class="form-control form-control-sm w-auto" id="view-as-role" name="role">
+                <% switchableRoles.forEach(roleName => { %>
+                    <option value="<%= roleName %>"<%= (viewingAs || 'Administrator') === roleName ? ' selected' : '' %>><%= roleName %></option>
+                <% }); %>
+            </select>
+            <button class="btn btn-outline-primary btn-sm" type="submit">Switch</button>
+        </form>
+        <% if (viewingAs) { %>
+            <div class="alert alert-warning small py-1 px-2 mb-2 text-left" role="status">
+                You are viewing ActiveHub as the <strong><%= viewingAs %></strong> role.
+                <form class="d-inline" method="POST" action="/view-as">
+                    <input type="hidden" name="role" value="">
+                    <button class="btn btn-link btn-sm p-0 align-baseline" type="submit">Return to Administrator</button>
+                </form>
+            </div>
+        <% } %>
+    <% } %>
+    <% if (navigationItems.length) { %>
+        <nav class="d-flex flex-wrap justify-content-end" style="gap: 0.5rem;" aria-label="Main navigation">
+            <% navigationItems.forEach(item => { %>
+                <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
+            <% }); %>
+        </nav>
+    <% } %>
 </div>

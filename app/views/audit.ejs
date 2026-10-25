@@ -16,13 +16,13 @@
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Audit</h1>
-                <p class="text-muted mb-0">What each profile has done, newest first</p>
+                <p class="text-muted mb-0">What each profile has done, newest first. Entries are kept for two months.</p>
             </div>
             <%- include('partials/navigation') %>
         </header>
 
         <% const totalPages = Math.max(1, Math.ceil(total / pageSize));
-           const pageLink = target => '/audit?' + new URLSearchParams({
+           const pageLink = target => '/admin/audit?' + new URLSearchParams({
                ...(filters.profile ? { profile: filters.profile } : {}),
                ...(filters.action ? { action: filters.action } : {}),
                page: target
@@ -31,7 +31,7 @@
         <section class="mb-3" aria-labelledby="audit-filter-heading">
             <div class="bg-white border rounded shadow-sm p-3">
                 <h2 id="audit-filter-heading" class="h5 mb-2">Filter</h2>
-                <form class="form-row align-items-end" method="GET" action="/audit">
+                <form class="form-row align-items-end" method="GET" action="/admin/audit">
                     <div class="form-group col-md">
                         <label for="audit-profile">Profile</label>
                         <select class="form-control" id="audit-profile" name="profile">
@@ -52,7 +52,7 @@
                     </div>
                     <div class="form-group col-md-auto">
                         <button class="btn btn-primary" type="submit">Apply</button>
-                        <a class="btn btn-outline-secondary ml-1" href="/audit">Clear</a>
+                        <a class="btn btn-outline-secondary ml-1" href="/admin/audit">Clear</a>
                     </div>
                 </form>
             </div>

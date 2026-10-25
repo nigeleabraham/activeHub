@@ -1,0 +1,59 @@
+<%# Resident-site cookie banner. Choice is stored in the activehub_cookies cookie ("accepted" or "rejected"). %>
+<style>
+    .cookie-banner { background: #f3f2f1; border-bottom: 10px solid transparent; padding: 1.25rem 0 0.5rem; color: #0b0c0c; }
+    .cookie-banner[hidden] { display: none; }
+    .cookie-banner h2 { font-size: 1.5rem; font-weight: 700; }
+    .cookie-banner .btn-cookie { background: #113255; color: #fff; border: 2px solid transparent; border-radius: 0; font-weight: 600; padding: 0.5rem 1rem; margin: 0 1rem 0.75rem 0; }
+    .cookie-banner .btn-cookie:hover { background: #0b2038; }
+    .cookie-banner .btn-cookie:focus { outline: 3px solid transparent; background: #ffde02; color: #0b0c0c; box-shadow: 0 2px 0 #0b0c0c; }
+    .cookie-banner a { color: #003e90; }
+    .cookie-banner a:focus { outline: 3px solid transparent; background: #ffde02; color: #0b0c0c; box-shadow: 0 -2px #ffde02, 0 4px #0b0c0c; text-decoration: none; }
+</style>
+
+<div id="cookie-banner" class="cookie-banner" role="region" aria-label="Cookies on <%= siteTitle %>" hidden>
+    <div class="container">
+        <div id="cookie-banner-choice">
+            <div class="row"><div class="col-lg-8">
+                <h2>Cookies on <%= siteTitle %></h2>
+                <p>We use essential cookies to keep you signed in and make this site work.</p>
+                <p>We'd also like to use analytics cookies to understand how the site is used and to improve it.</p>
+            </div></div>
+            <div class="d-flex flex-wrap align-items-center">
+                <button class="btn btn-cookie" type="button" data-cookie-choice="accepted">Accept analytics cookies</button>
+                <button class="btn btn-cookie" type="button" data-cookie-choice="rejected">Reject analytics cookies</button>
+                <a class="mb-3" href="/cookies">How we use cookies</a>
+            </div>
+        </div>
+        <div id="cookie-banner-confirmation" hidden>
+            <div class="row"><div class="col-lg-8">
+                <p role="alert"><span id="cookie-banner-confirmation-text"></span> You can <a href="/cookies">change your cookie settings</a> at any time.</p>
+            </div></div>
+            <button class="btn btn-cookie" type="button" id="cookie-banner-hide">Hide cookie message</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const NAME = 'activehub_cookies';
+        const banner = document.getElementById('cookie-banner');
+        const choice = document.getElementById('cookie-banner-choice');
+        const confirmation = document.getElementById('cookie-banner-confirmation');
+        const hasChoice = document.cookie.split('; ').some(part => /^activehub_cookies=(accepted|rejected)$/.test(part));
+        if (!hasChoice) banner.hidden = false;
+
+        document.querySelectorAll('[data-cookie-choice]').forEach(button => {
+            button.addEventListener('click', () => {
+                const value = button.dataset.cookieChoice;
+                const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+                document.cookie = `${NAME}=${value}; Max-Age=31536000; Path=/; SameSite=Lax${secure}`;
+                document.getElementById('cookie-banner-confirmation-text').textContent =
+                    value === 'accepted' ? "You've accepted analytics cookies." : "You've rejected analytics cookies.";
+                choice.hidden = true;
+                confirmation.hidden = false;
+                document.getElementById('cookie-banner-hide').focus();
+            });
+        });
+        document.getElementById('cookie-banner-hide').addEventListener('click', () => { banner.hidden = true; });
+    })();
+</script>

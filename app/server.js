@@ -9,6 +9,8 @@ const Sports = require('./models/Sports');
 const Bookings = require('./models/Bookings');
 const OpeningHours = require('./models/OpeningHours');
 const Profiles = require('./models/Profiles');
+const Roles = require('./models/Roles');
+const Settings = require('./models/Settings');
 const AuditLog = require('./models/AuditLog');
 
 // Live Reload configuration
@@ -40,11 +42,14 @@ Facilities.initialize()
     .then(() => OpeningHours.initialize())
     .then(() => Courses.initialize())
     .then(() => Sports.initialize())
+    .then(() => Settings.initialize())
+    .then(() => Roles.initialize())
     .then(() => Profiles.initialize())
     .then(() => AuditLog.initialize())
     .then(() => Bookings.initialize())
     .then(() => {
         console.log('PostgreSQL connected');
+        AuditLog.startPurgeSchedule();
         app.listen(PORT, () => {
             console.log(`Server listening on port ${PORT}`);
         });

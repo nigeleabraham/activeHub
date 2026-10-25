@@ -1,0 +1,608 @@
+<script>
+    const resourceFormScrollKey = 'activeHub-bookings-scroll-y';
+    const savedResourceFormScroll = sessionStorage.getItem(resourceFormScrollKey);
+    if (savedResourceFormScroll !== null) {
+        sessionStorage.removeItem(resourceFormScrollKey);
+        requestAnimationFrame(() => window.scrollTo(0, Number(savedResourceFormScroll)));
+    }
+
+    const bookingToast = document.querySelector('[data-booking-toast]');
+    if (bookingToast) {
+        const dismissToast = () => bookingToast.remove();
+        bookingToast.querySelector('[data-dismiss-toast]').addEventListener('click', dismissToast);
+        setTimeout(dismissToast, 10000);
+    }
+
+    document.querySelectorAll('[data-profile-search]').forEach(search => {
+        const form = search.closest('form');
+        const profileSelect = form.querySelector('[data-profile-select]');
+        search.addEventListener('input', () => {
+            const query = search.value.trim().toLowerCase();
+            for (const option of profileSelect.options) {
+                option.hidden = option.value !== '' &&
+                    option.value !== profileSelect.value &&
+                    !option.dataset.search.includes(query);
+            }
+        });
+    });
+
+    const calendarDatePartsFormatter = new Intl.DateTimeFormat(undefined, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    const calendarClockFormatter = new Intl.DateTimeFormat(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    });
+    const weekdayAbbreviations = {
+        Monday: 'Mon.',
+        Tuesday: 'Tue.',
+        Wednesday: 'Wed.',
+        Thursday: 'Thu.',
+        Friday: 'Fri.',
+        Saturday: 'Sat.',
+        Sunday: 'Sun.'
+    };
+    const monthAbbreviations = {
+        January: 'Jan.',
+        February: 'Feb.',
+        March: 'Mar.',
+        April: 'Apr.',
+        May: 'May',
+        June: 'Jun.',
+        July: 'Jul.',
+        August: 'Aug.',
+        September: 'Sept.',
+        October: 'Oct.',
+        November: 'Nov.',
+        December: 'Dec.'
+    };
+
+    function formatCalendarDate(date) {
+        const parts = Object.fromEntries(calendarDatePartsFormatter.formatToParts(date)
+            .filter(part => part.type !== 'literal')
+            .map(part => [part.type, part.value]));
+        return `${weekdayAbbreviations[parts.weekday] || parts.weekday} ${parts.day} ${monthAbbreviations[parts.month] || parts.month} ${parts.year}`;
+    }
+
+    function formatCalendarDateTime(date) {
+        return `${formatCalendarDate(date)}, ${calendarClockFormatter.format(date)}`;
+    }
+
+    document.querySelectorAll('[data-local-booking-time]').forEach(time => {
+        const instant = new Date(time.dateTime);
+        if (Number.isFinite(instant.getTime())) {
+            time.textContent = formatCalendarDateTime(instant);
+        }
+    });
+
+    function attachProfileSearch(search, choices, status, initialProfile, groupName, onSelect) {
+        let timer;
+        let activeRequest;
+        let requestId = 0;
+        let currentProfile = initialProfile;
+
+        function renderChoices(profiles, bestMatchGuid = null) {
+            choices.replaceChildren();
+            for (const profile of profiles) {
+                const label = document.createElement('label');
+                label.className = 'profile-choice';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = groupName;
+                radio.value = profile.guid;
+                radio.checked = currentProfile.guid === radio.value;
+                const text = document.createElement('span');
+                text.className = 'flex-grow-1';
+                text.textContent = profile.email
+                    ? `${profile.name} (${profile.role}) · ${profile.email}`
+                    : profile.role ? `${profile.name} (${profile.role})` : profile.name;
+                label.append(radio, text);
+                if (profile.guid === bestMatchGuid) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-success';
+                    badge.textContent = 'Best match';
+                    label.append(badge);
+                }
+                if (radio.checked) label.classList.add('is-selected');
+                radio.addEventListener('change', () => {
+                    currentProfile = { guid: profile.guid, name: profile.name, role: profile.role, email: profile.email };
+                    for (const choice of choices.querySelectorAll('.profile-choice')) {
+                        choice.classList.toggle('is-selected', choice.contains(radio));
+                    }
+                    status.textContent = `Selected profile: ${currentProfile.name}.`;
+                    onSelect(currentProfile);
+                });
+                choices.append(label);
+            }
+        }
+
+        renderChoices([currentProfile]);
+        status.textContent = `Currently selected: ${currentProfile.name}. Search to change the assignee.`;
+
+        search.addEventListener('input', () => {
+            clearTimeout(timer);
+            if (activeRequest) activeRequest.abort();
+            const query = search.value.trim();
+            const currentRequestId = ++requestId;
+            if (query.length < 2) {
+                renderChoices([currentProfile]);
+                status.textContent = `Currently selected: ${currentProfile.name}. Type at least 2 characters to find another profile.`;
+                return;
+            }
+
+            status.textContent = 'Searching profiles…';
+            choices.replaceChildren();
+            timer = setTimeout(async () => {
+                activeRequest = new AbortController();
+                try {
+                    const response = await fetch(`/admin/profiles/search?q=${encodeURIComponent(query)}`, {
+                        signal: activeRequest.signal
+                    });
+                    if (!response.ok) throw new Error('Profile search failed.');
+                    const data = await response.json();
+                    if (currentRequestId !== requestId) return;
+
+                    const profiles = data.profiles;
+                    if (profiles.length) {
+                        currentProfile = profiles[0];
+                        renderChoices(profiles, currentProfile.guid);
+                        onSelect(currentProfile);
+                        status.textContent = `${profiles.length} match${profiles.length === 1 ? '' : 'es'}. Best match selected: ${currentProfile.name}. Choose a different result if needed.`;
+                    } else {
+                        const empty = document.createElement('p');
+                        empty.className = 'small text-muted mb-0';
+                        empty.textContent = 'No matching profiles found.';
+                        choices.replaceChildren(empty);
+                        status.textContent = `No profiles match “${query}”. Current selection remains ${currentProfile.name}.`;
+                    }
+                } catch (error) {
+                    if (error.name === 'AbortError' || currentRequestId !== requestId) return;
+                    console.error('Unable to search profiles', error);
+                    status.textContent = 'Profile search failed. Please try again.';
+                }
+            }, 250);
+        });
+    }
+
+    const calendarTimeFormatter = new Intl.DateTimeFormat(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    });
+    const calendarScheduleFormatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    });
+
+    function startOfCalendarDay(date) {
+        const day = new Date(date);
+        day.setHours(0, 0, 0, 0);
+        return day;
+    }
+
+    function addCalendarDays(date, amount) {
+        const result = new Date(date);
+        result.setDate(result.getDate() + amount);
+        return result;
+    }
+
+    document.querySelectorAll('form[data-cancel-booking]').forEach(form => {
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            const buttons = form.querySelectorAll('button');
+            const button = { set disabled(value) { buttons.forEach(item => { item.disabled = value; }); } };
+            const submitter = event.submitter;
+            button.disabled = true;
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'fetch' },
+                    body: new URLSearchParams(new FormData(form, submitter))
+                });
+                if (!response.ok && response.status !== 404) throw new Error('Cancel failed');
+                const details = form.closest('details');
+                form.closest('tr').remove();
+                const remaining = details.querySelectorAll('[data-bookings-table] tbody tr').length;
+                details.querySelector('[data-booking-count]').textContent = String(remaining);
+                if (!remaining) {
+                    details.querySelector('[data-bookings-table]')?.remove();
+                    details.querySelector('[data-no-bookings]').hidden = false;
+                }
+                // Free the cancelled slot on the calendar without reloading.
+                details.querySelector('[data-booking-calendar]')?.dispatchEvent(new CustomEvent('refresh-availability'));
+            } catch (error) {
+                button.disabled = false;
+                alert('The booking could not be cancelled. Please try again.');
+            }
+        });
+    });
+
+    document.querySelectorAll('form[method="POST"]').forEach(form => {
+        form.addEventListener('submit', () => {
+            if (!form.matches('[data-booking-form], [data-cancel-booking]')) {
+                sessionStorage.setItem(resourceFormScrollKey, String(window.scrollY));
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-booking-calendar]').forEach(calendar => {
+        const facilityGuid = calendar.dataset.facilityGuid;
+        const optionSelect = calendar.querySelector('[data-calendar-option]');
+        const dateLabel = calendar.querySelector('[data-calendar-date]');
+        const previousDayButton = calendar.querySelector('[data-calendar-day-previous]');
+        const nextDayButton = calendar.querySelector('[data-calendar-day-next]');
+        const slotsList = calendar.querySelector('[data-calendar-slots]');
+        const selectionLabel = calendar.querySelector('[data-calendar-selection]');
+        const bookingForm = calendar.querySelector('[data-booking-form]');
+        const bookingError = bookingForm.querySelector('[data-booking-error]');
+        const submitButton = bookingForm.querySelector('[data-booking-submit]');
+        let selectedDate = startOfCalendarDay(new Date());
+        let visibleDayCount = 1;
+        let availabilityRequest = 0;
+        let options = [];
+        let bookings = [];
+        let schedules = null;
+        let pendingSlots = [];
+        const pendingList = calendar.querySelector('[data-pending-list]');
+        const pendingCount = calendar.querySelector('[data-pending-count]');
+        const slotsInput = bookingForm.querySelector('[data-selected-slots]');
+        const calendarError = calendar.querySelector('[data-calendar-error]');
+        const defaultProfileGuid = calendar.dataset.defaultProfileGuid;
+        const defaultProfileName = calendar.dataset.defaultProfileName;
+        const defaultProfileRole = calendar.dataset.defaultProfileRole;
+        const availabilityUrl = calendar.dataset.availabilityUrl || '/admin/bookings/availability/';
+        const maxSelectable = calendar.dataset.maxSelectable === undefined ? null : Number(calendar.dataset.maxSelectable);
+        const maxDate = calendar.dataset.maxDate ? new Date(calendar.dataset.maxDate) : null;
+
+        function overlaps(slot, start, end) {
+            return new Date(slot.starts_at) < end && new Date(slot.ends_at) > start;
+        }
+
+        function slotResources(optionGuid) {
+            const option = options.find(item => item.guid === optionGuid);
+            return new Set((option?.resources || []).map(resource => resource.guid));
+        }
+
+        let bookingProfile = {
+            guid: defaultProfileGuid,
+            name: defaultProfileName,
+            role: defaultProfileRole,
+            email: calendar.dataset.defaultProfileEmail
+        };
+
+        function serializeSlots() {
+            return JSON.stringify(pendingSlots.map(({ option_guid, starts_at, ends_at }) => ({
+                option_guid, starts_at, ends_at, profile_guid: bookingProfile.guid
+            })));
+        }
+
+        // One profile applies to every slot in the selection (administrators only).
+        if (defaultProfileGuid) {
+            const assignment = document.createElement('fieldset');
+            assignment.className = 'border rounded p-3 mb-3';
+            const legend = document.createElement('legend');
+            legend.className = 'h6 w-auto px-2 mb-1';
+            legend.textContent = 'Who are these bookings for?';
+            const search = document.createElement('input');
+            search.type = 'search';
+            search.className = 'form-control form-control-sm';
+            search.placeholder = 'Search by profile name or email';
+            search.autocomplete = 'off';
+            search.setAttribute('aria-label', 'Search profiles for all selected bookings');
+            const hint = document.createElement('span');
+            hint.id = `profile-search-hint-${facilityGuid}`;
+            hint.className = 'small text-muted';
+            hint.textContent = 'Applies to every slot in your selection. The best match is selected automatically; choose another result if needed.';
+            search.setAttribute('aria-describedby', hint.id);
+            const choices = document.createElement('div');
+            choices.className = 'profile-choice-list';
+            choices.setAttribute('role', 'radiogroup');
+            choices.setAttribute('aria-label', 'Profile choices for all selected bookings');
+            const status = document.createElement('span');
+            status.className = 'small text-muted';
+            status.setAttribute('aria-live', 'polite');
+            assignment.append(legend, search, hint, choices, status);
+            pendingList.after(assignment);
+            attachProfileSearch(search, choices, status, bookingProfile, `profile-${facilityGuid}`, profile => {
+                bookingProfile = profile;
+                slotsInput.value = serializeSlots();
+            });
+        }
+
+        function renderPending() {
+            pendingSlots.sort((first, second) => first.starts_at.localeCompare(second.starts_at));
+            pendingList.replaceChildren();
+            for (const [index, slot] of pendingSlots.entries()) {
+                const item = document.createElement('li');
+                item.className = 'list-group-item px-0 py-2';
+                const label = document.createElement('span');
+                label.textContent = `${slot.option_name} · ${formatCalendarDateTime(new Date(slot.starts_at))}`;
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'btn btn-outline-danger btn-sm';
+                remove.textContent = 'Remove';
+                remove.setAttribute('aria-label', `Remove ${label.textContent}`);
+                remove.addEventListener('click', () => {
+                    pendingSlots = pendingSlots.filter(candidate => candidate !== slot);
+                    renderPending();
+                    buildCalendar();
+                });
+                const row = document.createElement('div');
+                row.className = 'd-flex justify-content-between align-items-center mb-2';
+                row.append(label, remove);
+                item.append(row);
+                pendingList.append(item);
+            }
+            if (!pendingSlots.length) {
+                const empty = document.createElement('li');
+                empty.className = 'list-group-item px-0 py-2 text-muted small';
+                empty.textContent = 'No slots selected.';
+                pendingList.append(empty);
+            }
+            pendingCount.textContent = String(pendingSlots.length);
+            slotsInput.value = serializeSlots();
+            submitButton.disabled = !pendingSlots.length;
+            selectionLabel.textContent = pendingSlots.length
+                ? `${pendingSlots.length} slot${pendingSlots.length === 1 ? '' : 's'} selected.`
+                : 'Select available time slots to add them to your list.';
+        }
+
+        function isWithinOpeningHours(start, end) {
+            if (schedules === null) return true;
+            const getParts = date => Object.fromEntries(calendarScheduleFormatter.formatToParts(date)
+                .filter(part => part.type !== 'literal')
+                .map(part => [part.type, part.value]));
+            const startParts = getParts(start);
+            const endParts = getParts(end);
+            const startDate = `${startParts.year}-${startParts.month}-${startParts.day}`;
+            const endDate = `${endParts.year}-${endParts.month}-${endParts.day}`;
+            if (startDate !== endDate) return false;
+
+            const schedule = schedules.find(item => item.date === startDate);
+            if (!schedule || schedule.is_closed) return false;
+            const startMinutes = Number(startParts.hour) * 60 + Number(startParts.minute);
+            const endMinutes = Number(endParts.hour) * 60 + Number(endParts.minute);
+            const openingMinutes = Number(schedule.opens_at.slice(0, 2)) * 60 + Number(schedule.opens_at.slice(3, 5));
+            const closingMinutes = Number(schedule.closes_at.slice(0, 2)) * 60 + Number(schedule.closes_at.slice(3, 5));
+            return startMinutes >= openingMinutes && endMinutes <= closingMinutes;
+        }
+
+        function createSlotButton(slotStart, slotEnd, claimedResources, selectedOption) {
+            const conflicts = bookings.filter(booking =>
+                booking.resource_guids.some(resourceGuid => claimedResources.has(resourceGuid)) &&
+                new Date(booking.starts_at) < slotEnd && new Date(booking.ends_at) > slotStart
+            );
+            const existingPending = pendingSlots.find(slot =>
+                slot.option_guid === selectedOption.guid && slot.starts_at === slotStart.toISOString());
+            const pendingConflict = !existingPending && pendingSlots.some(slot =>
+                overlaps(slot, slotStart, slotEnd) &&
+                [...slotResources(slot.option_guid)].some(resourceGuid => claimedResources.has(resourceGuid)));
+            const isPast = slotEnd <= new Date();
+            const isTooFar = maxDate !== null && slotStart > maxDate;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-block booking-calendar-slot mb-2';
+
+            let status;
+            if (conflicts.length) {
+                button.classList.add('btn-secondary');
+                status = 'Booked';
+                button.title = conflicts.map(booking => booking.option_name).join(', ');
+                button.disabled = true;
+            } else if (isTooFar) {
+                button.classList.add('btn-light', 'text-muted');
+                status = 'Later';
+                button.title = 'Bookings open up to one month in advance';
+                button.disabled = true;
+            } else if (isPast) {
+                button.classList.add('btn-light', 'text-muted');
+                status = 'Past';
+                button.disabled = true;
+            } else if (pendingConflict) {
+                button.classList.add('btn-light', 'text-muted');
+                status = 'Held';
+                button.title = 'Conflicts with a slot in your selected list';
+                button.disabled = true;
+            } else {
+                button.classList.add('btn-outline-success');
+                status = 'Avail.';
+                const isSelected = Boolean(existingPending);
+                button.setAttribute('aria-pressed', String(isSelected));
+                if (isSelected) {
+                    button.classList.remove('btn-outline-success');
+                    button.classList.add('btn-success', 'active');
+                    status = 'Selected';
+                }
+                button.addEventListener('click', () => {
+                    if (existingPending) {
+                        pendingSlots = pendingSlots.filter(slot => slot !== existingPending);
+                    } else {
+                        if (maxSelectable !== null && pendingSlots.length >= maxSelectable) {
+                            calendarError.textContent = maxSelectable === 0
+                                ? 'You have reached the booking limit for this facility.'
+                                : `You can only book ${maxSelectable} more slot${maxSelectable === 1 ? '' : 's'} at this facility.`;
+                            calendarError.hidden = false;
+                            return;
+                        }
+                        calendarError.hidden = true;
+                        pendingSlots.push({
+                            option_guid: selectedOption.guid,
+                            option_name: selectedOption.name,
+                            starts_at: slotStart.toISOString(),
+                            ends_at: slotEnd.toISOString()
+                        });
+                    }
+                    renderPending();
+                    buildCalendar();
+                });
+            }
+
+            button.textContent = `${calendarTimeFormatter.format(slotStart)} · ${status}`;
+            const accessibleStatus = status === 'Avail.' ? 'Available' : status;
+            button.setAttribute('aria-label', `${accessibleStatus}, ${formatCalendarDateTime(slotStart)}`);
+            return button;
+        }
+
+        function buildCalendar() {
+            const visibleDays = Array.from({ length: visibleDayCount }, (_, index) => addCalendarDays(selectedDate, index));
+            const lastVisibleDay = visibleDays[visibleDays.length - 1];
+            dateLabel.textContent = visibleDayCount === 1
+                ? formatCalendarDate(selectedDate)
+                : `${formatCalendarDate(selectedDate)} – ${formatCalendarDate(lastVisibleDay)}`;
+            previousDayButton.disabled = selectedDate <= startOfCalendarDay(new Date());
+            nextDayButton.disabled = maxDate !== null && addCalendarDays(selectedDate, visibleDayCount) > maxDate;
+            const navigationUnit = visibleDayCount === 1 ? 'day' : 'days';
+            previousDayButton.setAttribute('aria-label', `Previous ${visibleDayCount} ${navigationUnit}`);
+            nextDayButton.setAttribute('aria-label', `Next ${visibleDayCount} ${navigationUnit}`);
+            slotsList.replaceChildren();
+            slotsList.style.gridTemplateColumns = `repeat(${visibleDayCount}, minmax(0, 1fr))`;
+            const selectedOption = options.find(option => option.guid === optionSelect.value);
+            const claimedResources = new Set((selectedOption?.resources || []).map(resource => resource.guid));
+
+            for (const day of visibleDays) {
+                const dayPanel = document.createElement('section');
+                dayPanel.className = 'booking-calendar-day';
+                dayPanel.setAttribute('aria-label', formatCalendarDate(day));
+                const heading = document.createElement('h3');
+                heading.className = 'h6 mb-3';
+                heading.textContent = formatCalendarDate(day);
+                dayPanel.append(heading);
+
+                let slotCount = 0;
+                for (let hour = 0; hour < 24; hour++) {
+                    const slotStart = new Date(day);
+                    slotStart.setHours(hour, 0, 0, 0);
+                    const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
+                    if (slotStart.getHours() !== hour || !isWithinOpeningHours(slotStart, slotEnd)) continue;
+                    dayPanel.append(createSlotButton(slotStart, slotEnd, claimedResources, selectedOption));
+                    slotCount += 1;
+                }
+                if (!slotCount && schedules !== null) {
+                    const emptyState = document.createElement('p');
+                    emptyState.className = 'text-center text-muted';
+                    emptyState.textContent = 'No open booking hours for this day.';
+                    dayPanel.append(emptyState);
+                }
+                slotsList.append(dayPanel);
+            }
+        }
+
+        function updateVisibleDayCount() {
+            const nextCount = Math.max(1, Math.min(7, Math.floor(slotsList.clientWidth / 200)));
+            if (nextCount === visibleDayCount) return;
+            visibleDayCount = nextCount;
+            loadAvailability();
+        }
+
+        async function loadAvailability() {
+            const requestId = ++availabilityRequest;
+            calendarError.hidden = true;
+            const dayEnd = addCalendarDays(selectedDate, visibleDayCount);
+            const query = new URLSearchParams({ start: selectedDate.toISOString(), end: dayEnd.toISOString() });
+            try {
+                const response = await fetch(`${availabilityUrl}${encodeURIComponent(facilityGuid)}?${query}`);
+                if (!response.ok) throw new Error('Availability could not be loaded.');
+                const data = await response.json();
+                if (requestId !== availabilityRequest) return;
+                const currentOption = optionSelect.value;
+                options = data.options;
+                bookings = data.bookings;
+                schedules = data.schedules ?? null;
+                optionSelect.replaceChildren();
+                for (const option of options) {
+                    const item = document.createElement('option');
+                    item.value = option.guid;
+                    item.textContent = `${option.name} · ${option.sport_name}`;
+                    optionSelect.append(item);
+                }
+                if (options.some(option => option.guid === currentOption)) {
+                    optionSelect.value = currentOption;
+                } else {
+                    pendingSlots = pendingSlots.filter(slot => options.some(option => option.guid === slot.option_guid));
+                    renderPending();
+                }
+                buildCalendar();
+            } catch (error) {
+                if (requestId !== availabilityRequest) return;
+                console.error('Unable to load booking calendar availability', error);
+                calendarError.textContent = 'Availability could not be loaded. Please try again.';
+                calendarError.hidden = false;
+            }
+        }
+
+        calendar.addEventListener('refresh-availability', loadAvailability);
+        optionSelect.addEventListener('change', () => {
+            buildCalendar();
+        });
+        previousDayButton.addEventListener('click', () => {
+            const today = startOfCalendarDay(new Date());
+            if (selectedDate <= today) return;
+            const previousStart = addCalendarDays(selectedDate, -visibleDayCount);
+            selectedDate = previousStart < today ? today : previousStart;
+            loadAvailability();
+        });
+        nextDayButton.addEventListener('click', () => {
+            if (maxDate !== null && addCalendarDays(selectedDate, visibleDayCount) > maxDate) return;
+            selectedDate = addCalendarDays(selectedDate, visibleDayCount);
+            loadAvailability();
+        });
+        const calendarResizeObserver = new ResizeObserver(updateVisibleDayCount);
+        calendarResizeObserver.observe(calendar);
+        calendar.closest('details')?.addEventListener('toggle', () => requestAnimationFrame(updateVisibleDayCount));
+
+        bookingForm.addEventListener('submit', async event => {
+            // Resident bookings go to the payment step as an ordinary form post.
+            if (bookingForm.hasAttribute('data-native-submit')) {
+                if (!pendingSlots.length) event.preventDefault();
+                return;
+            }
+            event.preventDefault();
+            if (!pendingSlots.length) return;
+            bookingError.hidden = true;
+            bookingError.textContent = '';
+            submitButton.disabled = true;
+            try {
+                const response = await fetch(bookingForm.action, {
+                    method: 'POST',
+                    body: new URLSearchParams(new FormData(bookingForm))
+                });
+                if (response.status === 409) {
+                    await loadAvailability();
+                    pendingSlots = pendingSlots.filter(slot => {
+                        const resources = slotResources(slot.option_guid);
+                        return !bookings.some(booking =>
+                            booking.resource_guids.some(resourceGuid => resources.has(resourceGuid)) &&
+                            overlaps(booking, new Date(slot.starts_at), new Date(slot.ends_at)));
+                    });
+                    renderPending();
+                    buildCalendar();
+                    bookingError.textContent = "A selected slot was just taken, so nothing was booked. Taken slots were removed; review your list and try again.";
+                    bookingError.hidden = false;
+                    return;
+                }
+                if (response.redirected) {
+                    sessionStorage.setItem(resourceFormScrollKey, String(window.scrollY));
+                    window.location.assign(response.url);
+                    return;
+                }
+                throw new Error('Booking request failed');
+            } catch (error) {
+                bookingError.textContent = 'Booking could not be saved. Please try again.';
+                bookingError.hidden = false;
+                submitButton.disabled = false;
+            }
+        });
+
+        renderPending();
+        loadAvailability();
+    });
+</script>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facilities | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head h1 { font-size: 2.25rem; font-weight: 700; }
+        .page-head a { color: #fff; }
+        .filter-panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-top: -1.5rem; }
+        .form-control:focus, .btn:focus, summary:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
+        .btn-brand { background: #113255; color: #fff; border-radius: 0; }
+        .btn-brand:hover { background: #0b0c0c; color: #fff; }
+        .btn-outline-brand { border: 2px solid #113255; color: #113255; border-radius: 0; background: #fff; }
+        .btn-outline-brand:hover { background: #113255; color: #fff; }
+        .facility-card { background: #fff; border: 1px solid #b1b4b6; border-left: 0.4rem solid #113255; padding: 1.5rem; height: 100%; }
+        .facility-card h2 { font-size: 1.35rem; font-weight: 700; }
+        .sport-chip { display: inline-block; background: #e7eef7; color: #113255; padding: 0.15rem 0.6rem; margin: 0 0.25rem 0.25rem 0; font-size: 0.875rem; }
+        .sport-chip.matched { background: #ffde02; color: #0b0c0c; font-weight: 600; }
+        .distance { font-weight: 700; color: #113255; }
+        .text-muted { color: #505a5f !important; }
+        .week-table td { padding: 0.15rem 1rem 0.15rem 0; }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+
+    <header class="page-head">
+        <div class="container">
+            <p class="mb-2"><a href="/">&larr; Back to home</a></p>
+            <h1 class="mb-2">Facilities</h1>
+            <p class="lead mb-0">Find a sport, fitness or wellbeing venue near you.</p>
+        </div>
+    </header>
+
+    <main class="container pb-5">
+        <form class="filter-panel" id="filters" role="search" aria-label="Find a facility" onsubmit="return false">
+            <div class="form-row">
+                <div class="form-group col-md-5">
+                    <label for="search" class="font-weight-bold">Search by name, area or postcode</label>
+                    <input id="search" class="form-control" type="search" autocomplete="off" placeholder="e.g. Kentish Town or NW5">
+                </div>
+                <div class="form-group col-md-4">
+                    <label for="sport" class="font-weight-bold">Sport or activity</label>
+                    <select id="sport" class="form-control">
+                        <option value="">Any sport</option>
+                        <% sports.forEach(sport => { %>
+                            <option value="<%= sport.guid %>"><%= sport.name %></option>
+                        <% }) %>
+                    </select>
+                </div>
+                <div class="form-group col-md-3">
+                    <label class="font-weight-bold d-block" for="open-today">Opening</label>
+                    <div class="custom-control custom-checkbox mt-2">
+                        <input type="checkbox" class="custom-control-input" id="open-today">
+                        <label class="custom-control-label" for="open-today">Open today</label>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center">
+                <button type="button" id="near-me" class="btn btn-outline-brand mr-2 mb-2">📍 Sort by nearest to me</button>
+                <button type="button" id="clear" class="btn btn-link mb-2">Clear filters</button>
+                <span id="location-status" class="text-muted ml-md-3 mb-2" role="status"></span>
+            </div>
+            <p class="text-muted small mb-0">Your location is used only in your browser to work out distances. It is not sent to us or stored.</p>
+        </form>
+
+        <p id="result-count" class="mt-4 mb-3 font-weight-bold" role="status" aria-live="polite"></p>
+
+        <div class="row" id="results">
+            <% facilities.forEach(facility => { %>
+                <div class="col-lg-6 mb-4 facility"
+                    data-name="<%= facility.name.toLowerCase() %>"
+                    data-text="<%= [facility.name, facility.address, facility.postcode].join(' ').toLowerCase() %>"
+                    data-sports="<%= facility.sports.map(sport => sport.guid).join(' ') %>"
+                    data-open="<%= facility.today && !facility.today.is_closed ? '1' : '' %>"
+                    data-lat="<%= facility.latitude %>" data-lng="<%= facility.longitude %>">
+                    <article class="facility-card">
+                        <h2><%= facility.name %></h2>
+                        <p class="mb-2"><%= facility.address %>, <%= facility.postcode %>
+                            <span class="distance d-block" data-distance></span></p>
+                        <% if (facility.sports.length) { %>
+                            <p class="mb-2" aria-label="Sports offered">
+                                <% facility.sports.forEach(sport => { %><span class="sport-chip" data-sport="<%= sport.guid %>"><%= sport.name %></span><% }) %>
+                            </p>
+                        <% } %>
+                        <% if (facility.week) { %>
+                            <p class="mb-1 text-muted">
+                                <% if (facility.today && !facility.today.is_closed) { %>
+                                    Open today: <%= facility.today.opens_at %>–<%= facility.today.closes_at %>
+                                <% } else { %>
+                                    Closed today
+                                <% } %>
+                            </p>
+                            <details class="mb-2">
+                                <summary>Opening hours this week</summary>
+                                <table class="week-table mt-2"><tbody>
+                                    <% facility.week.forEach(day => { %>
+                                        <tr>
+                                            <td><%= new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) %></td>
+                                            <td><%= day.is_closed ? 'Closed' : day.opens_at + '–' + day.closes_at %></td>
+                                        </tr>
+                                    <% }) %>
+                                </tbody></table>
+                            </details>
+                        <% } %>
+                        <% if (facility.description) { %>
+                            <details class="mb-2">
+                                <summary>About this facility</summary>
+                                <p class="mt-2 mb-0" style="white-space: pre-line"><%= facility.description %></p>
+                            </details>
+                        <% } %>
+                        <% if (facility.courses.length) { %>
+                            <details class="mb-2">
+                                <summary>Courses (<%= facility.courses.length %>)</summary>
+                                <ul class="mt-2 mb-0"><% facility.courses.forEach(course => { %><li><%= course.name %></li><% }) %></ul>
+                            </details>
+                        <% } %>
+                        <div class="mt-3">
+                            <a class="btn btn-outline-brand btn-sm mr-2" href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">Directions<span class="sr-only"> to <%= facility.name %> (opens in a new tab)</span></a>
+                            <% if (facility.external_booking_url) { %>
+                                <a class="btn btn-brand btn-sm" href="<%= facility.external_booking_url %>" target="_blank" rel="noopener noreferrer">Book online<span class="sr-only"> at <%= facility.name %> (opens in a new tab)</span></a>
+                            <% } %>
+                        </div>
+                    </article>
+                </div>
+            <% }) %>
+        </div>
+        <p id="no-results" class="lead text-center my-5" hidden>No facilities match your search. Try clearing the filters.</p>
+    </main>
+
+    <script>
+        (function () {
+            var search = document.getElementById('search');
+            var sport = document.getElementById('sport');
+            var openToday = document.getElementById('open-today');
+            var status = document.getElementById('location-status');
+            var results = document.getElementById('results');
+            var cards = Array.prototype.slice.call(results.querySelectorAll('.facility'));
+            var origin = null;
+
+            function distanceMiles(lat1, lng1, lat2, lng2) {
+                var rad = Math.PI / 180;
+                var a = Math.pow(Math.sin((lat2 - lat1) * rad / 2), 2) +
+                    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.pow(Math.sin((lng2 - lng1) * rad / 2), 2);
+                return 3958.8 * 2 * Math.asin(Math.sqrt(a));
+            }
+
+            function apply() {
+                var terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+                var sportGuid = sport.value;
+                var shown = 0;
+                cards.forEach(function (card) {
+                    var sports = card.dataset.sports.split(' ');
+                    var visible = terms.every(function (term) { return card.dataset.text.indexOf(term) !== -1; }) &&
+                        (!sportGuid || sports.indexOf(sportGuid) !== -1) &&
+                        (!openToday.checked || card.dataset.open === '1');
+                    card.hidden = !visible;
+                    if (visible) shown++;
+                    card.querySelectorAll('.sport-chip').forEach(function (chip) {
+                        chip.classList.toggle('matched', Boolean(sportGuid) && chip.dataset.sport === sportGuid);
+                    });
+                });
+                document.getElementById('no-results').hidden = shown !== 0;
+                document.getElementById('result-count').textContent =
+                    shown + (shown === 1 ? ' facility' : ' facilities') + (origin ? ', nearest first' : '');
+            }
+
+            function sortCards() {
+                cards.forEach(function (card, index) {
+                    card.dataset.order = index;
+                    var label = card.querySelector('[data-distance]');
+                    if (origin) {
+                        var miles = distanceMiles(origin.lat, origin.lng, Number(card.dataset.lat), Number(card.dataset.lng));
+                        card.dataset.miles = miles;
+                        label.textContent = miles.toFixed(1) + ' miles away';
+                    } else {
+                        label.textContent = '';
+                    }
+                });
+                cards.sort(function (a, b) {
+                    return origin ? a.dataset.miles - b.dataset.miles : a.dataset.order - b.dataset.order;
+                }).forEach(function (card) { results.appendChild(card); });
+            }
+
+            var alphabetical = cards.slice().sort(function (a, b) { return a.dataset.name.localeCompare(b.dataset.name); });
+            cards = alphabetical;
+
+            document.getElementById('near-me').addEventListener('click', function () {
+                if (!navigator.geolocation) {
+                    status.textContent = 'Your browser cannot share your location.';
+                    return;
+                }
+                status.textContent = 'Finding your location…';
+                navigator.geolocation.getCurrentPosition(function (position) {
+                    origin = { lat: position.coords.latitude, lng: position.coords.longitude };
+                    status.textContent = 'Showing the nearest facilities first.';
+                    sortCards();
+                    apply();
+                }, function () {
+                    status.textContent = 'We could not get your location. Check your browser permissions and try again.';
+                }, { timeout: 10000, maximumAge: 300000 });
+            });
+
+            document.getElementById('clear').addEventListener('click', function () {
+                search.value = '';
+                sport.value = '';
+                openToday.checked = false;
+                origin = null;
+                status.textContent = '';
+                sortCards();
+                apply();
+            });
+
+            [search, sport, openToday].forEach(function (control) {
+                control.addEventListener('input', apply);
+                control.addEventListener('change', apply);
+            });
+
+            sortCards();
+            apply();
+        })();
+    </script>
+</body>
+
+</html>

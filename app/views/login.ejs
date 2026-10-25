@@ -21,23 +21,34 @@
         <section aria-labelledby="profiles-heading">
             <h2 id="profiles-heading" class="h5 mb-3">Choose a profile</h2>
             <% if (profiles.length) { %>
-                <div class="bg-white border rounded shadow-sm p-4">
-                    <ul class="list-group list-group-flush">
-                        <% profiles.forEach(profile => { %>
-                            <li class="list-group-item px-0">
-                                <form class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;" method="POST" action="/login">
-                                    <input type="hidden" name="profile_guid" value="<%= profile.guid %>">
-                                    <div class="mr-3">
-                                        <span class="text-break"><%= profile.name %></span>
-                                        <span class="badge badge-secondary ml-1"><%= profile.role %></span>
-                                        <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" type="submit" aria-label="Sign in as <%= profile.name %>">Sign in</button>
-                                </form>
-                            </li>
-                        <% }); %>
-                    </ul>
-                </div>
+                <% const roleOrder = ['Administrator', 'Coach', 'Resident'];
+                   const roleNames = [...new Set(profiles.map(profile => profile.role))]
+                       .sort((a, b) => (roleOrder.indexOf(a) + 1 || 99) - (roleOrder.indexOf(b) + 1 || 99) || a.localeCompare(b));
+                   const profileGroups = roleNames.map(role => ({
+                       role,
+                       label: role === 'Coach' ? 'Coaches' : `${role}s`,
+                       profiles: profiles.filter(profile => profile.role === role)
+                   })); %>
+                <% profileGroups.forEach((group, index) => { %>
+                    <section class="bg-white border rounded shadow-sm p-4 mb-3" aria-labelledby="profiles-group-<%= index %>">
+                        <h3 class="h6 mb-2" id="profiles-group-<%= index %>"><%= group.label %></h3>
+                        <ul class="list-group list-group-flush">
+                            <% group.profiles.forEach(profile => { %>
+                                <li class="list-group-item px-0">
+                                    <form class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;" method="POST" action="/login">
+                                        <input type="hidden" name="profile_guid" value="<%= profile.guid %>">
+                                        <div class="mr-3">
+                                            <span class="text-break"><%= profile.name %></span>
+                                            <span class="badge badge-secondary ml-1"><%= profile.role %></span>
+                                            <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
+                                        </div>
+                                        <button class="btn btn-primary btn-sm" type="submit" aria-label="Sign in as <%= profile.name %>">Sign in</button>
+                                    </form>
+                                </li>
+                            <% }); %>
+                        </ul>
+                    </section>
+                <% }); %>
             <% } else { %>
                 <p class="text-muted">No profiles exist.</p>
             <% } %>

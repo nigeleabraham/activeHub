@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookies | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-mark { font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif; font-weight: 600; font-size: 1.75rem; line-height: 1; color: #0b0c0c; letter-spacing: -0.045em; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .panel { background: #fff; border: 1px solid #b1b4b6; padding: 1.5rem; }
+    </style>
+</head>
+
+<body>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a class="d-flex align-items-center" href="/">
+                <% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><span class="brand-mark"><%= siteTitle %></span><% } %>
+            </a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+
+    <main class="container py-5">
+        <h1 class="mb-4">Cookies on <%= siteTitle %></h1>
+        <div class="panel mb-4">
+            <h2 class="h4">Essential cookies</h2>
+            <p class="mb-0">These keep you signed in and remember your cookie choice. They are always on.</p>
+        </div>
+        <form class="panel" id="cookie-settings" aria-labelledby="analytics-heading">
+            <h2 class="h4" id="analytics-heading">Analytics cookies</h2>
+            <p>These help us understand how the site is used so we can improve it.</p>
+            <fieldset class="mb-3">
+                <legend class="sr-only">Do you want to allow analytics cookies?</legend>
+                <div class="custom-control custom-radio">
+                    <input class="custom-control-input" type="radio" id="analytics-yes" name="analytics" value="accepted">
+                    <label class="custom-control-label" for="analytics-yes">Use analytics cookies</label>
+                </div>
+                <div class="custom-control custom-radio">
+                    <input class="custom-control-input" type="radio" id="analytics-no" name="analytics" value="rejected">
+                    <label class="custom-control-label" for="analytics-no">Do not use analytics cookies</label>
+                </div>
+            </fieldset>
+            <button class="btn btn-primary" type="submit">Save cookie settings</button>
+            <p class="mt-3 mb-0" id="cookie-saved" role="status" hidden>Your cookie settings were saved.</p>
+        </form>
+    </main>
+
+    <script>
+        (function () {
+            const match = document.cookie.match(/(?:^|; )activehub_cookies=(accepted|rejected)/);
+            const current = match ? match[1] : 'rejected';
+            document.getElementById(current === 'accepted' ? 'analytics-yes' : 'analytics-no').checked = true;
+            document.getElementById('cookie-settings').addEventListener('submit', event => {
+                event.preventDefault();
+                const value = document.querySelector('input[name="analytics"]:checked').value;
+                const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+                document.cookie = `activehub_cookies=${value}; Max-Age=31536000; Path=/; SameSite=Lax${secure}`;
+                document.getElementById('cookie-saved').hidden = false;
+            });
+        })();
+    </script>
+</body>
+
+</html>

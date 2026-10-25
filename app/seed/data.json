@@ -1,0 +1,1069 @@
+{
+  "sports": [
+    {
+      "guid": "da7d5178-b1da-41a9-9cf0-40b5f4b542c6",
+      "name": "Badminton",
+      "created_at": "2026-10-20T08:00:11.454Z"
+    },
+    {
+      "guid": "19997466-360a-4f0c-a01a-3893dbb235b0",
+      "name": "Basketball",
+      "created_at": "2026-10-20T07:42:54.072Z"
+    },
+    {
+      "guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3",
+      "name": "Fitness classes",
+      "created_at": "2026-10-20T07:47:15.908Z"
+    },
+    {
+      "guid": "2567c29f-cabe-41bd-b55c-3d83ae8c8c95",
+      "name": "Football",
+      "created_at": "2026-10-20T07:43:13.492Z"
+    },
+    {
+      "guid": "ee36228e-708d-4f11-a1b7-8a6165684c74",
+      "name": "Gym",
+      "created_at": "2026-10-20T07:32:42.793Z"
+    },
+    {
+      "guid": "f3da66b5-8055-4b33-a65d-40cf27722cca",
+      "name": "Gymnastics",
+      "created_at": "2026-10-20T07:31:26.471Z"
+    },
+    {
+      "guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Netball",
+      "created_at": "2026-10-20T07:24:23.246Z"
+    },
+    {
+      "guid": "49373388-58b7-4ef2-9f67-83a6fa012384",
+      "name": "Outdoor swimming",
+      "created_at": "2026-10-20T07:53:40.405Z"
+    },
+    {
+      "guid": "b9a0ba0e-db03-44b3-891f-c81ed5f2ec0c",
+      "name": "Padel",
+      "created_at": "2026-10-20T07:30:30.802Z"
+    },
+    {
+      "guid": "f128f907-5c12-45fd-9ae2-3146bb5f1d40",
+      "name": "Performing Arts",
+      "created_at": "2026-10-20T08:04:34.803Z"
+    },
+    {
+      "guid": "03bc2195-93fa-4787-8d4a-39fa9ccdf261",
+      "name": "Pickleball",
+      "created_at": "2026-10-20T07:59:56.122Z"
+    },
+    {
+      "guid": "28c30261-c42f-4805-81a2-9a19dba8b623",
+      "name": "Spa",
+      "created_at": "2026-10-20T07:59:02.410Z"
+    },
+    {
+      "guid": "1d48c20b-43a5-4156-9ca1-0188ce9ea761",
+      "name": "Squash",
+      "created_at": "2026-10-20T07:53:18.056Z"
+    },
+    {
+      "guid": "b3ef3d75-da7e-4e97-811c-382f9c2dca64",
+      "name": "Swimming",
+      "created_at": "2026-10-20T07:32:37.918Z"
+    },
+    {
+      "guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis",
+      "created_at": "2026-10-20T07:24:23.246Z"
+    },
+    {
+      "guid": "b8f5fc43-fa30-43f1-9158-1b8fbad5c860",
+      "name": "Trampolining",
+      "created_at": "2026-10-20T07:33:30.189Z"
+    },
+    {
+      "guid": "4f7ef530-e4ea-46e3-8319-1339646f4307",
+      "name": "Volleyball",
+      "created_at": "2026-10-23T22:03:24.404Z"
+    }
+  ],
+  "opening_hours_templates": [
+    {
+      "guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "name": "Camden park hours",
+      "created_at": "2026-10-21T19:07:06.668Z"
+    }
+  ],
+  "roles": [
+    {
+      "name": "Administrator",
+      "description": "The administrator can do everything.",
+      "is_system": true,
+      "created_at": "2026-10-24T15:08:45.904Z"
+    },
+    {
+      "name": "Coach",
+      "description": "Coaches use the coach experience and have no administration access by default.",
+      "is_system": false,
+      "created_at": "2026-10-24T15:08:45.904Z"
+    },
+    {
+      "name": "Resident",
+      "description": "Residents use the resident experience and have no administration access by default.",
+      "is_system": false,
+      "created_at": "2026-10-24T15:08:45.905Z"
+    }
+  ],
+  "profiles": [
+    {
+      "guid": "696e8d06-4c79-485e-b082-0b931db84383",
+      "name": "Adam Administrator",
+      "email": "adam.admin@example.com",
+      "role": "Administrator",
+      "created_at": "2026-10-24T14:12:39.562Z"
+    },
+    {
+      "guid": "3dc2bfdb-11f8-433c-bcab-7bd0fc68eba5",
+      "name": "Colin Coach",
+      "email": "colin.coach@example.com",
+      "role": "Coach",
+      "created_at": "2026-10-24T14:12:39.562Z"
+    },
+    {
+      "guid": "90e64cd5-6f67-44dd-a636-16e31a65242b",
+      "name": "Rhupinda",
+      "email": "rhupinda@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:52:21.553Z"
+    },
+    {
+      "guid": "5772b110-7dbb-457e-92e2-2ca62b1cd83b",
+      "name": "Ricardo",
+      "email": "ricardo@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:52:21.552Z"
+    },
+    {
+      "guid": "0ca7acd9-3e32-4b53-9a0d-a7e30b514c85",
+      "name": "Rita Resident",
+      "email": "rita.resident@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:12:39.562Z"
+    },
+    {
+      "guid": "a6771654-1d41-4ce6-940e-756d5ee488e3",
+      "name": "Roland",
+      "email": "roland@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:52:21.548Z"
+    },
+    {
+      "guid": "e9774271-2337-46a4-a6ad-079553db5a47",
+      "name": "Ronaldo",
+      "email": "ronaldo@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:52:21.552Z"
+    },
+    {
+      "guid": "0a3961a0-44ec-4e21-bb57-e21cffb8f509",
+      "name": "Ruth",
+      "email": "ruth@example.com",
+      "role": "Resident",
+      "created_at": "2026-10-24T14:52:21.552Z"
+    }
+  ],
+  "opening_hours_rules": [
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 0,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 1,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 2,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 3,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 4,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 5,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    },
+    {
+      "template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "day_of_week": 6,
+      "opens_at": "08:00:00",
+      "closes_at": "22:00:00"
+    }
+  ],
+  "facilities": [
+    {
+      "guid": "ddc3e794-0566-4164-bff1-1698359abd8b",
+      "name": "Kentish Town Sports Centre",
+      "address": "Grafton Road Kentish Town London",
+      "postcode": "NW5 3DU",
+      "latitude": "51.54750061040000000",
+      "longitude": "-0.14471299950000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.54750061040000000%2C-0.14471299950000000&zoom=4",
+      "description": "Kentish Town Sports Centre in Camden offers fitness centre, 3 pools & exercise studios. Participate in classes including rebounding, yoga & group cycle. Visit today!",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.better.org.uk/leisure-centre/london/camden/kentish-town-sports-centre/activities",
+      "source_url": "https://www.better.org.uk/leisure-centre/london/camden/kentish-town-sports-centre",
+      "created_at": "2026-10-19T19:58:59.088Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Kilburn Grange-Multi Use Games Area (MUGA)",
+      "address": "Kilburn Grange Messina Avenue London",
+      "postcode": "NW6 2JH",
+      "latitude": "51.54394665087268400",
+      "longitude": "-0.19959666608249340",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.54394665087268400%2C-0.19959666608249340&zoom=4",
+      "description": "The tennis courts are by Messina Avenue and the bookable multi-use games area pitch is by the entrance on Kilburn High Road.",
+      "booking_mode": "in_app",
+      "external_booking_url": null,
+      "source_url": "https://camdenactive.camden.gov.uk/courses/detail/194/kilburn-grange-multi-use-games-area-/",
+      "created_at": "2026-10-19T19:59:31.649Z",
+      "opening_hours_template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "name": "Kilburn Grange Park Tennis Courts",
+      "address": "Kilburn Grange Messina Avenue London",
+      "postcode": "NW6 2JH",
+      "latitude": "51.54291789066829000",
+      "longitude": "-0.19758651774181468",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.54291789066829000%2C-0.19758651774181468&zoom=4",
+      "description": "Three tarmac tennis courts.",
+      "booking_mode": "in_app",
+      "external_booking_url": null,
+      "source_url": "https://camdenactive.camden.gov.uk/sports/kilburngrange/",
+      "created_at": "2026-10-19T19:59:22.147Z",
+      "opening_hours_template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Lincoln's Inn Fields Tennis Courts",
+      "address": "Lincoln's Inn Fields Opposite Royal College of Surgeons London",
+      "postcode": "WC2A 2ES",
+      "latitude": "51.51623270000000000",
+      "longitude": "-0.11656660000000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.51623270000000000%2C-0.11656660000000000&zoom=4",
+      "description": "Three tarmac tennis courts.",
+      "booking_mode": "in_app",
+      "external_booking_url": null,
+      "source_url": "https://camdenactive.camden.gov.uk/sports/lincolnsinnfields/",
+      "created_at": "2026-10-19T19:59:13.691Z",
+      "opening_hours_template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "name": "Oasis Sports Centre",
+      "address": "32, Endell Street (Main Entrance High Holborn)Covent Garden London",
+      "postcode": "WC2H 9AG",
+      "latitude": "51.51570129390000000",
+      "longitude": "-0.12588700650000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.51570129390000000%2C-0.12588700650000000&zoom=4",
+      "description": "Oasis Sports Centre in Camden offers gym, pool & squash. Participate in lessons like bums tums & thighs, yoga, box fit & group cycle and Better Swim School.",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.better.org.uk/leisure-centre/london/camden/oasis-sports-centre/activities",
+      "source_url": "https://www.better.org.uk/leisure-centre/london/camden/oasis-sports-centre",
+      "created_at": "2026-10-19T19:58:59.514Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "885f6f1a-8403-4cda-88ba-da6e40afbdea",
+      "name": "Pancras Square Leisure",
+      "address": "5 Pancras Square London",
+      "postcode": "N1C 4AG",
+      "latitude": "51.53400039670000000",
+      "longitude": "-0.12677200140000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.53400039670000000%2C-0.12677200140000000&zoom=4",
+      "description": "Pancras Square Leisure, located just moments from Kings Cross St Pancras station in the heart of London offers affordable no contract memberships with access to gym, fitness classes, swim, spa pool, sauna and steam rooms",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.better.org.uk/leisure-centre/london/camden/pancras-square/activities",
+      "source_url": "https://www.better.org.uk/leisure-centre/london/camden/pancras-square",
+      "created_at": "2026-10-19T19:58:58.673Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "name": "Swiss Cottage Leisure Centre",
+      "address": "Adelaide Road Camden London",
+      "postcode": "NW3 3NF",
+      "latitude": "51.54240036010000000",
+      "longitude": "-0.17341600360000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.54240036010000000%2C-0.17341600360000000&zoom=4",
+      "description": "Swiss Cottage Leisure Centre in Camden offers gym, swimming pool, sports hall & climbing wall. Participate in fitness classes like group cycle and boot camp. Activities include badminton, basketball and pickleball too. Visit today!",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.better.org.uk/leisure-centre/london/camden/swiss-cottage-leisure-centre/activities",
+      "source_url": "https://www.better.org.uk/leisure-centre/london/camden/swiss-cottage-leisure-centre",
+      "created_at": "2026-10-19T19:58:58.187Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "name": "Talacre Community Sports Centre",
+      "address": "Dalby St Kentish Town London",
+      "postcode": "NW5 3AF",
+      "latitude": "51.54750061040000000",
+      "longitude": "-0.14729300140000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.54750061040000000%2C-0.14729300140000000&zoom=4",
+      "description": "Talacre Community Sports Centre in Camden offers dance studio & sport pitch/courts. Participate in fitness classes like aerobics, body conditioning & yoga. Visit today!",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.better.org.uk/leisure-centre/london/camden/talacre-community-sports-centre/activities",
+      "source_url": "https://www.better.org.uk/leisure-centre/london/camden/talacre-community-sports-centre",
+      "created_at": "2026-10-19T19:58:57.693Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "3d0d1386-e4a6-4ea9-8581-6cbc31bfab4f",
+      "name": "test",
+      "address": "test",
+      "postcode": "N6 5HG",
+      "latitude": "0.00000000000000000",
+      "longitude": "0.00000000000000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=0.00000000000000000%2C0.00000000000000000&zoom=4",
+      "description": "Test facility",
+      "booking_mode": "external",
+      "external_booking_url": "http://www.camden.gov.uk/",
+      "source_url": null,
+      "created_at": "2026-10-24T20:20:08.784Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "b547d7eb-0ac1-4038-babd-342091e730b5",
+      "name": "The Armoury",
+      "address": "25 Pond Street, Hampstead, London",
+      "postcode": "NW3 2PN",
+      "latitude": "51.55407390000000000",
+      "longitude": "-0.16682640000000000",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.55407390000000000%2C-0.16682640000000000&zoom=4",
+      "description": "You can call us during opening hours on020 7431 2263",
+      "booking_mode": "external",
+      "external_booking_url": "https://www.armourygym.co.uk/join-now/",
+      "source_url": "https://www.armourygym.co.uk/hours/",
+      "created_at": "2026-10-19T19:59:03.171Z",
+      "opening_hours_template_guid": null,
+      "max_resident_bookings": 8
+    },
+    {
+      "guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Waterlow Park Tennis Courts",
+      "address": "Waterlow Park Highgate Hill London",
+      "postcode": "N6 5HG",
+      "latitude": "51.56948339371256000",
+      "longitude": "-0.14707273568957463",
+      "google_maps_url": "https://www.google.com/maps/search/?api=1&query=51.56948339371256000%2C-0.14707273568957463&zoom=4",
+      "description": "Six tarmac tennis courts.",
+      "booking_mode": "in_app",
+      "external_booking_url": null,
+      "source_url": "https://camdenactive.camden.gov.uk/sports/waterlow/",
+      "created_at": "2026-10-19T19:59:30.525Z",
+      "opening_hours_template_guid": "85c9b9d1-babb-4ee9-8654-fbff91362e6a",
+      "max_resident_bookings": 8
+    }
+  ],
+  "facility_sports": [
+    {
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62"
+    },
+    {
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27"
+    },
+    {
+      "facility_guid": "885f6f1a-8403-4cda-88ba-da6e40afbdea",
+      "sport_guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3"
+    },
+    {
+      "facility_guid": "885f6f1a-8403-4cda-88ba-da6e40afbdea",
+      "sport_guid": "b3ef3d75-da7e-4e97-811c-382f9c2dca64"
+    },
+    {
+      "facility_guid": "885f6f1a-8403-4cda-88ba-da6e40afbdea",
+      "sport_guid": "ee36228e-708d-4f11-a1b7-8a6165684c74"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "03bc2195-93fa-4787-8d4a-39fa9ccdf261"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "19997466-360a-4f0c-a01a-3893dbb235b0"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "1d48c20b-43a5-4156-9ca1-0188ce9ea761"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "2567c29f-cabe-41bd-b55c-3d83ae8c8c95"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "28c30261-c42f-4805-81a2-9a19dba8b623"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "b3ef3d75-da7e-4e97-811c-382f9c2dca64"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "da7d5178-b1da-41a9-9cf0-40b5f4b542c6"
+    },
+    {
+      "facility_guid": "98e90352-eb63-4f54-ae9f-b4aa1f4888a4",
+      "sport_guid": "ee36228e-708d-4f11-a1b7-8a6165684c74"
+    },
+    {
+      "facility_guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "sport_guid": "1d48c20b-43a5-4156-9ca1-0188ce9ea761"
+    },
+    {
+      "facility_guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "sport_guid": "49373388-58b7-4ef2-9f67-83a6fa012384"
+    },
+    {
+      "facility_guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "sport_guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3"
+    },
+    {
+      "facility_guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "sport_guid": "b3ef3d75-da7e-4e97-811c-382f9c2dca64"
+    },
+    {
+      "facility_guid": "a91c72c7-2a1f-4539-a5b1-f16d9f604cb0",
+      "sport_guid": "ee36228e-708d-4f11-a1b7-8a6165684c74"
+    },
+    {
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "03bc2195-93fa-4787-8d4a-39fa9ccdf261"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "19997466-360a-4f0c-a01a-3893dbb235b0"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "2567c29f-cabe-41bd-b55c-3d83ae8c8c95"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "da7d5178-b1da-41a9-9cf0-40b5f4b542c6"
+    },
+    {
+      "facility_guid": "af3ab8fb-36ea-434d-b779-4f7e13c3e1a3",
+      "sport_guid": "f128f907-5c12-45fd-9ae2-3146bb5f1d40"
+    },
+    {
+      "facility_guid": "b547d7eb-0ac1-4038-babd-342091e730b5",
+      "sport_guid": "ee36228e-708d-4f11-a1b7-8a6165684c74"
+    },
+    {
+      "facility_guid": "b547d7eb-0ac1-4038-babd-342091e730b5",
+      "sport_guid": "f128f907-5c12-45fd-9ae2-3146bb5f1d40"
+    },
+    {
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62"
+    },
+    {
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27"
+    },
+    {
+      "facility_guid": "ddc3e794-0566-4164-bff1-1698359abd8b",
+      "sport_guid": "a4bbec61-18be-4d5b-b110-860f79c98fd3"
+    },
+    {
+      "facility_guid": "ddc3e794-0566-4164-bff1-1698359abd8b",
+      "sport_guid": "b3ef3d75-da7e-4e97-811c-382f9c2dca64"
+    },
+    {
+      "facility_guid": "ddc3e794-0566-4164-bff1-1698359abd8b",
+      "sport_guid": "ee36228e-708d-4f11-a1b7-8a6165684c74"
+    },
+    {
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "sport_guid": "19997466-360a-4f0c-a01a-3893dbb235b0"
+    },
+    {
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "sport_guid": "2567c29f-cabe-41bd-b55c-3d83ae8c8c95"
+    }
+  ],
+  "courses": [],
+  "booking_resources": [
+    {
+      "guid": "3ea12f71-a118-4f9d-8707-f9693bcf239e",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Conflict Netball 1 - Tennis 1",
+      "created_at": "2026-10-20T20:38:08.616Z"
+    },
+    {
+      "guid": "5d69343d-d7b6-4fce-b048-2e7e576f630d",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Conflict Netball 1 - Tennis 2",
+      "created_at": "2026-10-20T20:38:08.616Z"
+    },
+    {
+      "guid": "2c226b31-5bcc-4922-ba57-adb6afde91f6",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Conflict Netball 2 - Tennis 1",
+      "created_at": "2026-10-20T20:38:08.616Z"
+    },
+    {
+      "guid": "b8a33307-ea3d-4091-9b20-62ad1b07a227",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Conflict Netball 2 - Tennis 2",
+      "created_at": "2026-10-20T20:38:08.616Z"
+    },
+    {
+      "guid": "56a060be-0efa-4b54-90b0-fc1bf733dbd1",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Netball court 1",
+      "created_at": "2026-10-20T17:57:34.466Z"
+    },
+    {
+      "guid": "d746ba24-a3e5-4d03-8063-aa1d0ede655d",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Netball court 2",
+      "created_at": "2026-10-20T17:57:39.841Z"
+    },
+    {
+      "guid": "414cc03b-4fe0-4268-be86-c7cc38e99482",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 1",
+      "created_at": "2026-10-20T17:56:36.380Z"
+    },
+    {
+      "guid": "dc1ece26-4ebe-469b-8d46-9d2420b33692",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 2",
+      "created_at": "2026-10-20T17:56:41.860Z"
+    },
+    {
+      "guid": "9951b6c5-66ec-4563-bada-cf4e97a9416f",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 3",
+      "created_at": "2026-10-20T17:56:51.632Z"
+    },
+    {
+      "guid": "df4e42b7-2f55-4442-9f97-1c882d5fe6c2",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 4",
+      "created_at": "2026-10-20T17:56:58.593Z"
+    },
+    {
+      "guid": "0bde863e-d3ab-47ae-9870-71295e88758a",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 5",
+      "created_at": "2026-10-20T17:57:03.872Z"
+    },
+    {
+      "guid": "604052f0-9ef8-4f05-9979-906e4fdef602",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "name": "Tennis court 6",
+      "created_at": "2026-10-20T21:31:50.073Z"
+    },
+    {
+      "guid": "993419ca-0632-4c95-a208-a3c208ea529a",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "name": "Tennis Court 1",
+      "created_at": "2026-10-20T15:38:37.709Z"
+    },
+    {
+      "guid": "f576e91a-4a4a-4084-bcc3-8acef58fca65",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "name": "Tennis Court 2",
+      "created_at": "2026-10-20T15:38:53.436Z"
+    },
+    {
+      "guid": "33d0e7eb-7747-4560-be80-5e84a6b8af37",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "name": "Tennis Court 3",
+      "created_at": "2026-10-20T15:39:02.227Z"
+    },
+    {
+      "guid": "633f3fb8-e902-478e-8f97-e4cc9a0f3050",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Conflict Netball 1 - Tennis 1",
+      "created_at": "2026-10-20T20:38:08.609Z"
+    },
+    {
+      "guid": "031b49b2-1d1d-4ec7-9450-acd94e15beb9",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Conflict Netball 1 - Tennis 2",
+      "created_at": "2026-10-20T20:38:08.609Z"
+    },
+    {
+      "guid": "53c58575-2e19-4af5-8e2f-fe1e73780a7b",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Conflict Netball 2 - Tennis 1",
+      "created_at": "2026-10-20T20:38:08.609Z"
+    },
+    {
+      "guid": "cce9e2a7-2049-46e0-ba09-c5edcb81e33f",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Conflict Netball 2 - Tennis 2",
+      "created_at": "2026-10-20T20:38:08.609Z"
+    },
+    {
+      "guid": "9132d4b0-6f64-416f-8aca-fc013a8a4a98",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Netball court 1",
+      "created_at": "2026-10-20T17:29:27.749Z"
+    },
+    {
+      "guid": "c03b2a34-ac46-4423-9abe-f7ee7ff5fbb4",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Netball court 2",
+      "created_at": "2026-10-20T17:29:33.809Z"
+    },
+    {
+      "guid": "dfc0260e-ac5d-4ed4-a9fc-8e3b30604136",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Tennis Court 1",
+      "created_at": "2026-10-20T17:25:11.524Z"
+    },
+    {
+      "guid": "d0cd3a25-15bb-4e53-9263-90efe0ba5aed",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Tennis Court 2",
+      "created_at": "2026-10-20T17:25:21.736Z"
+    },
+    {
+      "guid": "3ff567de-edf4-47e4-9e71-034cca4cf855",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "name": "Tennis Court 3",
+      "created_at": "2026-10-20T17:25:31.229Z"
+    },
+    {
+      "guid": "0ee8b85b-c839-43d6-80d9-93607d9ff8fd",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Basketball court 1",
+      "created_at": "2026-10-20T17:19:03.755Z"
+    },
+    {
+      "guid": "0978ec31-40d9-4b62-80d0-49246d25f75a",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Basketball court 2",
+      "created_at": "2026-10-20T17:19:23.476Z"
+    },
+    {
+      "guid": "6961bdd6-58ef-49e1-be91-48bf584b8ccf",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Conflict football pitch - Basketball court 1",
+      "created_at": "2026-10-20T21:19:16.270Z"
+    },
+    {
+      "guid": "603642d5-3092-4c59-89f4-87e7f8a3553b",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Conflict football pitch - Basketball court 2",
+      "created_at": "2026-10-20T21:21:40.239Z"
+    },
+    {
+      "guid": "c8675017-48f6-43bd-973c-f8c36e99603b",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "name": "Football pitch",
+      "created_at": "2026-10-20T17:18:41.780Z"
+    }
+  ],
+  "bookable_options": [
+    {
+      "guid": "40dd7e13-066d-4e86-a88a-5c357c749a10",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Netball court 1",
+      "created_at": "2026-10-20T17:57:52.784Z"
+    },
+    {
+      "guid": "f58021c0-780f-45f0-a4cc-d30e2fb45bab",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Netball court 2",
+      "created_at": "2026-10-20T17:58:01.883Z"
+    },
+    {
+      "guid": "f0afbafc-1869-4bcd-a7db-79581cf00f70",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 1",
+      "created_at": "2026-10-20T17:58:27.657Z"
+    },
+    {
+      "guid": "f22354e7-8083-444e-8005-9a481f36c7ae",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 2",
+      "created_at": "2026-10-20T17:58:37.150Z"
+    },
+    {
+      "guid": "e2d6ea41-f4bb-4126-8b66-b46876aacaa3",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 3",
+      "created_at": "2026-10-20T17:59:38.865Z"
+    },
+    {
+      "guid": "cc639481-ce62-4988-bca0-49bfce4715cf",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 4",
+      "created_at": "2026-10-20T17:59:47.556Z"
+    },
+    {
+      "guid": "cfee5f18-f550-487a-8eba-30966f764f98",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 5",
+      "created_at": "2026-10-20T17:59:54.149Z"
+    },
+    {
+      "guid": "151acf0a-7c38-41c2-9f92-4bd4f3ed5433",
+      "facility_guid": "68866033-7f21-49ef-a59f-6225ff65c3af",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 6",
+      "created_at": "2026-10-20T18:00:01.802Z"
+    },
+    {
+      "guid": "aaa6d30f-5224-4d7f-9b1e-853f57fddb12",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis Court 1",
+      "created_at": "2026-10-20T15:40:08.743Z"
+    },
+    {
+      "guid": "0d0c2dee-c80d-4257-ba74-2099b68b158b",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis Court 2",
+      "created_at": "2026-10-20T15:40:27.541Z"
+    },
+    {
+      "guid": "375c47ed-2592-494e-95eb-747dccd7b77d",
+      "facility_guid": "acc0eeaa-dbce-4a33-96db-192dedfdf804",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis Court 3",
+      "created_at": "2026-10-20T15:40:44.853Z"
+    },
+    {
+      "guid": "5c6dae43-074d-49f4-b36e-df2d92d55030",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Netball court 1",
+      "created_at": "2026-10-20T17:29:57.946Z"
+    },
+    {
+      "guid": "451fe4db-6e84-40bf-89d0-572653233e75",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Netball court 2",
+      "created_at": "2026-10-20T17:30:33.502Z"
+    },
+    {
+      "guid": "b3ad09ff-b0e4-4bd7-bccc-03a36c8ef29c",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 1",
+      "created_at": "2026-10-20T17:30:56.029Z"
+    },
+    {
+      "guid": "a99e8412-1940-4bd1-a9fd-d10579086ae7",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "07b1421e-f199-42f7-9d28-4532f74efb62",
+      "name": "Tennis court 2",
+      "created_at": "2026-10-20T17:31:21.664Z"
+    },
+    {
+      "guid": "5c26f60e-9cba-4f60-b4e1-53cf02ad45da",
+      "facility_guid": "dcd859e1-a219-4d0d-be4c-5c01ac7f2acb",
+      "sport_guid": "b10c818e-bf46-484f-aa62-fe925bc40c27",
+      "name": "Tennis court 3",
+      "created_at": "2026-10-20T17:31:39.629Z"
+    },
+    {
+      "guid": "e3435e14-6916-4275-852d-9699827902b5",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "sport_guid": "19997466-360a-4f0c-a01a-3893dbb235b0",
+      "name": "Basketball court 1",
+      "created_at": "2026-10-20T17:20:15.426Z"
+    },
+    {
+      "guid": "0b74a07d-c905-439f-9672-af38e701af8f",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "sport_guid": "19997466-360a-4f0c-a01a-3893dbb235b0",
+      "name": "Basketball court 2",
+      "created_at": "2026-10-20T17:20:26.707Z"
+    },
+    {
+      "guid": "efbc0163-3af9-4bb6-8ad7-39d8b3f6d2c9",
+      "facility_guid": "f97fd430-2f59-42ee-ac9a-42d0bf7e6b8b",
+      "sport_guid": "2567c29f-cabe-41bd-b55c-3d83ae8c8c95",
+      "name": "Football pitch",
+      "created_at": "2026-10-20T17:19:46.654Z"
+    }
+  ],
+  "bookable_option_resources": [
+    {
+      "option_guid": "0b74a07d-c905-439f-9672-af38e701af8f",
+      "resource_guid": "0978ec31-40d9-4b62-80d0-49246d25f75a"
+    },
+    {
+      "option_guid": "0b74a07d-c905-439f-9672-af38e701af8f",
+      "resource_guid": "603642d5-3092-4c59-89f4-87e7f8a3553b"
+    },
+    {
+      "option_guid": "0d0c2dee-c80d-4257-ba74-2099b68b158b",
+      "resource_guid": "f576e91a-4a4a-4084-bcc3-8acef58fca65"
+    },
+    {
+      "option_guid": "151acf0a-7c38-41c2-9f92-4bd4f3ed5433",
+      "resource_guid": "604052f0-9ef8-4f05-9979-906e4fdef602"
+    },
+    {
+      "option_guid": "375c47ed-2592-494e-95eb-747dccd7b77d",
+      "resource_guid": "33d0e7eb-7747-4560-be80-5e84a6b8af37"
+    },
+    {
+      "option_guid": "40dd7e13-066d-4e86-a88a-5c357c749a10",
+      "resource_guid": "3ea12f71-a118-4f9d-8707-f9693bcf239e"
+    },
+    {
+      "option_guid": "40dd7e13-066d-4e86-a88a-5c357c749a10",
+      "resource_guid": "56a060be-0efa-4b54-90b0-fc1bf733dbd1"
+    },
+    {
+      "option_guid": "40dd7e13-066d-4e86-a88a-5c357c749a10",
+      "resource_guid": "5d69343d-d7b6-4fce-b048-2e7e576f630d"
+    },
+    {
+      "option_guid": "451fe4db-6e84-40bf-89d0-572653233e75",
+      "resource_guid": "53c58575-2e19-4af5-8e2f-fe1e73780a7b"
+    },
+    {
+      "option_guid": "451fe4db-6e84-40bf-89d0-572653233e75",
+      "resource_guid": "c03b2a34-ac46-4423-9abe-f7ee7ff5fbb4"
+    },
+    {
+      "option_guid": "451fe4db-6e84-40bf-89d0-572653233e75",
+      "resource_guid": "cce9e2a7-2049-46e0-ba09-c5edcb81e33f"
+    },
+    {
+      "option_guid": "5c26f60e-9cba-4f60-b4e1-53cf02ad45da",
+      "resource_guid": "3ff567de-edf4-47e4-9e71-034cca4cf855"
+    },
+    {
+      "option_guid": "5c26f60e-9cba-4f60-b4e1-53cf02ad45da",
+      "resource_guid": "9132d4b0-6f64-416f-8aca-fc013a8a4a98"
+    },
+    {
+      "option_guid": "5c26f60e-9cba-4f60-b4e1-53cf02ad45da",
+      "resource_guid": "c03b2a34-ac46-4423-9abe-f7ee7ff5fbb4"
+    },
+    {
+      "option_guid": "5c6dae43-074d-49f4-b36e-df2d92d55030",
+      "resource_guid": "031b49b2-1d1d-4ec7-9450-acd94e15beb9"
+    },
+    {
+      "option_guid": "5c6dae43-074d-49f4-b36e-df2d92d55030",
+      "resource_guid": "633f3fb8-e902-478e-8f97-e4cc9a0f3050"
+    },
+    {
+      "option_guid": "5c6dae43-074d-49f4-b36e-df2d92d55030",
+      "resource_guid": "9132d4b0-6f64-416f-8aca-fc013a8a4a98"
+    },
+    {
+      "option_guid": "a99e8412-1940-4bd1-a9fd-d10579086ae7",
+      "resource_guid": "031b49b2-1d1d-4ec7-9450-acd94e15beb9"
+    },
+    {
+      "option_guid": "a99e8412-1940-4bd1-a9fd-d10579086ae7",
+      "resource_guid": "cce9e2a7-2049-46e0-ba09-c5edcb81e33f"
+    },
+    {
+      "option_guid": "a99e8412-1940-4bd1-a9fd-d10579086ae7",
+      "resource_guid": "d0cd3a25-15bb-4e53-9263-90efe0ba5aed"
+    },
+    {
+      "option_guid": "aaa6d30f-5224-4d7f-9b1e-853f57fddb12",
+      "resource_guid": "993419ca-0632-4c95-a208-a3c208ea529a"
+    },
+    {
+      "option_guid": "b3ad09ff-b0e4-4bd7-bccc-03a36c8ef29c",
+      "resource_guid": "53c58575-2e19-4af5-8e2f-fe1e73780a7b"
+    },
+    {
+      "option_guid": "b3ad09ff-b0e4-4bd7-bccc-03a36c8ef29c",
+      "resource_guid": "633f3fb8-e902-478e-8f97-e4cc9a0f3050"
+    },
+    {
+      "option_guid": "b3ad09ff-b0e4-4bd7-bccc-03a36c8ef29c",
+      "resource_guid": "dfc0260e-ac5d-4ed4-a9fc-8e3b30604136"
+    },
+    {
+      "option_guid": "cc639481-ce62-4988-bca0-49bfce4715cf",
+      "resource_guid": "df4e42b7-2f55-4442-9f97-1c882d5fe6c2"
+    },
+    {
+      "option_guid": "cfee5f18-f550-487a-8eba-30966f764f98",
+      "resource_guid": "0bde863e-d3ab-47ae-9870-71295e88758a"
+    },
+    {
+      "option_guid": "e2d6ea41-f4bb-4126-8b66-b46876aacaa3",
+      "resource_guid": "9951b6c5-66ec-4563-bada-cf4e97a9416f"
+    },
+    {
+      "option_guid": "e3435e14-6916-4275-852d-9699827902b5",
+      "resource_guid": "0ee8b85b-c839-43d6-80d9-93607d9ff8fd"
+    },
+    {
+      "option_guid": "e3435e14-6916-4275-852d-9699827902b5",
+      "resource_guid": "c8675017-48f6-43bd-973c-f8c36e99603b"
+    },
+    {
+      "option_guid": "efbc0163-3af9-4bb6-8ad7-39d8b3f6d2c9",
+      "resource_guid": "0978ec31-40d9-4b62-80d0-49246d25f75a"
+    },
+    {
+      "option_guid": "efbc0163-3af9-4bb6-8ad7-39d8b3f6d2c9",
+      "resource_guid": "0ee8b85b-c839-43d6-80d9-93607d9ff8fd"
+    },
+    {
+      "option_guid": "efbc0163-3af9-4bb6-8ad7-39d8b3f6d2c9",
+      "resource_guid": "c8675017-48f6-43bd-973c-f8c36e99603b"
+    },
+    {
+      "option_guid": "f0afbafc-1869-4bcd-a7db-79581cf00f70",
+      "resource_guid": "2c226b31-5bcc-4922-ba57-adb6afde91f6"
+    },
+    {
+      "option_guid": "f0afbafc-1869-4bcd-a7db-79581cf00f70",
+      "resource_guid": "3ea12f71-a118-4f9d-8707-f9693bcf239e"
+    },
+    {
+      "option_guid": "f0afbafc-1869-4bcd-a7db-79581cf00f70",
+      "resource_guid": "414cc03b-4fe0-4268-be86-c7cc38e99482"
+    },
+    {
+      "option_guid": "f22354e7-8083-444e-8005-9a481f36c7ae",
+      "resource_guid": "5d69343d-d7b6-4fce-b048-2e7e576f630d"
+    },
+    {
+      "option_guid": "f22354e7-8083-444e-8005-9a481f36c7ae",
+      "resource_guid": "b8a33307-ea3d-4091-9b20-62ad1b07a227"
+    },
+    {
+      "option_guid": "f22354e7-8083-444e-8005-9a481f36c7ae",
+      "resource_guid": "dc1ece26-4ebe-469b-8d46-9d2420b33692"
+    },
+    {
+      "option_guid": "f58021c0-780f-45f0-a4cc-d30e2fb45bab",
+      "resource_guid": "2c226b31-5bcc-4922-ba57-adb6afde91f6"
+    },
+    {
+      "option_guid": "f58021c0-780f-45f0-a4cc-d30e2fb45bab",
+      "resource_guid": "b8a33307-ea3d-4091-9b20-62ad1b07a227"
+    },
+    {
+      "option_guid": "f58021c0-780f-45f0-a4cc-d30e2fb45bab",
+      "resource_guid": "d746ba24-a3e5-4d03-8063-aa1d0ede655d"
+    }
+  ],
+  "site_settings": [
+    {
+      "key": "site_title",
+      "value": "Peck'em-Active",
+      "updated_at": "2026-10-24T20:12:55.016Z"
+    }
+  ],
+  "site_logo": [
+    {
+      "id": 1,
+      "content_type": "image/svg+xml",
+      "data": "\\x3c73766720786d6c6e733d22687474703a2f2f7777772e77332e6f72672f323030302f737667222076696577426f783d223020302031353020333122207072657365727665417370656374526174696f3d22784d696e594d69642220726f6c653d22696d672220617269612d6c6162656c3d225065636b27656d223e0a20203c646566733e0a202020203c636c6970506174682069643d2264697363223e3c636972636c652063783d2231352e35222063793d2231352e352220723d2231352e35222f3e3c2f636c6970506174683e0a202020203c672069643d22706967656f6e223e0a2020202020203c656c6c697073652063783d22382e34222063793d2231302e32222072783d22372e36222072793d22352e3422207472616e73666f726d3d22726f74617465282d3820382e342031302e3229222066696c6c3d2223306230633063222f3e0a2020202020203c636972636c652063783d2231312e36222063793d22352e332220723d22332e39222066696c6c3d2223306230633063222f3e0a2020202020203c7061746820643d224d31342e3220332e39204c31352e3620352e31204c31342e3220362e34205a222066696c6c3d2223306230633063222f3e0a2020202020203c7061746820643d224d3020362e32204c3520382e36204c34203133204c30203134205a222066696c6c3d2223306230633063222f3e0a2020202020203c636972636c652063783d2231322e34222063793d22342e362220723d22302e3735222066696c6c3d2223666666222f3e0a2020202020203c7061746820643d224d332e362031302e322043362031322e322031302031312e362031322e3620382e34222066696c6c3d226e6f6e6522207374726f6b653d222366666622207374726f6b652d77696474683d22302e3922207374726f6b652d6c696e656361703d22726f756e64222f3e0a202020203c2f673e0a20203c2f646566733e0a20203c6720636c69702d706174683d2275726c28236469736329223e0a202020203c75736520687265663d2223706967656f6e222f3e0a202020203c75736520687265663d2223706967656f6e22207472616e73666f726d3d227472616e736c617465283331203029207363616c65282d31203129222f3e0a202020203c75736520687265663d2223706967656f6e22207472616e73666f726d3d227472616e736c617465283020333129207363616c652831202d3129222f3e0a202020203c75736520687265663d2223706967656f6e22207472616e73666f726d3d227472616e736c61746528333120333129207363616c65282d31202d3129222f3e0a202020203c7265637420783d2231342e362220793d2230222077696474683d22312e3822206865696768743d223331222066696c6c3d2223666666222f3e0a202020203c7265637420783d22302220793d2231342e36222077696474683d22333122206865696768743d22312e38222066696c6c3d2223666666222f3e0a20203c2f673e0a20203c7465787420783d2233382220793d2232332e352220666f6e742d66616d696c793d222748656c766574696361204e657565272c2048656c7665746963612c20417269616c2c2073616e732d73657269662220666f6e742d73697a653d2232372220666f6e742d7765696768743d2236303022206c65747465722d73706163696e673d222d312e32222066696c6c3d22233062306330632220746578744c656e6774683d2231313022206c656e67746841646a7573743d2273706163696e67416e64476c79706873223e5065636b27656d3c2f746578743e0a3c2f7376673e0a",
+      "updated_at": "2026-10-24T20:05:11.008Z"
+    }
+  ],
+  "role_permissions": [
+    {
+      "role": "Administrator",
+      "permission": "audit.view"
+    },
+    {
+      "role": "Administrator",
+      "permission": "bookings.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "courses.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "facilities.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "opening_hours.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "profiles.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "roles.manage"
+    },
+    {
+      "role": "Administrator",
+      "permission": "sports.manage"
+    },
+    {
+      "role": "Coach",
+      "permission": "courses.manage"
+    }
+  ]
+}

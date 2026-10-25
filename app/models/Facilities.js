@@ -68,6 +68,7 @@ async function initialize() {
             ADD COLUMN IF NOT EXISTS booking_mode text NOT NULL DEFAULT 'in_app',
             ADD COLUMN IF NOT EXISTS external_booking_url text,
             ADD COLUMN IF NOT EXISTS opening_hours_template_guid uuid,
+            ADD COLUMN IF NOT EXISTS max_resident_bookings integer NOT NULL DEFAULT 8,
             ADD COLUMN IF NOT EXISTS source_url text,
             ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()
     `);
@@ -120,7 +121,7 @@ async function findAll() {
         `SELECT facilities.guid, facilities.name, facilities.address, facilities.postcode,
                 facilities.latitude, facilities.longitude, facilities.google_maps_url,
                 facilities.description, facilities.booking_mode, facilities.external_booking_url,
-                facilities.opening_hours_template_guid,
+                facilities.opening_hours_template_guid, facilities.max_resident_bookings,
                 opening_hours_templates.name AS opening_hours_template_name,
                 facilities.created_at,
                 COALESCE(course_data.courses, '[]'::json) AS courses,
@@ -150,16 +151,16 @@ async function findAll() {
     return rows;
 }
 
-async function create({ name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, sport_guids }) {
+async function create({ name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, max_resident_bookings = 8, sport_guids }) {
     const googleMapsUrl = createGoogleMapsUrl(latitude, longitude);
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            `INSERT INTO facilities (name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, opening_hours_template_guid)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            `INSERT INTO facilities (name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, opening_hours_template_guid, max_resident_bookings)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
-            [name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid]
+            [name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid, max_resident_bookings]
         );
         await replaceSports(client, rows[0].guid, sport_guids);
         await client.query('COMMIT');
@@ -172,7 +173,7 @@ async function create({ name, address, postcode, latitude, longitude, descriptio
     }
 }
 
-async function update(guid, { name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, sport_guids }) {
+async function update(guid, { name, address, postcode, latitude, longitude, description, booking_mode, external_booking_url, opening_hours_template_guid, max_resident_bookings = 8, sport_guids }) {
     const googleMapsUrl = createGoogleMapsUrl(latitude, longitude);
     const client = await pool.connect();
     try {
@@ -182,10 +183,10 @@ async function update(guid, { name, address, postcode, latitude, longitude, desc
              SET name = $2, address = $3, postcode = $4, latitude = $5,
                  longitude = $6, google_maps_url = $7, description = $8,
                  booking_mode = $9, external_booking_url = $10,
-                 opening_hours_template_guid = $11
+                 opening_hours_template_guid = $11, max_resident_bookings = $12
              WHERE guid = $1
              RETURNING guid, name, address, postcode, latitude, longitude, google_maps_url, description, booking_mode, external_booking_url, created_at`,
-            [guid, name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid]
+            [guid, name, address, postcode, latitude, longitude, googleMapsUrl, description, booking_mode, external_booking_url, opening_hours_template_guid, max_resident_bookings]
         );
         if (!rows[0]) {
             await client.query('ROLLBACK');

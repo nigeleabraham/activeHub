@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My profile | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head h1 { font-size: 2.25rem; font-weight: 700; }
+        .page-head a { color: #fff; }
+        .panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-bottom: 2rem; }
+        .panel:first-of-type { margin-top: -1.5rem; }
+        .booking-item.is-past { border-left-color: #6f777b; background: #ececec; }
+        .badge-when { font-size: 0.8rem; }
+        .booking-item { border-left: 0.4rem solid #113255; background: #f8f9fa; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+        .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
+        .text-muted { color: #505a5f !important; }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+
+    <header class="page-head">
+        <div class="container">
+            <p class="mb-2"><a href="/">&larr; Back to home</a></p>
+            <h1 class="mb-2">My profile</h1>
+            <p class="lead mb-0">Your details and your bookings.</p>
+        </div>
+    </header>
+
+    <main class="container pb-5">
+        <% const paymentText = booking => booking.payment_status === 'paid'
+            ? 'Paid £' + ((booking.amount_pence - booking.credit_applied_pence) / 100).toFixed(2) + (booking.credit_applied_pence ? ' + £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit' : '')
+            : booking.payment_status === 'credit' ? 'Paid with credit £' + (booking.credit_applied_pence / 100).toFixed(2) : 'No payment required'; %>
+        <section class="panel" aria-labelledby="my-details">
+            <h2 id="my-details" class="h4 mb-3">My details</h2>
+            <% if (saved) { %><div class="alert alert-success" role="status">Your details have been saved.</div><% } %>
+            <% if (error === 'confirm-weather' || error === 'not-eligible') { %><% } else if (error) { %><div class="alert alert-danger" role="alert"><%= error === 'duplicate-email' ? 'That email address is already used by another profile.' : 'Please enter a name and a valid email address.' %></div><% } %>
+            <form method="POST" action="/profile">
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label for="profile-name">Name</label>
+                        <input class="form-control" id="profile-name" name="name" type="text" maxlength="120" required autocomplete="name" value="<%= profile.name %>">
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="profile-email">Email</label>
+                        <input class="form-control" id="profile-email" name="email" type="email" maxlength="254" required autocomplete="email" value="<%= profile.email %>">
+                    </div>
+                </div>
+                <p class="mb-3"><strong>Booking credit:</strong> £<%= (creditBalance / 100).toFixed(2) %><% if (creditBalance > 0) { %> <span class="text-muted small">(used automatically at checkout)</span><% } %></p>
+                <button class="btn btn-primary" type="submit">Save changes</button>
+            </form>
+        </section>
+
+        <section class="panel" aria-labelledby="upcoming-bookings">
+            <h2 id="upcoming-bookings" class="h4 mb-3">Upcoming bookings (<%= upcoming.length %>)</h2>
+            <% if (upcoming.length) { %>
+                <ul class="list-unstyled mb-0">
+                    <% upcoming.forEach(booking => { %>
+                        <li class="booking-item">
+                            <span class="badge badge-when badge-success">Upcoming</span>
+                            <strong><%= booking.facility_name %></strong> · <%= booking.option_name %> · <%= booking.sport_name %> <span class="text-muted small">Ref <code><%= booking.booking_ref %></code></span><br>
+                            <time data-local-start datetime="<%= new Date(booking.starts_at).toISOString() %>"><%= new Date(booking.starts_at).toISOString() %></time>
+                            to <time data-local-end datetime="<%= new Date(booking.ends_at).toISOString() %>"><%= new Date(booking.ends_at).toISOString() %></time>
+                            <span class="d-block small"><%= paymentText(booking) %></span>
+                            <span class="d-block text-muted small"><%= booking.address %>, <%= booking.postcode %></span>
+                        </li>
+                    <% }) %>
+                </ul>
+            <% } else { %>
+                <p class="text-muted mb-0">You have no upcoming bookings. <a href="/bookings">Make a booking</a>.</p>
+            <% } %>
+        </section>
+
+        <section class="panel" aria-labelledby="past-bookings">
+            <h2 id="past-bookings" class="h4 mb-1">Past bookings, last month (<%= past.length %>)</h2>
+            <p class="text-muted small">Bookings that have already taken place, most recent first.</p>
+            <% if (requested) { %><div class="alert alert-success" role="status">Your credit request has been sent. We'll review it and any credit will be added to your account.</div><% } %>
+            <% if (error === 'confirm-weather') { %><div class="alert alert-danger" role="alert">Please confirm the booking was affected by inclement weather. That is the only reason credit can be requested.</div><% } %>
+            <% if (error === 'not-eligible') { %><div class="alert alert-danger" role="alert">That booking can't be put forward for credit. It must be a paid booking from the last month with no earlier request.</div><% } %>
+            <% if (past.length) { %>
+                <ul class="list-unstyled mb-0">
+                    <% past.forEach(booking => { %>
+                        <li class="booking-item is-past">
+                            <span class="badge badge-when badge-secondary">Past</span>
+                            <strong><%= booking.facility_name %></strong> · <%= booking.option_name %> · <%= booking.sport_name %> <span class="text-muted small">Ref <code><%= booking.booking_ref %></code></span><br>
+                            <time data-local-start datetime="<%= new Date(booking.starts_at).toISOString() %>"><%= new Date(booking.starts_at).toISOString() %></time>
+                            to <time data-local-end datetime="<%= new Date(booking.ends_at).toISOString() %>"><%= new Date(booking.ends_at).toISOString() %></time>
+                            <span class="d-block small"><%= paymentText(booking) %></span>
+                            <span class="d-block text-muted small"><%= booking.address %>, <%= booking.postcode %></span>
+                            <% if (booking.credited_at) { %>
+                                <span class="badge badge-success mt-1">Credited £<%= (booking.credited_pence / 100).toFixed(2) %></span>
+                            <% } else if (booking.credit_request_status === 'pending') { %>
+                                <span class="badge badge-warning mt-1">Credit requested, waiting for a decision</span>
+                            <% } else if (booking.credit_request_status === 'declined') { %>
+                                <span class="badge badge-secondary mt-1">Credit request declined</span>
+                            <% } else if (booking.amount_paid_pence > 0) { %>
+                                <details class="mt-2">
+                                    <summary class="small">Request a credit for bad weather</summary>
+                                    <form class="mt-2" method="POST" action="/profile/credit-requests">
+                                        <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                        <p class="small mb-2"><strong>Credit is only given when a booking was affected by inclement weather.</strong> We can't give credit for any other reason.</p>
+                                        <div class="form-group mb-2">
+                                            <label class="small mb-1" for="note-<%= booking.guid %>">What happened? (optional)</label>
+                                            <textarea class="form-control form-control-sm" id="note-<%= booking.guid %>" name="note" rows="2" maxlength="500"></textarea>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="weather-<%= booking.guid %>" name="weather_confirm" value="1" required>
+                                            <label class="form-check-label small" for="weather-<%= booking.guid %>">I confirm this booking was affected by inclement weather.</label>
+                                        </div>
+                                        <button class="btn btn-outline-primary btn-sm" type="submit">Request credit</button>
+                                    </form>
+                                </details>
+                            <% } %>
+                        </li>
+                    <% }) %>
+                </ul>
+            <% } else { %>
+                <p class="text-muted mb-0">No bookings in the last month.</p>
+            <% } %>
+        </section>
+    </main>
+
+    <script>
+        var format = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        var timeOnly = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        document.querySelectorAll('[data-local-start]').forEach(function (time) {
+            var instant = new Date(time.dateTime);
+            if (Number.isFinite(instant.getTime())) time.textContent = format.format(instant);
+        });
+        document.querySelectorAll('[data-local-end]').forEach(function (time) {
+            var instant = new Date(time.dateTime);
+            if (Number.isFinite(instant.getTime())) time.textContent = timeOnly.format(instant);
+        });
+    </script>
+</body>
+
+</html>

@@ -2,6 +2,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
+    /* Keep option text clear of the dropdown arrow. */
+    select.form-control:not([multiple]):not([size]), select.custom-select {
+        -webkit-appearance: none;
+        appearance: none;
+        padding-right: 2.75rem;
+        text-overflow: ellipsis;
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23113255' stroke-width='2' d='M1 1l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 1rem center / 0.75rem 0.5rem;
+    }
     /* Camden Council design system (lbcamden-frontend) palette */
     :root {
         --camden-text: #0b0c0c;

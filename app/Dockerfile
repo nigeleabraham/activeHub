@@ -24,11 +24,12 @@ RUN --mount=type=bind,source=package.json,target=package.json \
     npm ci --include=dev --ignore-scripts
 
 # Copy only the application files explicitly so stray local files (env files, keys, tests) never enter the image.
-COPY package.json package-lock.json .npmrc server.js facilityUtils.js ./
+COPY package.json package-lock.json .npmrc server.js facilityUtils.js permissions.js ./
 COPY middleware ./middleware
 COPY models ./models
 COPY routes ./routes
 COPY scripts ./scripts
+COPY seed ./seed
 COPY views ./views
 
 # Run the application as a non-root user.

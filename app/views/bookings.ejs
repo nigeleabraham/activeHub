@@ -8,62 +8,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
-    <style>
-        .booking-toast {
-            position: fixed;
-            top: 1rem;
-            left: 50%;
-            z-index: 1080;
-            width: 28rem;
-            max-width: calc(100% - 2rem);
-            transform: translateX(-50%);
-            border-left: 6px solid #00703c;
-            border-radius: 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-        }
-
-        .booking-calendar-slot {
-            min-height: 48px;
-            text-align: left;
-        }
-
-        .booking-calendar-day-nav {
-            display: grid;
-            grid-template-columns: 48px minmax(0, 1fr) 48px;
-            align-items: center;
-            gap: 0.5rem;
-            width: 24rem;
-            max-width: 100%;
-        }
-
-        .booking-calendar-day-nav__button {
-            width: 48px;
-            height: 48px;
-            padding: 0;
-        }
-
-        .booking-calendar-day-nav__date {
-            display: grid;
-            min-width: 0;
-            min-height: 48px;
-            margin: 0;
-            place-items: center;
-            overflow-wrap: anywhere;
-        }
-
-        .booking-calendar-slots {
-            display: grid;
-            align-items: start;
-            gap: 0.5rem;
-        }
-
-        .booking-calendar-day {
-            min-width: 0;
-            padding: 0.5rem;
-            border: 1px solid #dee2e6;
-            border-radius: 0.25rem;
-        }
-    </style>
+    <%- include('partials/booking-flow-styles') %>
 </head>
 
 <body class="bg-light">
@@ -77,33 +22,7 @@
             <%- include('partials/navigation') %>
         </header>
 
-        <% if (error) { %>
-            <div class="alert alert-warning" role="alert">
-                <% if (error === 'booking-conflict') { %>
-                    This time overlaps a booking that uses one or more of the same resources.
-                <% } else if (error === 'resource-in-use') { %>
-                    This resource is used by a bookable court. Remove its claims before deleting it.
-                <% } else if (error === 'option-booked') { %>
-                    This court option has current or future bookings and cannot be changed or deleted yet.
-                <% } else if (error === 'duplicate-resource') { %>
-                    A resource with that name already exists at this facility.
-                <% } else if (error === 'invalid-option') { %>
-                    The court option could not be saved. Check its sport and resource selections.
-                <% } else if (error === 'outside-opening-hours') { %>
-                    The selected time is outside this facility's opening hours.
-                <% } else { %>
-                    The request could not be completed. Check the selected facility and time range.
-                <% } %>
-            </div>
-        <% } else if (created) { %>
-            <div class="alert alert-success booking-toast d-flex align-items-start" role="status" data-booking-toast>
-                <div class="mr-3">
-                    <strong><%= created === 1 ? 'Booking confirmed' : created + ' bookings confirmed' %></strong>
-                    <div class="small">Your <%= created === 1 ? 'slot has' : 'slots have' %> been booked successfully. You can see <%= created === 1 ? 'it' : 'them' %> under Bookings for the facility.</div>
-                </div>
-                <button type="button" class="close ml-auto" data-dismiss-toast aria-label="Dismiss notification"><span aria-hidden="true">&times;</span></button>
-            </div>
-        <% } %>
+        <%- include('partials/booking-messages') %>
 
         <% if (facilities.length) { %>
             <% facilities.forEach(facility => { %>
@@ -113,13 +32,12 @@
                         <p class="text-muted mb-0"><%= facility.address %>, <%= facility.postcode %></p>
                     </header>
 
-                    <% if (isAdmin) { %>
                     <div>
                         <div class="mb-4">
                             <details>
                                 <summary class="h5 mb-3">Resources (<%= facility.resources.length %>)</summary>
                                 <p class="text-muted small">Resources are exclusive booking claims. Courts sharing a resource block each other. Use a separate resource for each court-pair conflict so unrelated courts remain available.</p>
-                                <form class="form-inline mb-3" method="POST" action="/bookings/resources">
+                                <form class="form-inline mb-3" method="POST" action="/admin/bookings/resources">
                                     <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                     <label class="sr-only" for="new-resource-<%= facility.guid %>">Resource name</label>
                                     <input class="form-control form-control-sm mr-2 mb-2" id="new-resource-<%= facility.guid %>" name="name" type="text" maxlength="120" placeholder="Resource name" required>
@@ -134,7 +52,7 @@
                                                     <div class="d-flex">
                                                         <details class="mr-2">
                                                             <summary class="btn btn-outline-secondary btn-sm">Edit</summary>
-                                                            <form class="mt-2" method="POST" action="/bookings/resources/update">
+                                                            <form class="mt-2" method="POST" action="/admin/bookings/resources/update">
                                                                 <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                                                 <input type="hidden" name="guid" value="<%= resource.guid %>">
                                                                 <label class="sr-only" for="resource-name-<%= resource.guid %>">Resource name</label>
@@ -143,7 +61,7 @@
                                                                 <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                                             </form>
                                                         </details>
-                                                        <form method="POST" action="/bookings/resources/destroy">
+                                                        <form method="POST" action="/admin/bookings/resources/destroy">
                                                             <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                                             <input type="hidden" name="resource_guid" value="<%= resource.guid %>">
                                                             <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= resource.name %>">Delete</button>
@@ -163,7 +81,7 @@
                             <details>
                                 <summary class="h5 mb-3">Bookable courts (<%= facility.options.length %>)</summary>
                                 <% if (facility.sports.length && facility.resources.length) { %>
-                                    <form class="border rounded p-3 mb-4" method="POST" action="/bookings/options">
+                                    <form class="border rounded p-3 mb-4" method="POST" action="/admin/bookings/options">
                                         <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                         <h3 class="h6">Add bookable court</h3>
                                         <div class="form-group">
@@ -203,7 +121,7 @@
                                                     <h3 class="h6 mb-1"><%= option.name %> <span class="text-muted font-weight-normal">· <%= option.sport_name %></span></h3>
                                                     <p class="small text-muted mb-2">Uses: <%= option.resources.map(resource => resource.name).join(', ') %></p>
                                                 </div>
-                                                <form method="POST" action="/bookings/options/destroy">
+                                                <form method="POST" action="/admin/bookings/options/destroy">
                                                     <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                                     <input type="hidden" name="option_guid" value="<%= option.guid %>">
                                                     <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= option.name %>">Delete</button>
@@ -211,7 +129,7 @@
                                             </div>
                                             <details>
                                                 <summary class="btn btn-outline-secondary btn-sm">Edit court claims</summary>
-                                                <form class="mt-3 p-3 border rounded" method="POST" action="/bookings/options/update">
+                                                <form class="mt-3 p-3 border rounded" method="POST" action="/admin/bookings/options/update">
                                                     <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                                     <input type="hidden" name="guid" value="<%= option.guid %>">
                                                     <div class="form-group">
@@ -245,493 +163,15 @@
                             </details>
                         </div>
                     </div>
-                    <% } %>
 
-                    <details>
-                        <summary class="h5 mb-3">Bookings (<%= facility.bookings.length %>)</summary>
-                        <% if (facility.options.length) { %>
-                            <div class="booking-calendar border rounded p-3 mb-3" data-booking-calendar data-facility-guid="<%= facility.guid %>">
-                                <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
-                                    <div class="form-group mb-2 mr-3">
-                                        <label for="calendar-option-<%= facility.guid %>">Court</label>
-                                        <select class="form-control form-control-sm" id="calendar-option-<%= facility.guid %>" data-calendar-option>
-                                            <% facility.options.forEach(option => { %>
-                                                <option value="<%= option.guid %>"><%= option.name %> · <%= option.sport_name %></option>
-                                            <% }); %>
-                                        </select>
-                                    </div>
-                                    <div class="booking-calendar-day-nav mb-2">
-                                        <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-previous aria-label="Previous day">&lt;</button>
-                                        <strong class="booking-calendar-day-nav__date" data-calendar-date aria-live="polite" aria-atomic="true"></strong>
-                                        <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-next aria-label="Next day">&gt;</button>
-                                    </div>
-                                </div>
-                                <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
-                                <div class="booking-calendar-slots mb-3" data-calendar-slots role="group" aria-label="Booking times"></div>
-                                <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
-                                <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
-                                <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
-                                <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
-                                <form method="POST" action="/bookings/create-batch" data-booking-form>
-                                    <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                    <input type="hidden" name="slots" data-selected-slots>
-                                    <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Book selected slots</button>
-                                    <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
-                                </form>
-                            </div>
-                        <% } else { %>
-                            <p class="text-muted">Add a bookable court before creating bookings.</p>
-                        <% } %>
-                        <% if (facility.bookings.length) { %>
-                            <div class="table-responsive">
-                                <table class="table table-sm bg-white">
-                                    <thead><tr><th>Court</th><th>Start (local)</th><th>End (local)</th><th>Resources held</th><th>Booked by</th><th></th></tr></thead>
-                                    <tbody>
-                                        <% facility.bookings.forEach(booking => { %>
-                                            <tr>
-                                                <td><%= booking.option_name %> · <%= booking.sport_name %></td>
-                                                <td><time data-local-booking-time datetime="<%= moment.utc(booking.starts_at).toISOString() %>"><%= moment.utc(booking.starts_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
-                                                <td><time data-local-booking-time datetime="<%= moment.utc(booking.ends_at).toISOString() %>"><%= moment.utc(booking.ends_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
-                                                <td><%= booking.resource_names.join(', ') %></td>
-                                                <td>
-                                                    <% if (isAdmin) { %>
-                                                        <form class="form-inline flex-nowrap" method="POST" action="/bookings/assign">
-                                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                            <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
-                                                            <label class="sr-only" for="assign-<%= booking.guid %>">Assign booking to profile</label>
-                                                            <select class="form-control form-control-sm mr-2" id="assign-<%= booking.guid %>" name="profile_guid">
-                                                                <option value="">Unassigned</option>
-                                                                <% profiles.forEach(profile => { %>
-                                                                    <option value="<%= profile.guid %>"<%= profile.guid === booking.profile_guid ? ' selected' : '' %>><%= profile.name %> (<%= profile.role %>)</option>
-                                                                <% }); %>
-                                                            </select>
-                                                            <button class="btn btn-outline-secondary btn-sm" type="submit">Assign</button>
-                                                        </form>
-                                                    <% } else { %>
-                                                        <%= booking.profile_name || 'Unassigned' %>
-                                                    <% } %>
-                                                </td>
-                                                <td>
-                                                    <% if (isAdmin || (currentProfile && booking.profile_guid === currentProfile.guid)) { %>
-                                                        <form method="POST" action="/bookings/cancel">
-                                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                            <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
-                                                            <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
-                                                        </form>
-                                                    <% } %>
-                                                </td>
-                                            </tr>
-                                        <% }); %>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <% } else { %>
-                            <p class="text-muted">No bookings yet.</p>
-                        <% } %>
-                    </details>
+                    <%- include('partials/booking-flow', { facility }) %>
                 </section>
             <% }); %>
         <% } else { %>
             <p class="text-muted border-top pt-3">No in-app-managed facilities are available.</p>
         <% } %>
     </main>
-    <script>
-        const resourceFormScrollKey = 'activeHub-bookings-scroll-y';
-        const savedResourceFormScroll = sessionStorage.getItem(resourceFormScrollKey);
-        if (savedResourceFormScroll !== null) {
-            sessionStorage.removeItem(resourceFormScrollKey);
-            requestAnimationFrame(() => window.scrollTo(0, Number(savedResourceFormScroll)));
-        }
-
-        const bookingToast = document.querySelector('[data-booking-toast]');
-        if (bookingToast) {
-            const dismissToast = () => bookingToast.remove();
-            bookingToast.querySelector('[data-dismiss-toast]').addEventListener('click', dismissToast);
-            setTimeout(dismissToast, 10000);
-        }
-
-        const calendarDatePartsFormatter = new Intl.DateTimeFormat(undefined, {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-        });
-        const calendarClockFormatter = new Intl.DateTimeFormat(undefined, {
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23'
-        });
-        const weekdayAbbreviations = {
-            Monday: 'Mon.',
-            Tuesday: 'Tue.',
-            Wednesday: 'Wed.',
-            Thursday: 'Thu.',
-            Friday: 'Fri.',
-            Saturday: 'Sat.',
-            Sunday: 'Sun.'
-        };
-        const monthAbbreviations = {
-            January: 'Jan.',
-            February: 'Feb.',
-            March: 'Mar.',
-            April: 'Apr.',
-            May: 'May',
-            June: 'Jun.',
-            July: 'Jul.',
-            August: 'Aug.',
-            September: 'Sept.',
-            October: 'Oct.',
-            November: 'Nov.',
-            December: 'Dec.'
-        };
-
-        function formatCalendarDate(date) {
-            const parts = Object.fromEntries(calendarDatePartsFormatter.formatToParts(date)
-                .filter(part => part.type !== 'literal')
-                .map(part => [part.type, part.value]));
-            return `${weekdayAbbreviations[parts.weekday] || parts.weekday} ${parts.day} ${monthAbbreviations[parts.month] || parts.month} ${parts.year}`;
-        }
-
-        function formatCalendarDateTime(date) {
-            return `${formatCalendarDate(date)}, ${calendarClockFormatter.format(date)}`;
-        }
-
-        document.querySelectorAll('[data-local-booking-time]').forEach(time => {
-            const instant = new Date(time.dateTime);
-            if (Number.isFinite(instant.getTime())) {
-                time.textContent = formatCalendarDateTime(instant);
-            }
-        });
-        const calendarTimeFormatter = new Intl.DateTimeFormat(undefined, {
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23'
-        });
-        const calendarScheduleFormatter = new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'Europe/London',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23'
-        });
-
-        function startOfCalendarDay(date) {
-            const day = new Date(date);
-            day.setHours(0, 0, 0, 0);
-            return day;
-        }
-
-        function addCalendarDays(date, amount) {
-            const result = new Date(date);
-            result.setDate(result.getDate() + amount);
-            return result;
-        }
-
-        document.querySelectorAll('form[method="POST"]').forEach(form => {
-            form.addEventListener('submit', () => {
-                if (!form.matches('[data-booking-form]')) {
-                    sessionStorage.setItem(resourceFormScrollKey, String(window.scrollY));
-                }
-            });
-        });
-
-        document.querySelectorAll('[data-booking-calendar]').forEach(calendar => {
-            const facilityGuid = calendar.dataset.facilityGuid;
-            const optionSelect = calendar.querySelector('[data-calendar-option]');
-            const dateLabel = calendar.querySelector('[data-calendar-date]');
-            const previousDayButton = calendar.querySelector('[data-calendar-day-previous]');
-            const nextDayButton = calendar.querySelector('[data-calendar-day-next]');
-            const slotsList = calendar.querySelector('[data-calendar-slots]');
-            const selectionLabel = calendar.querySelector('[data-calendar-selection]');
-            const bookingForm = calendar.querySelector('[data-booking-form]');
-            const bookingError = bookingForm.querySelector('[data-booking-error]');
-            const submitButton = bookingForm.querySelector('[data-booking-submit]');
-            let selectedDate = startOfCalendarDay(new Date());
-            let visibleDayCount = 1;
-            let availabilityRequest = 0;
-            let options = [];
-            let bookings = [];
-            let schedules = null;
-            let pendingSlots = [];
-            const pendingList = calendar.querySelector('[data-pending-list]');
-            const pendingCount = calendar.querySelector('[data-pending-count]');
-            const slotsInput = bookingForm.querySelector('[data-selected-slots]');
-            const calendarError = calendar.querySelector('[data-calendar-error]');
-
-            function overlaps(slot, start, end) {
-                return new Date(slot.starts_at) < end && new Date(slot.ends_at) > start;
-            }
-
-            function slotResources(optionGuid) {
-                const option = options.find(item => item.guid === optionGuid);
-                return new Set((option?.resources || []).map(resource => resource.guid));
-            }
-
-            function renderPending() {
-                pendingSlots.sort((first, second) => first.starts_at.localeCompare(second.starts_at));
-                pendingList.replaceChildren();
-                for (const slot of pendingSlots) {
-                    const item = document.createElement('li');
-                    item.className = 'list-group-item px-0 py-2 d-flex justify-content-between align-items-center';
-                    const label = document.createElement('span');
-                    label.textContent = `${slot.option_name} · ${formatCalendarDateTime(new Date(slot.starts_at))}`;
-                    const remove = document.createElement('button');
-                    remove.type = 'button';
-                    remove.className = 'btn btn-outline-danger btn-sm';
-                    remove.textContent = 'Remove';
-                    remove.setAttribute('aria-label', `Remove ${label.textContent}`);
-                    remove.addEventListener('click', () => {
-                        pendingSlots = pendingSlots.filter(candidate => candidate !== slot);
-                        renderPending();
-                        buildCalendar();
-                    });
-                    item.append(label, remove);
-                    pendingList.append(item);
-                }
-                if (!pendingSlots.length) {
-                    const empty = document.createElement('li');
-                    empty.className = 'list-group-item px-0 py-2 text-muted small';
-                    empty.textContent = 'No slots selected.';
-                    pendingList.append(empty);
-                }
-                pendingCount.textContent = String(pendingSlots.length);
-                slotsInput.value = JSON.stringify(pendingSlots.map(({ option_guid, starts_at, ends_at }) => ({ option_guid, starts_at, ends_at })));
-                submitButton.disabled = !pendingSlots.length;
-                selectionLabel.textContent = pendingSlots.length
-                    ? `${pendingSlots.length} slot${pendingSlots.length === 1 ? '' : 's'} selected.`
-                    : 'Select available time slots to add them to your list.';
-            }
-
-            function isWithinOpeningHours(start, end) {
-                if (schedules === null) return true;
-                const getParts = date => Object.fromEntries(calendarScheduleFormatter.formatToParts(date)
-                    .filter(part => part.type !== 'literal')
-                    .map(part => [part.type, part.value]));
-                const startParts = getParts(start);
-                const endParts = getParts(end);
-                const startDate = `${startParts.year}-${startParts.month}-${startParts.day}`;
-                const endDate = `${endParts.year}-${endParts.month}-${endParts.day}`;
-                if (startDate !== endDate) return false;
-
-                const schedule = schedules.find(item => item.date === startDate);
-                if (!schedule || schedule.is_closed) return false;
-                const startMinutes = Number(startParts.hour) * 60 + Number(startParts.minute);
-                const endMinutes = Number(endParts.hour) * 60 + Number(endParts.minute);
-                const openingMinutes = Number(schedule.opens_at.slice(0, 2)) * 60 + Number(schedule.opens_at.slice(3, 5));
-                const closingMinutes = Number(schedule.closes_at.slice(0, 2)) * 60 + Number(schedule.closes_at.slice(3, 5));
-                return startMinutes >= openingMinutes && endMinutes <= closingMinutes;
-            }
-
-            function createSlotButton(slotStart, slotEnd, claimedResources, selectedOption) {
-                const conflicts = bookings.filter(booking =>
-                    booking.resource_guids.some(resourceGuid => claimedResources.has(resourceGuid)) &&
-                    new Date(booking.starts_at) < slotEnd && new Date(booking.ends_at) > slotStart
-                );
-                const existingPending = pendingSlots.find(slot =>
-                    slot.option_guid === selectedOption.guid && slot.starts_at === slotStart.toISOString());
-                const pendingConflict = !existingPending && pendingSlots.some(slot =>
-                    overlaps(slot, slotStart, slotEnd) &&
-                    [...slotResources(slot.option_guid)].some(resourceGuid => claimedResources.has(resourceGuid)));
-                const isPast = slotEnd <= new Date();
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'btn btn-block booking-calendar-slot mb-2';
-
-                let status;
-                if (conflicts.length) {
-                    button.classList.add('btn-secondary');
-                    status = 'Booked';
-                    button.title = conflicts.map(booking => booking.option_name).join(', ');
-                    button.disabled = true;
-                } else if (isPast) {
-                    button.classList.add('btn-light', 'text-muted');
-                    status = 'Past';
-                    button.disabled = true;
-                } else if (pendingConflict) {
-                    button.classList.add('btn-light', 'text-muted');
-                    status = 'Held';
-                    button.title = 'Conflicts with a slot in your selected list';
-                    button.disabled = true;
-                } else {
-                    button.classList.add('btn-outline-success');
-                    status = 'Avail.';
-                    const isSelected = Boolean(existingPending);
-                    button.setAttribute('aria-pressed', String(isSelected));
-                    if (isSelected) {
-                        button.classList.remove('btn-outline-success');
-                        button.classList.add('btn-success', 'active');
-                        status = 'Selected';
-                    }
-                    button.addEventListener('click', () => {
-                        if (existingPending) {
-                            pendingSlots = pendingSlots.filter(slot => slot !== existingPending);
-                        } else {
-                            pendingSlots.push({
-                                option_guid: selectedOption.guid,
-                                option_name: selectedOption.name,
-                                starts_at: slotStart.toISOString(),
-                                ends_at: slotEnd.toISOString()
-                            });
-                        }
-                        renderPending();
-                        buildCalendar();
-                    });
-                }
-
-                button.textContent = `${calendarTimeFormatter.format(slotStart)} · ${status}`;
-                const accessibleStatus = status === 'Avail.' ? 'Available' : status;
-                button.setAttribute('aria-label', `${accessibleStatus}, ${formatCalendarDateTime(slotStart)}`);
-                return button;
-            }
-
-            function buildCalendar() {
-                const visibleDays = Array.from({ length: visibleDayCount }, (_, index) => addCalendarDays(selectedDate, index));
-                const lastVisibleDay = visibleDays[visibleDays.length - 1];
-                dateLabel.textContent = visibleDayCount === 1
-                    ? formatCalendarDate(selectedDate)
-                    : `${formatCalendarDate(selectedDate)} – ${formatCalendarDate(lastVisibleDay)}`;
-                previousDayButton.disabled = selectedDate <= startOfCalendarDay(new Date());
-                const navigationUnit = visibleDayCount === 1 ? 'day' : 'days';
-                previousDayButton.setAttribute('aria-label', `Previous ${visibleDayCount} ${navigationUnit}`);
-                nextDayButton.setAttribute('aria-label', `Next ${visibleDayCount} ${navigationUnit}`);
-                slotsList.replaceChildren();
-                slotsList.style.gridTemplateColumns = `repeat(${visibleDayCount}, minmax(0, 1fr))`;
-                const selectedOption = options.find(option => option.guid === optionSelect.value);
-                const claimedResources = new Set((selectedOption?.resources || []).map(resource => resource.guid));
-
-                for (const day of visibleDays) {
-                    const dayPanel = document.createElement('section');
-                    dayPanel.className = 'booking-calendar-day';
-                    dayPanel.setAttribute('aria-label', formatCalendarDate(day));
-                    const heading = document.createElement('h3');
-                    heading.className = 'h6 mb-3';
-                    heading.textContent = formatCalendarDate(day);
-                    dayPanel.append(heading);
-
-                    let slotCount = 0;
-                    for (let hour = 0; hour < 24; hour++) {
-                        const slotStart = new Date(day);
-                        slotStart.setHours(hour, 0, 0, 0);
-                        const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
-                        if (slotStart.getHours() !== hour || !isWithinOpeningHours(slotStart, slotEnd)) continue;
-                        dayPanel.append(createSlotButton(slotStart, slotEnd, claimedResources, selectedOption));
-                        slotCount += 1;
-                    }
-                    if (!slotCount && schedules !== null) {
-                        const emptyState = document.createElement('p');
-                        emptyState.className = 'text-center text-muted';
-                        emptyState.textContent = 'No open booking hours for this day.';
-                        dayPanel.append(emptyState);
-                    }
-                    slotsList.append(dayPanel);
-                }
-            }
-
-            function updateVisibleDayCount() {
-                const nextCount = Math.max(1, Math.min(7, Math.floor(slotsList.clientWidth / 200)));
-                if (nextCount === visibleDayCount) return;
-                visibleDayCount = nextCount;
-                loadAvailability();
-            }
-
-            async function loadAvailability() {
-                const requestId = ++availabilityRequest;
-                calendarError.hidden = true;
-                const dayEnd = addCalendarDays(selectedDate, visibleDayCount);
-                const query = new URLSearchParams({ start: selectedDate.toISOString(), end: dayEnd.toISOString() });
-                try {
-                    const response = await fetch(`/bookings/availability/${encodeURIComponent(facilityGuid)}?${query}`);
-                    if (!response.ok) throw new Error('Availability could not be loaded.');
-                    const data = await response.json();
-                    if (requestId !== availabilityRequest) return;
-                    const currentOption = optionSelect.value;
-                    options = data.options;
-                    bookings = data.bookings;
-                    schedules = data.schedules ?? null;
-                    optionSelect.replaceChildren();
-                    for (const option of options) {
-                        const item = document.createElement('option');
-                        item.value = option.guid;
-                        item.textContent = `${option.name} · ${option.sport_name}`;
-                        optionSelect.append(item);
-                    }
-                    if (options.some(option => option.guid === currentOption)) {
-                        optionSelect.value = currentOption;
-                    } else {
-                        pendingSlots = pendingSlots.filter(slot => options.some(option => option.guid === slot.option_guid));
-                        renderPending();
-                    }
-                    buildCalendar();
-                } catch (error) {
-                    if (requestId !== availabilityRequest) return;
-                    console.error('Unable to load booking calendar availability', error);
-                    calendarError.textContent = 'Availability could not be loaded. Please try again.';
-                    calendarError.hidden = false;
-                }
-            }
-
-            optionSelect.addEventListener('change', () => {
-                buildCalendar();
-            });
-            previousDayButton.addEventListener('click', () => {
-                const today = startOfCalendarDay(new Date());
-                if (selectedDate <= today) return;
-                const previousStart = addCalendarDays(selectedDate, -visibleDayCount);
-                selectedDate = previousStart < today ? today : previousStart;
-                loadAvailability();
-            });
-            nextDayButton.addEventListener('click', () => {
-                selectedDate = addCalendarDays(selectedDate, visibleDayCount);
-                loadAvailability();
-            });
-            const calendarResizeObserver = new ResizeObserver(updateVisibleDayCount);
-            calendarResizeObserver.observe(calendar);
-            calendar.closest('details')?.addEventListener('toggle', () => requestAnimationFrame(updateVisibleDayCount));
-
-            bookingForm.addEventListener('submit', async event => {
-                event.preventDefault();
-                if (!pendingSlots.length) return;
-                bookingError.hidden = true;
-                bookingError.textContent = '';
-                submitButton.disabled = true;
-                try {
-                    const response = await fetch(bookingForm.action, {
-                        method: 'POST',
-                        body: new URLSearchParams(new FormData(bookingForm))
-                    });
-                    if (response.status === 409) {
-                        await loadAvailability();
-                        pendingSlots = pendingSlots.filter(slot => {
-                            const resources = slotResources(slot.option_guid);
-                            return !bookings.some(booking =>
-                                booking.resource_guids.some(resourceGuid => resources.has(resourceGuid)) &&
-                                overlaps(booking, new Date(slot.starts_at), new Date(slot.ends_at)));
-                        });
-                        renderPending();
-                        buildCalendar();
-                        bookingError.textContent = "A selected slot was just taken, so nothing was booked. Taken slots were removed; review your list and try again.";
-                        bookingError.hidden = false;
-                        return;
-                    }
-                    if (response.redirected) {
-                        sessionStorage.setItem(resourceFormScrollKey, String(window.scrollY));
-                        window.location.assign(response.url);
-                        return;
-                    }
-                    throw new Error('Booking request failed');
-                } catch (error) {
-                    bookingError.textContent = 'Booking could not be saved. Please try again.';
-                    bookingError.hidden = false;
-                    submitButton.disabled = false;
-                }
-            });
-
-            renderPending();
-            loadAvailability();
-        });
-    </script>
+    <%- include('partials/booking-flow-script') %>
 </body>
 
 </html>

@@ -12,7 +12,7 @@
 </head>
 
 <body class="bg-light">
-    <% if (isAdmin) { %><a class="skip-link" href="#add-facility-section">Skip to add facility form</a><% } %>
+    <a class="skip-link" href="#add-facility-section">Skip to add facility form</a>
     <a class="skip-link" href="#facility-directory">Skip to facility directory</a>
     <main class="container py-5">
         <header class="mb-4">
@@ -27,11 +27,10 @@
         </header>
 
         <div class="row">
-            <% if (isAdmin) { %>
             <section id="add-facility-section" tabindex="-1" class="col-lg-5 mb-4" aria-labelledby="add-facility-heading">
                 <div class="bg-white border rounded shadow-sm p-4">
                     <h2 id="add-facility-heading" class="h5 mb-4">Add facility</h2>
-                    <form method="POST" action="/facilities" data-facility-form>
+                    <form method="POST" action="/admin/facilities" data-facility-form>
                         <div class="form-group">
                             <label for="name">Name</label>
                             <input class="form-control" id="name" name="name" type="text" maxlength="160" required>
@@ -62,7 +61,7 @@
                                     <% }); %>
                                 </div>
                             <% } else { %>
-                                <p class="text-muted mb-0">No sports defined. <a href="/sports">Manage sports</a>.</p>
+                                <p class="text-muted mb-0">No sports defined. <a href="/admin/sports">Manage sports</a>.</p>
                             <% } %>
                         </fieldset>
                         <div class="form-group">
@@ -81,6 +80,11 @@
                                 <% }); %>
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label for="max-resident-bookings">Maximum upcoming bookings per resident</label>
+                            <input class="form-control" id="max-resident-bookings" name="max_resident_bookings" type="number" min="1" max="100" step="1" value="8" required>
+                            <small class="form-text text-muted">Applies to residents booking in-app. Administrators are not limited.</small>
+                        </div>
                         <div class="form-group external-booking-field" hidden>
                             <label for="external-booking-url">External booking URL</label>
                             <input class="form-control" id="external-booking-url" name="external_booking_url" type="url" maxlength="2048" placeholder="https://example.com/book">
@@ -95,9 +99,8 @@
                     </form>
                 </div>
             </section>
-            <% } %>
 
-            <section id="facility-directory" tabindex="-1" class="<%= isAdmin ? 'col-lg-7' : 'col-12' %>" aria-labelledby="facility-list-heading">
+            <section id="facility-directory" tabindex="-1" class="<%= 'col-lg-7' %>" aria-labelledby="facility-list-heading">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <h2 id="facility-list-heading" class="h5 mb-0">Directory</h2>
                     <span class="badge badge-secondary"><%= facilities.length %></span>
@@ -116,7 +119,7 @@
                             <div class="d-flex flex-wrap align-items-center mt-2">
                                 <p class="mb-0">Booking method: <%= facility.booking_mode === 'external' ? 'External site' : 'In-app' %></p>
                                 <% if (facility.booking_mode === 'in_app') { %>
-                                    <a class="btn btn-outline-secondary btn-sm ml-2" href="/bookings#facility-<%= facility.guid %>">Manage bookings</a>
+                                    <a class="btn btn-outline-secondary btn-sm ml-2" href="/admin/bookings#facility-<%= facility.guid %>">Manage bookings</a>
                                 <% } %>
                             </div>
                             <% if (facility.booking_mode === 'external' && facility.external_booking_url) { %>
@@ -136,24 +139,21 @@
                                     <% facility.courses.forEach(course => { %>
                                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                             <span><%= course.name %></span>
-                                            <% if (isAdmin) { %>
-                                            <form method="POST" action="/facilities/courses/destroy">
+                                            <form method="POST" action="/admin/facilities/courses/destroy">
                                                 <input type="hidden" name="guid" value="<%= course.guid %>">
                                                 <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">
                                                     <i class="fa fa-trash" aria-hidden="true"></i>
                                                 </button>
                                             </form>
-                                            <% } %>
                                         </li>
                                     <% }); %>
                                 </ul>
-                                <a class="btn btn-outline-secondary btn-sm mt-3" href="/courses#facility-<%= facility.guid %>">View courses</a>
+                                <a class="btn btn-outline-secondary btn-sm mt-3" href="/admin/courses#facility-<%= facility.guid %>">View courses</a>
                             </details>
                             <% } %>
-                            <% if (isAdmin) { %>
                             <details class="mt-3">
                                 <summary class="h5 mb-3">Edit facility</summary>
-                                <form class="mt-3 pt-3 border-top" method="POST" action="/facilities/update" data-facility-form>
+                                <form class="mt-3 pt-3 border-top" method="POST" action="/admin/facilities/update" data-facility-form>
                                     <input type="hidden" name="guid" value="<%= facility.guid %>">
                                     <div class="form-group">
                                         <label for="edit-name-<%= facility.guid %>">Name</label>
@@ -185,7 +185,7 @@
                                                 <% }); %>
                                             </div>
                                         <% } else { %>
-                                            <p class="text-muted mb-0">No sports defined. <a href="/sports">Manage sports</a>.</p>
+                                            <p class="text-muted mb-0">No sports defined. <a href="/admin/sports">Manage sports</a>.</p>
                                         <% } %>
                                     </fieldset>
                                     <div class="form-group">
@@ -204,6 +204,10 @@
                                             <% }); %>
                                         </select>
                                     </div>
+                                    <div class="form-group">
+                                        <label for="edit-max-resident-bookings-<%= facility.guid %>">Maximum upcoming bookings per resident</label>
+                                        <input class="form-control" id="edit-max-resident-bookings-<%= facility.guid %>" name="max_resident_bookings" type="number" min="1" max="100" step="1" value="<%= facility.max_resident_bookings %>" required>
+                                    </div>
                                     <div class="form-group external-booking-field" <% if (facility.booking_mode !== 'external') { %>hidden<% } %>>
                                         <label for="edit-external-booking-url-<%= facility.guid %>">External booking URL</label>
                                         <input class="form-control" id="edit-external-booking-url-<%= facility.guid %>" name="external_booking_url" type="url" maxlength="2048" value="<%= facility.external_booking_url || '' %>" placeholder="https://example.com/book">
@@ -217,13 +221,12 @@
                                 </form>
                             </details>
                             <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
-                            <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/facilities/destroy">
+                            <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/facilities/destroy">
                                 <input type="hidden" name="guid" value="<%= facility.guid %>">
                                 <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= facility.name %>">
                                     <i class="fa fa-trash" aria-hidden="true"></i>
                                 </button>
                             </form>
-                            <% } %>
                         </article>
                     <% }); %>
                 <% } else { %>

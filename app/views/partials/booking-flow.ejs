@@ -1,0 +1,70 @@
+<%# Params: facility %>
+<% const visibleBookings = facility.bookings; %>
+<details>
+    <summary class="h5 mb-3">Bookings (<span data-booking-count><%= visibleBookings.length %></span>)</summary>
+    <% if (facility.options.length) { %>
+        <div class="booking-calendar border rounded p-3 mb-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-default-profile-guid="<%= currentProfile.guid %>" data-default-profile-name="<%= currentProfile.name %>" data-default-profile-role="<%= currentProfile.role %>" data-default-profile-email="<%= currentProfile.email %>">
+            <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
+                <div class="form-group mb-2 mr-3">
+                    <label for="calendar-option-<%= facility.guid %>">Court</label>
+                    <select class="form-control form-control-sm" id="calendar-option-<%= facility.guid %>" data-calendar-option>
+                        <% facility.options.forEach(option => { %>
+                            <option value="<%= option.guid %>"><%= option.name %> · <%= option.sport_name %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="booking-calendar-day-nav mb-2">
+                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-previous aria-label="Previous day">&lt;</button>
+                    <strong class="booking-calendar-day-nav__date" data-calendar-date aria-live="polite" aria-atomic="true"></strong>
+                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-next aria-label="Next day">&gt;</button>
+                </div>
+            </div>
+            <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
+            <div class="booking-calendar-slots mb-3" data-calendar-slots role="group" aria-label="Booking times"></div>
+            <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
+            <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
+            <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
+            <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
+            <form method="POST" action="/admin/bookings/create-batch" data-booking-form>
+                <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                <input type="hidden" name="slots" data-selected-slots>
+                <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Book selected slots</button>
+                <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
+            </form>
+        </div>
+    <% } else { %>
+        <p class="text-muted">Add a bookable court before creating bookings.</p>
+    <% } %>
+    <% if (visibleBookings.length) { %>
+        <div class="table-responsive" data-bookings-table>
+            <table class="table table-sm bg-white">
+                <thead><tr><th>Reference</th><th>Court</th><th>Start (local)</th><th>End (local)</th><th>Resources held</th><th>Fee / paid</th><th>Booked for</th><th>Booked by</th><th></th></tr></thead>
+                <tbody>
+                    <% visibleBookings.forEach(booking => { %>
+                        <tr>
+                            <td><code><%= booking.booking_ref %></code></td>
+                            <td><%= booking.option_name %> · <%= booking.sport_name %></td>
+                            <td><time data-local-booking-time datetime="<%= moment.utc(booking.starts_at).toISOString() %>"><%= moment.utc(booking.starts_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
+                            <td><time data-local-booking-time datetime="<%= moment.utc(booking.ends_at).toISOString() %>"><%= moment.utc(booking.ends_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
+                            <td><%= booking.resource_names.join(', ') %></td>
+                            <td><% if (booking.payment_status === 'paid' || booking.payment_status === 'credit') { %>Fee £<%= (booking.amount_pence / 100).toFixed(2) %> · paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %><%= booking.payment_status === 'credit' ? ' (credit)' : booking.credit_applied_pence ? ' (incl. £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit)' : '' %><% } else { %>Free · paid £0.00<% } %></td>
+                            <td><%= booking.profile_name || 'Unassigned' %></td>
+                            <td><%= booking.booked_by_name || 'Not recorded' %></td>
+                            <td>
+                                <form method="POST" action="/admin/bookings/cancel" data-cancel-booking>
+                                    <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                    <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                    <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
+                                    <% if (booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
+                                        <button class="btn btn-outline-primary btn-sm mt-1" type="submit" name="credit" value="1">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> paid to <%= booking.profile_name %></button>
+                                    <% } %>
+                                </form>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+    <p class="text-muted" data-no-bookings <%= visibleBookings.length ? 'hidden' : '' %>>No bookings yet.</p>
+</details>

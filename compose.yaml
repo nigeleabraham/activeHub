@@ -11,7 +11,7 @@ services:
       context: ./app
     container_name: activeHubApp
     command: >-
-      sh -c "npm run import:camden || echo 'Camden facility import failed; continuing app startup.'; npm run dev"
+      sh -c "npm run seed || echo 'Database seeding failed; continuing app startup.'; npm run dev"
     depends_on:
       db:
         condition: service_healthy

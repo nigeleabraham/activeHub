@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refunds | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+
+<body class="bg-light">
+    <main class="container py-5">
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Refunds</h1>
+                <p class="text-muted mb-0">Find a booking and refund it as account credit</p>
+            </div>
+            <%- include('partials/navigation') %>
+        </header>
+
+        <% if (done === 'credit') { %>
+            <div class="alert alert-success" role="status">
+                <strong><%= doneAmount %></strong> was added to the profile's credit for booking <strong><%= doneRef %></strong>. The booking is still in place.
+            </div>
+        <% } else if (done === 'external') { %>
+            <div class="alert alert-success" role="status">
+                Booking <strong><%= doneRef %></strong> was cancelled. Please refund <strong><%= doneAmount %></strong> outside ActiveHub.
+            </div>
+        <% } else if (error) { %>
+            <div class="alert alert-warning" role="alert">
+                <%= error === 'not-refundable'
+                    ? 'That booking can no longer be refunded. Only paid bookings that have not yet finished can be refunded.'
+                    : 'That booking could not be found. It may already have been cancelled.' %>
+            </div>
+        <% } %>
+
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="find-heading">
+            <h2 id="find-heading" class="h5 mb-3">Find a booking</h2>
+            <p class="text-muted small">Fill in any of the boxes below. Searches match part of a word and combine with each other.</p>
+            <form method="GET" action="/admin/refunds" role="search">
+                <div class="form-row">
+                    <div class="form-group col-md-3">
+                        <label for="f-reference">Booking reference</label>
+                        <input class="form-control" id="f-reference" name="reference" type="search" maxlength="100" placeholder="AH-3F9A2C71B4" value="<%= filters.reference %>">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label for="f-profile">Profile name or email</label>
+                        <input class="form-control" id="f-profile" name="profile" type="search" maxlength="100" value="<%= filters.profile %>">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label for="f-location">Location</label>
+                        <input class="form-control" id="f-location" name="location" type="search" maxlength="100" placeholder="Facility, address or postcode" value="<%= filters.location %>">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <fieldset>
+                            <legend class="col-form-label pt-0">Booking date</legend>
+                            <div class="d-flex">
+                                <label class="sr-only" for="f-from">From</label>
+                                <input class="form-control mr-1" id="f-from" name="from" type="date" value="<%= filters.from %>">
+                                <label class="sr-only" for="f-to">To</label>
+                                <input class="form-control" id="f-to" name="to" type="date" value="<%= filters.to %>">
+                            </div>
+                        </fieldset>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" type="submit">Search</button>
+                <a class="btn btn-outline-secondary btn-sm ml-1" href="/admin/refunds">Clear</a>
+            </form>
+        </section>
+
+        <% if (searched) { %>
+            <section aria-labelledby="results-heading">
+                <h2 id="results-heading" class="h5 mb-3"><%= bookings.length %><%= truncated ? '+' : '' %> booking<%= bookings.length === 1 ? '' : 's' %> found</h2>
+                <% if (truncated) { %><p class="text-muted small">Showing the first <%= bookings.length %>. Narrow your search to see the rest.</p><% } %>
+                <% if (bookings.length) { %>
+                    <div class="table-responsive bg-white border rounded shadow-sm">
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Reference</th><th>When</th><th>Where</th><th>Booked for</th><th>Booked by</th><th>Fee / paid</th><th></th></tr></thead>
+                            <tbody>
+                                <% bookings.forEach(booking => { %>
+                                    <tr>
+                                        <td><code><%= booking.booking_ref %></code></td>
+                                        <td><time data-local-time datetime="<%= new Date(booking.starts_at).toISOString() %>"><%= new Date(booking.starts_at).toISOString() %></time></td>
+                                        <td><%= booking.facility_name %><br><span class="small text-muted"><%= booking.option_name %> · <%= booking.sport_name %></span></td>
+                                        <td><%= booking.profile_name || 'Unassigned' %><% if (booking.profile_email) { %><br><span class="small text-muted"><%= booking.profile_email %></span><% } %></td>
+                                        <td><%= booking.booked_by_name || 'Not recorded' %></td>
+                                        <td>Fee £<%= (booking.amount_pence / 100).toFixed(2) %><br>Paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %></td>
+                                        <td>
+                                            <% const money = pence => '£' + (pence / 100).toFixed(2); %>
+                                            <% if (booking.refunded_at) { %>
+                                                <span class="badge badge-secondary"><%= booking.method === 'external' ? 'Cancelled, refunded externally ' : 'Cancelled, credited ' %><%= money(booking.refunded_pence) %></span>
+                                                <br><span class="small text-muted"><time data-local-time datetime="<%= new Date(booking.refunded_at).toISOString() %>"><%= new Date(booking.refunded_at).toISOString() %></time><%= booking.refunded_by_name ? ' by ' + booking.refunded_by_name : '' %></span>
+                                            <% } else { %>
+                                                <% if (booking.credited_at) { %>
+                                                    <span class="badge badge-success">Credited <%= money(booking.credited_pence) %></span>
+                                                    <br><span class="small text-muted"><time data-local-time datetime="<%= new Date(booking.credited_at).toISOString() %>"><%= new Date(booking.credited_at).toISOString() %></time><%= booking.credited_by_name ? ' by ' + booking.credited_by_name : '' %></span>
+                                                <% } else if (booking.refundable || booking.externallyRefundable) { %>
+                                                    <form method="POST" action="/admin/refunds/refund" data-refund-form data-ref="<%= booking.booking_ref %>" data-name="<%= booking.profile_name || '' %>">
+                                                        <input type="hidden" name="facility_guid" value="<%= booking.facility_guid %>">
+                                                        <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                                        <input type="hidden" name="return_to" value="/admin/refunds?<%= new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, value]) => value))).toString() %>">
+                                                        <% if (booking.refundable) { %>
+                                                            <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="method" value="credit" data-confirm="Add <%= money(booking.amount_paid_pence) %> to <%= booking.profile_name %>'s credit for booking <%= booking.booking_ref %>? The booking stays in place and can't be credited again.">Add credit to profile</button>
+                                                        <% } %>
+                                                        <% if (booking.externallyRefundable) { %>
+                                                            <button class="btn btn-outline-danger btn-sm mb-1" type="submit" name="method" value="external" data-confirm="Cancel booking <%= booking.booking_ref %>? You will need to refund <%= money(booking.externalPence) %> outside ActiveHub.">Cancel and refund externally</button>
+                                                        <% } %>
+                                                    </form>
+                                                <% } else { %>
+                                                    <span class="small text-muted">Nothing to refund</span>
+                                                <% } %>
+                                            <% } %>
+                                        </td>
+                                    </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted mt-2">"Add credit to profile" gives the profile what was actually paid (never the court fee) and can only be done once per booking; the booking stays. "Cancel and refund externally" cancels the booking and records the card amount to refund outside ActiveHub; it isn't available once credit has been added.</p>
+                <% } else { %>
+                    <p class="text-muted">No bookings match your search.</p>
+                <% } %>
+            </section>
+        <% } %>
+    </main>
+
+    <script>
+        var timeFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        document.querySelectorAll('[data-local-time]').forEach(function (time) {
+            var instant = new Date(time.dateTime);
+            if (Number.isFinite(instant.getTime())) time.textContent = timeFormat.format(instant);
+        });
+        document.querySelectorAll('[data-refund-form]').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                var button = event.submitter;
+                if (button && button.dataset.confirm && !window.confirm(button.dataset.confirm)) event.preventDefault();
+            });
+        });
+    </script>
+</body>
+
+</html>

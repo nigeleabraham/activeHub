@@ -19,9 +19,17 @@ test('parses facility fields and decimal-degree coordinates', () => {
         description: 'Community sports and event space.',
         latitude: 51.5074,
         longitude: -0.1278,
+        max_resident_bookings: 8,
         booking_mode: 'in_app',
         external_booking_url: null
     });
+});
+
+test('validates the per-resident booking limit', () => {
+    assert.equal(parseFacilityInput({ ...validInput, max_resident_bookings: '3' }).max_resident_bookings, 3);
+    for (const value of ['0', '-1', '101', '2.5', 'many']) {
+        assert.equal(parseFacilityInput({ ...validInput, max_resident_bookings: value }), null);
+    }
 });
 
 test('rejects missing required facility fields', () => {

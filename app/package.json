@@ -7,12 +7,12 @@
     "start": "node server.js",
     "dev": "nodemon -e js,ejs server.js",
     "test": "node --test",
-    "import:camden": "node scripts/importCamdenFacilities.js"
+    "seed": "node scripts/seedDatabase.js",
+    "seed:export": "node scripts/exportSeedData.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cheerio": "^1.2.0",
     "ejs": "^7.0.2",
     "express": "^5.3.0",
     "moment": "^2.31.0",

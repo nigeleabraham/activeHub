@@ -1,0 +1,31 @@
+<% if (error) { %>
+    <div class="alert alert-warning" role="alert">
+        <% if (error === 'booking-conflict') { %>
+            This time overlaps a booking that uses one or more of the same resources.
+        <% } else if (error === 'resource-in-use') { %>
+            This resource is used by a bookable court. Remove its claims before deleting it.
+        <% } else if (error === 'option-booked') { %>
+            This court option has current or future bookings and cannot be changed or deleted yet.
+        <% } else if (error === 'duplicate-resource') { %>
+            A resource with that name already exists at this facility.
+        <% } else if (error === 'invalid-option') { %>
+            The court option could not be saved. Check its sport and resource selections.
+        <% } else if (error === 'outside-opening-hours') { %>
+            The selected time is outside this facility's opening hours.
+        <% } else if (error === 'booking-limit') { %>
+            You have reached the maximum number of upcoming bookings allowed at this facility. Some of your current bookings need to finish before you can book more.
+        <% } else if (error === 'too-far-ahead') { %>
+            You can only book up to one month in advance, and not in the past.
+        <% } else { %>
+            The request could not be completed. Check the selected facility and time range.
+        <% } %>
+    </div>
+<% } else if (created) { %>
+    <div class="alert alert-success booking-toast d-flex align-items-start" role="status" data-booking-toast>
+        <div class="mr-3">
+            <strong><%= created === 1 ? 'Booking confirmed' : created + ' bookings confirmed' %></strong>
+            <div class="small"><% if (locals.creditUsed && creditUsed !== '£0.00') { %><%= creditUsed %> of account credit used. <% } %><% if (locals.paid && paid !== '£0.00') { %>Payment of <%= paid %> received (simulated). <% } %>Your <%= created === 1 ? 'slot has' : 'slots have' %> been booked successfully. You can see <%= created === 1 ? 'it' : 'them' %> in the bookings list.</div>
+        </div>
+        <button type="button" class="close ml-auto" data-dismiss-toast aria-label="Dismiss notification"><span aria-hidden="true">&times;</span></button>
+    </div>
+<% } %>

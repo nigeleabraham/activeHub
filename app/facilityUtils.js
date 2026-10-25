@@ -1,3 +1,6 @@
+const DEFAULT_MAX_RESIDENT_BOOKINGS = 8;
+const MAX_RESIDENT_BOOKINGS_LIMIT = 100;
+
 function parseFacilityInput(body) {
     if (!body || typeof body !== 'object') {
         return null;
@@ -24,6 +27,14 @@ function parseFacilityInput(body) {
         !Number.isFinite(facility.longitude) || facility.longitude < -180 || facility.longitude > 180) {
         return null;
     }
+
+    const limitText = body.max_resident_bookings === undefined || body.max_resident_bookings === ''
+        ? String(DEFAULT_MAX_RESIDENT_BOOKINGS)
+        : String(body.max_resident_bookings).trim();
+    if (!/^\d{1,3}$/.test(limitText) || Number(limitText) < 1 || Number(limitText) > MAX_RESIDENT_BOOKINGS_LIMIT) {
+        return null;
+    }
+    facility.max_resident_bookings = Number(limitText);
 
     if (!['in_app', 'external'].includes(body.booking_mode)) {
         return null;
@@ -59,4 +70,4 @@ function createGoogleMapsUrl(latitude, longitude) {
     return url.toString();
 }
 
-module.exports = { parseFacilityInput, createGoogleMapsUrl };
+module.exports = { parseFacilityInput, createGoogleMapsUrl, DEFAULT_MAX_RESIDENT_BOOKINGS, MAX_RESIDENT_BOOKINGS_LIMIT };
