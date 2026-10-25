@@ -38,19 +38,20 @@ async function create({ name, facility_guid, description }) {
     return rows[0];
 }
 
-async function update(guid, { name, facility_guid, description }) {
+async function update(guid, { name, description }) {
     const { rows } = await pool.query(
         `UPDATE courses
-         SET name = $2, facility_guid = $3, description = $4
+         SET name = $2, description = $3
          WHERE guid = $1
          RETURNING guid, name, facility_guid, description, created_at`,
-        [guid, name, facility_guid, description]
+        [guid, name, description]
     );
     return rows[0] || null;
 }
 
 async function remove(guid) {
-    await pool.query('DELETE FROM courses WHERE guid = $1', [guid]);
+    const { rows } = await pool.query('DELETE FROM courses WHERE guid = $1 RETURNING facility_guid', [guid]);
+    return rows[0] || null;
 }
 
 module.exports = { initialize, findAll, create, update, remove };

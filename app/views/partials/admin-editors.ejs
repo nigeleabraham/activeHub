@@ -1,0 +1,622 @@
+<style>
+    .admin-editor-status { display: block; width: 100%; margin: 0.5rem 0; }
+    .admin-editor-dirty { border-left: 4px solid #805b00; padding-left: 0.75rem; }
+    .admin-unsaved-dialog { max-width: 34rem; width: calc(100% - 2rem); border: 2px solid #212529; padding: 1.5rem; }
+    .admin-unsaved-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+    .admin-unsaved-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
+    .admin-course-highlight { animation: admin-course-saved 2s ease-out; }
+    [data-course-feedback], [data-admin-save-confirmation] { transition: opacity 0.5s ease-out; }
+    .admin-notice-fading { opacity: 0; }
+    [data-course-add-feedback] > .alert {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        min-height: 2.0625rem;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+    @keyframes admin-course-saved {
+        from { background-color: #d4edda; }
+        to { background-color: transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .admin-course-highlight { animation: none; background-color: #d4edda; }
+        [data-course-feedback], [data-admin-save-confirmation] { transition: none; }
+    }
+    @media (max-width: 575.98px) {
+        .admin-unsaved-actions { flex-direction: column; }
+    }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.documentElement.setAttribute('data-admin-editors', '');
+    const entries = [];
+    let active = null;
+    let saving = false;
+    let leaving = false;
+    let continuation = null;
+    let returnFocus = null;
+    let bypassSubmit = null;
+    let submitContinuation = null;
+    const noticeTimers = new WeakMap();
+
+    function resetNoticeFade(notice, fade) {
+        const previous = noticeTimers.get(notice);
+        if (previous) previous.forEach(timer => window.clearTimeout(timer));
+        noticeTimers.delete(notice);
+        notice.classList.remove('admin-notice-fading');
+        if (!fade) return;
+        const fadeTimer = window.setTimeout(() => notice.classList.add('admin-notice-fading'), 4000);
+        const hideTimer = window.setTimeout(() => {
+            notice.hidden = true;
+            notice.classList.remove('admin-notice-fading');
+            noticeTimers.delete(notice);
+        }, 4500);
+        noticeTimers.set(notice, [fadeTimer, hideTimer]);
+    }
+
+    const pageUrl = new URL(window.location.href);
+    const successMessages = {
+        '1': 'Changes saved successfully.',
+        'course-created': 'Course added successfully.',
+        'course-updated': 'Course updated successfully.',
+        'course-deleted': 'Course deleted successfully.'
+    };
+    const successKey = pageUrl.searchParams.get('admin_saved');
+    if (Object.hasOwn(successMessages, successKey)) {
+        const notice = document.createElement('div');
+        notice.className = 'alert alert-success';
+        if (['course-updated', 'course-deleted'].includes(successKey)) notice.classList.add('sr-only');
+        notice.setAttribute('data-admin-save-confirmation', '');
+        notice.setAttribute('role', 'status');
+        notice.setAttribute('aria-live', 'polite');
+        notice.textContent = successMessages[successKey];
+        const main = document.querySelector('main');
+        const header = main?.querySelector('header');
+        const target = document.getElementById(pageUrl.hash.slice(1));
+        const card = successKey.startsWith('course-') ? target?.closest('article') : null;
+        if (card) {
+            card.prepend(notice);
+            if (target === card && !notice.classList.contains('sr-only')) {
+                window.addEventListener('load', () => {
+                    notice.tabIndex = -1;
+                    notice.focus();
+                }, { once: true });
+            }
+        } else if (header) header.after(notice);
+        else if (main) main.prepend(notice);
+        pageUrl.searchParams.delete('admin_saved');
+        pageUrl.searchParams.delete('admin_saved_target');
+        window.history.replaceState(window.history.state, '', pageUrl.href);
+    }
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'admin-unsaved-dialog';
+    dialog.setAttribute('aria-labelledby', 'admin-unsaved-title');
+    dialog.setAttribute('aria-describedby', 'admin-unsaved-description');
+    dialog.innerHTML = `
+        <h2 id="admin-unsaved-title" class="h5">Unsaved changes</h2>
+        <p id="admin-unsaved-description"></p>
+        <div class="admin-unsaved-actions">
+            <button type="button" class="btn btn-outline-secondary" data-unsaved-keep autofocus>Keep editing</button>
+            <button type="button" class="btn btn-outline-danger" data-unsaved-discard>Discard changes</button>
+            <button type="button" class="btn btn-primary" data-unsaved-save>Save and continue</button>
+        </div>`;
+    document.body.append(dialog);
+    const saveChoice = dialog.querySelector('[data-unsaved-save]');
+    const keepChoice = dialog.querySelector('[data-unsaved-keep]');
+    const discardChoice = dialog.querySelector('[data-unsaved-discard]');
+    const mobileActions = window.matchMedia('(max-width: 575.98px)');
+    function updateActionOrder() {
+        const focused = document.activeElement;
+        dialog.querySelector('.admin-unsaved-actions').replaceChildren(...(mobileActions.matches
+            ? [saveChoice, keepChoice, discardChoice]
+            : [keepChoice, discardChoice, saveChoice]));
+        if (dialog.open && dialog.contains(focused)) focused.focus();
+    }
+    mobileActions.addEventListener('change', updateActionOrder);
+    updateActionOrder();
+
+    function snapshot(form) {
+        return JSON.stringify(Array.from(form.elements)
+            .filter(field => field.name && !['submit', 'button', 'reset'].includes(field.type))
+            .map(field => [field.name, field.type, field.value, field.checked, field.disabled,
+                field.tagName === 'SELECT' ? Array.from(field.selectedOptions, option => option.value) : null]));
+    }
+
+    function dirty(entry) {
+        return snapshot(entry.form) !== entry.baseline;
+    }
+
+    function update(entry) {
+        const changed = dirty(entry);
+        entry.form.classList.toggle('admin-editor-dirty', changed);
+        entry.status.textContent = changed ? 'Unsaved changes' : '';
+    }
+
+    function close(entry) {
+        if (entry.panel) {
+            entry.panel.hidden = true;
+            entry.toggle.setAttribute('aria-expanded', 'false');
+            if (entry.toggle.hasAttribute('data-hide-when-editing')) entry.toggle.hidden = false;
+        } else {
+            entry.details.open = false;
+        }
+    }
+
+    function open(entry) {
+        for (const other of entries) {
+            if (other !== entry) close(other);
+        }
+        active = entry;
+        if (entry.panel) {
+            entry.panel.hidden = false;
+            entry.toggle.setAttribute('aria-expanded', 'true');
+            if (entry.toggle.hasAttribute('data-hide-when-editing')) entry.toggle.hidden = true;
+        } else {
+            entry.details.open = true;
+        }
+        for (let parent = entry.form.parentElement; parent; parent = parent.parentElement) {
+            if (parent.tagName === 'DETAILS') parent.open = true;
+        }
+        entry.form.querySelector('input:not([type="hidden"]), select, textarea')?.focus();
+    }
+
+    function reset(entry) {
+        entry.form.reset();
+        entry.form.querySelectorAll('input, select, textarea').forEach(field =>
+            field.dispatchEvent(new Event('change', { bubbles: true })));
+        entry.error.hidden = true;
+        update(entry);
+    }
+
+    function navigate(url) {
+        const destination = new URL(url, window.location.href);
+        const hashOnly = destination.origin === window.location.origin &&
+            destination.pathname === window.location.pathname &&
+            destination.search === window.location.search &&
+            destination.hash !== window.location.hash;
+        leaving = true;
+        window.location.assign(destination.href);
+        if (hashOnly) window.location.reload();
+    }
+
+    function proceed(action, savedLocation) {
+        if (savedLocation) {
+            const destination = new URL(action.kind === 'navigate' ? action.url : savedLocation, window.location.href);
+            if (destination.origin === window.location.origin && destination.pathname.startsWith('/admin/')) {
+                if (!destination.searchParams.has('admin_saved')) destination.searchParams.set('admin_saved', '1');
+            }
+            if (action.kind === 'editor') destination.hash = action.entry.form.id;
+            return navigate(destination.href);
+        }
+        if (action.kind === 'navigate') return navigate(action.url);
+        if (action.kind === 'editor') {
+            const entry = entries.find(item => item.form.id === action.entry.form.id);
+            if (entry) return open(entry);
+            return;
+        }
+        if (action.kind === 'close') {
+            if (!active) return;
+            close(active);
+            active.toggle.focus();
+            active = null;
+        } else if (action.kind === 'submit') {
+            if (!action.form.isConnected && action.form.action.endsWith('/courses/destroy')) {
+                const guid = action.form.elements.namedItem('guid').value;
+                const replacement = Array.from(document.querySelectorAll('form[action="/admin/courses/destroy"]'))
+                    .find(form => form.elements.namedItem('guid').value === guid);
+                if (!replacement) return;
+                action = { ...action, form: replacement, submitter: replacement.querySelector('button[type="submit"]') };
+            }
+            bypassSubmit = action.form;
+            action.form.requestSubmit(action.submitter || undefined);
+            bypassSubmit = null;
+        }
+    }
+
+    function guard(action) {
+        if (saving) return;
+        if (!active || !dirty(active)) return proceed(action);
+        continuation = action;
+        returnFocus = document.activeElement;
+        dialog.querySelector('#admin-unsaved-description').textContent =
+            `You have unsaved changes in "${active.label}". Save them before continuing, or discard them.`;
+        saveChoice.hidden = false;
+        dialog.showModal();
+    }
+
+    function dismiss() {
+        dialog.close();
+        continuation = null;
+        returnFocus?.focus();
+    }
+
+    function showError(entry, message) {
+        entry.error.textContent = message;
+        entry.error.hidden = false;
+    }
+
+    async function refreshCourses(form, response) {
+        const card = form.closest('[data-course-facility]');
+        const sourceRow = form.closest('[data-course-guid]');
+        const name = form.elements.namedItem('name')?.value.trim() || sourceRow?.dataset.courseName;
+        const operation = new URL(form.action).pathname.endsWith('/destroy') ? 'deleted'
+            : sourceRow ? 'updated' : 'added';
+        const oldRows = Array.from(card.querySelectorAll('[data-course-guid]'));
+        const index = oldRows.indexOf(sourceRow);
+        const previousGuids = new Set(oldRows.map(row => row.dataset.courseGuid));
+        const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const updatedCard = html.getElementById(card.id);
+        const newList = updatedCard?.querySelector('[data-course-list]');
+        const count = html.querySelector('[data-course-count]');
+        if (!newList || !count) throw new Error('The course change could not be confirmed. Check the directory before retrying.');
+        if (operation === 'deleted' && sourceRow) {
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            sourceRow.style.backgroundColor = '#f8d7da';
+            if (!reducedMotion) {
+                await sourceRow.animate([
+                    { backgroundColor: '#f8d7da', opacity: 1, offset: 0 },
+                    { backgroundColor: '#f8d7da', opacity: 1, offset: 0.55 },
+                    { backgroundColor: '#f8d7da', opacity: 0, offset: 1 }
+                ], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished;
+            }
+        }
+        const notice = card.querySelector('[data-course-feedback]');
+        // Keep the live region mounted when replacing the course rows.
+        card.querySelector('[data-course-list]').before(notice);
+        card.querySelector('[data-course-list]').replaceWith(newList);
+        document.querySelector('[data-course-count]').textContent = count.textContent;
+        for (let i = entries.length - 1; i >= 0; i--) {
+            if (!entries[i].form.isConnected) {
+                if (active === entries[i]) active = null;
+                entries.splice(i, 1);
+            }
+        }
+        initializeEditors();
+        const rows = Array.from(newList.querySelectorAll('[data-course-guid]'));
+        const changed = operation === 'added'
+            ? rows.find(row => !previousGuids.has(row.dataset.courseGuid))
+            : rows.find(row => row.dataset.courseGuid === sourceRow?.dataset.courseGuid);
+        if (changed) {
+            changed.classList.add('admin-course-highlight');
+            window.setTimeout(() => changed.classList.remove('admin-course-highlight'), 2000);
+        }
+        const message = document.createElement('span');
+        message.textContent = `"${name}" ${operation} successfully.`;
+        notice.replaceChildren(message);
+        notice.hidden = false;
+        notice.classList.toggle('sr-only', operation !== 'added');
+        resetNoticeFade(notice, operation === 'added');
+        card.querySelector('[data-course-error]').hidden = true;
+        if (operation === 'added') {
+            const entry = entries.find(item => item.form === form);
+            form.reset();
+            entry.baseline = snapshot(form);
+            card.querySelector('[data-course-add-feedback]').append(notice);
+            notice.classList.add('mb-0', 'py-1', 'px-2', 'small');
+            form.inert = false;
+            form.querySelector('[name="name"]').focus({ preventScroll: true });
+        } else {
+            const targetRow = changed || rows[Math.min(index, rows.length - 1)];
+            const focusTarget = targetRow?.querySelector(operation === 'deleted'
+                ? 'form[action="/admin/courses/destroy"] button' : '[data-edit-toggle]')
+                || card.querySelector('[data-edit-toggle][aria-controls^="add-course-panel-"]');
+            focusTarget?.focus({ preventScroll: true });
+        }
+    }
+
+    async function save(entry, submitter) {
+        if (!entry.form.reportValidity()) return null;
+        entry.error.hidden = true;
+        const buttons = Array.from(entry.form.querySelectorAll('button, input[type="submit"]'));
+        const states = buttons.map(button => button.disabled);
+        const submitLabel = submitter?.textContent;
+        const data = submitter ? new FormData(entry.form, submitter) : new FormData(entry.form);
+        const submittedSnapshot = snapshot(entry.form);
+        saving = true;
+        entry.form.setAttribute('aria-busy', 'true');
+        entry.form.inert = true;
+        buttons.forEach(button => { button.disabled = true; });
+        entry.status.textContent = 'Saving changes...';
+        const courseForm = entry.form.closest('[data-course-facility]');
+        if (courseForm && submitter) submitter.textContent = entry.form.action.endsWith('/update') ? 'Saving...' : 'Adding...';
+        try {
+            const logo = entry.form.hasAttribute('data-admin-logo');
+            const file = logo ? data.get('site_logo') : null;
+            if (logo && (!file || !file.size || file.size > 512 * 1024)) {
+                throw new Error('Choose a PNG, JPEG, WebP or SVG image no larger than 512 KB.');
+            }
+            const response = await fetch(entry.form.action, {
+                method: 'POST',
+                body: logo ? file : new URLSearchParams(data),
+                headers: logo ? { 'Content-Type': file.type } : {}
+            });
+            const destination = new URL(response.url);
+            if (destination.pathname === '/login' || response.status === 401 || response.status === 403) {
+                throw new Error('Your session has ended or you no longer have permission. Your entries are still here; sign in in another tab before trying again.');
+            }
+            if (!response.ok) {
+                if (response.status === 422 && response.headers.get('content-type')?.includes('application/json')) {
+                    const problem = await response.json();
+                    if (typeof problem.error === 'string') throw new Error(problem.error);
+                }
+                throw new Error(response.status === 415 ? 'Use a PNG, JPEG, WebP or SVG image.'
+                    : response.status === 400
+                    ? 'The changes could not be saved. Check the entered values and try again.'
+                    : `The save could not be confirmed (HTTP ${response.status}). Your entries have been kept. Check the saved record before retrying.`);
+            }
+            if (destination.searchParams.has('error')) {
+                const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+                const message = html.querySelector('.alert[role="alert"], .alert-danger, .alert-warning')?.textContent.trim();
+                throw new Error(message || 'The changes could not be saved. Check the entered values and try again.');
+            }
+            if (!(logo && response.status === 204) && destination.pathname !== window.location.pathname) {
+                throw new Error('The save returned an unexpected page. Your entries have been kept; check your session and the saved record before retrying.');
+            }
+            if (courseForm) {
+                const expected = entry.form.action.endsWith('/update') ? 'course-updated' : 'course-created';
+                if (destination.searchParams.get('admin_saved') !== expected) {
+                    throw new Error('The course change could not be confirmed. Your entries have been kept; check the directory before retrying.');
+                }
+                await refreshCourses(entry.form, response);
+            }
+            entry.baseline = courseForm && entry.form.isConnected ? snapshot(entry.form) : submittedSnapshot;
+            const savedTarget = destination.searchParams.get('admin_saved_target');
+            if (savedTarget) destination.hash = savedTarget;
+            return logo ? '/admin/settings?saved=1' : destination.href;
+        } catch (error) {
+            console.error('Unable to save admin changes', error);
+            showError(entry, error instanceof TypeError
+                ? 'The save could not be confirmed because of a connection problem. Your entries have been kept. Check the saved record before retrying.'
+                : error.message);
+            return null;
+        } finally {
+            saving = false;
+            buttons.forEach((button, index) => { button.disabled = states[index]; });
+            if (courseForm && submitter) submitter.textContent = submitLabel;
+            entry.form.removeAttribute('aria-busy');
+            entry.form.inert = false;
+            update(entry);
+            if (!entry.error.hidden) entry.error.focus();
+        }
+    }
+
+    function initializeEditors() {
+    document.querySelectorAll('form[method="POST"]').forEach(form => {
+        if (entries.some(entry => entry.form === form)) return;
+        if (!new URL(form.action).pathname.startsWith('/admin/') ||
+            form.matches('[data-booking-form], [data-cancel-booking]') ||
+            !form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea')) return;
+        if (!form.id) {
+            const identity = Array.from(form.querySelectorAll('input[type="hidden"]'))
+                .filter(field => field.name === 'guid' || field.name.endsWith('_guid'))
+                .map(field => field.value).join('-');
+            const action = form.querySelector('button[type="submit"]');
+            const decision = action?.name ? `${action.name}-${action.value}` : '';
+            form.id = `admin-editor-${new URL(form.action).pathname.replaceAll('/', '-')}-${identity}-${decision}`;
+        }
+        const panel = form.closest('[data-edit-panel]');
+        let toggle = panel ? document.querySelector(`[data-edit-toggle][aria-controls="${panel.id}"]`) : null;
+        let details = null;
+        const context = form.closest('article, li, section, tr');
+        const heading = context?.querySelector('h2, h3, legend, th');
+        const submitter = form.querySelector('button[type="submit"]');
+        const name = form.querySelector('[name="name"]')?.value;
+        const legend = form.querySelector('legend')?.textContent.trim();
+        const label = form.dataset.editorLabel || [heading?.textContent.trim(), name || legend || submitter?.textContent.trim()]
+            .filter(Boolean).join(' - ') || 'Admin form';
+        if (!panel) {
+            const existingDetails = form.parentElement.tagName === 'DETAILS' && form.parentElement.querySelectorAll('form').length === 1
+                ? form.parentElement : null;
+            details = existingDetails || document.createElement('details');
+            toggle = existingDetails?.querySelector(':scope > summary') || document.createElement('summary');
+            toggle.classList.add('btn', 'btn-outline-secondary', 'btn-sm', 'mb-2');
+            const actionLabel = submitter?.textContent.trim() || 'Edit';
+            const editLabel = /^Save\b/i.test(actionLabel) ? actionLabel.replace(/^Save\b/i, 'Edit') : actionLabel;
+            toggle.textContent = form.dataset.editorLabel || `${form.action.endsWith('/update') ? 'Edit' : editLabel}${name ? ' ' + name : legend ? ' - ' + legend : ''}`;
+            toggle.setAttribute('aria-label', `Open editor: ${label}`);
+            if (/^Save\b/i.test(actionLabel) && form.dataset.editorPreview !== 'false') {
+                const preview = document.createElement('p');
+                preview.className = 'small text-muted mb-2';
+                const monthFields = form.querySelectorAll('[name="allowed_months"]');
+                if (monthFields.length) {
+                    preview.textContent = Array.from(monthFields).filter(field => field.checked)
+                        .map(field => field.closest('label').textContent.trim()).join(', ') || 'No booking months enabled';
+                } else {
+                    preview.textContent = Array.from(form.elements)
+                        .filter(field => field.name && !field.disabled && !['hidden', 'submit', 'button', 'checkbox', 'file'].includes(field.type))
+                        .slice(0, 3).map(field => field.tagName === 'SELECT'
+                            ? field.selectedOptions[0]?.textContent.trim() : field.value).join(' / ');
+                }
+                form.before(preview);
+            }
+            if (!existingDetails) {
+                form.before(details);
+                details.append(toggle, form);
+            }
+        }
+        const status = document.createElement('span');
+        status.className = 'admin-editor-status small font-weight-bold';
+        status.setAttribute('role', 'status');
+        const error = document.createElement('div');
+        error.className = 'alert alert-danger w-100';
+        error.setAttribute('role', 'alert');
+        error.tabIndex = -1;
+        error.hidden = true;
+        form.prepend(error);
+        form.append(status);
+        if (!form.querySelector('[data-cancel-edit]')) {
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'btn btn-outline-secondary btn-sm ml-2';
+            cancel.textContent = 'Cancel';
+            cancel.setAttribute('data-cancel-edit', '');
+            submitter?.after(cancel);
+        }
+        const entry = { form, panel, toggle, details, status, error, label, baseline: snapshot(form) };
+        entries.push(entry);
+        close(entry);
+        form.addEventListener('input', () => update(entry));
+        form.addEventListener('change', () => update(entry));
+    });
+    }
+    initializeEditors();
+
+    document.addEventListener('click', event => {
+        if (saving) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        const entry = entries.find(item => item.toggle.contains(event.target));
+        if (entry) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            guard({ kind: active === entry ? 'close' : 'editor', entry });
+            return;
+        }
+        const cancel = event.target.closest('[data-cancel-edit]');
+        if (cancel) {
+            const owner = entries.find(item => item.form.contains(cancel));
+            if (!owner) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (active !== owner) active = owner;
+            guard({ kind: 'close' });
+            return;
+        }
+        const summary = event.target.closest('summary');
+        if (summary && active && summary.parentElement.contains(active.form) && summary.parentElement.open && dirty(active)) {
+            event.preventDefault();
+            guard({ kind: 'close' });
+            return;
+        }
+        const link = event.target.closest('a[href]');
+        if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey &&
+            event.button === 0 && link.target !== '_blank' && !link.hasAttribute('download') &&
+            active && dirty(active)) {
+            event.preventDefault();
+            guard({ kind: 'navigate', url: link.href });
+        }
+    }, true);
+
+    document.addEventListener('submit', event => {
+        const form = event.target;
+        if (bypassSubmit === form) return;
+        if (saving) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        } else if (active && active.form !== form && dirty(active)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            guard({ kind: 'submit', form, submitter: event.submitter });
+        }
+    }, true);
+
+    document.addEventListener('submit', event => {
+        if (event.defaultPrevented) return;
+        const form = event.target;
+        if (form.matches('form[action="/admin/courses/destroy"]') && form.closest('[data-course-facility]')) {
+            event.preventDefault();
+            const button = form.querySelector('button[type="submit"]');
+            const card = form.closest('[data-course-facility]');
+            const error = card.querySelector('[data-course-error]');
+            const label = button.textContent;
+            saving = true;
+            button.disabled = true;
+            button.textContent = 'Deleting...';
+            form.setAttribute('aria-busy', 'true');
+            error.hidden = true;
+            void (async () => {
+                try {
+                    const response = await fetch(form.action, { method: 'POST', body: new URLSearchParams(new FormData(form)) });
+                    const destination = new URL(response.url);
+                    if (!response.ok || destination.pathname !== '/admin/courses' ||
+                        destination.searchParams.get('admin_saved') !== 'course-deleted') {
+                        throw new Error('The deletion could not be confirmed. Check your session and the directory before retrying.');
+                    }
+                    await refreshCourses(form, response);
+                } catch (problem) {
+                    console.error('Unable to delete course', problem);
+                    error.textContent = problem instanceof TypeError
+                        ? 'The deletion could not be confirmed because of a connection problem. Check the directory before retrying.'
+                        : problem.message;
+                    error.hidden = false;
+                    error.focus();
+                } finally {
+                    saving = false;
+                    button.disabled = false;
+                    button.textContent = label;
+                    form.removeAttribute('aria-busy');
+                }
+            })();
+            return;
+        }
+        const entry = entries.find(item => item.form === event.target);
+        if (!entry) return;
+        event.preventDefault();
+        const action = submitContinuation;
+        const courseForm = Boolean(entry.form.closest('[data-course-facility]'));
+        void (async () => {
+            const location = await save(entry, event.submitter);
+            if (!location) return;
+            if (courseForm) {
+                if (action) proceed(action);
+                return;
+            }
+            if (action?.kind === 'submit') proceed(action);
+            else if (action) proceed(action, location);
+            else proceed({ kind: 'close' }, location);
+        })();
+    });
+
+    dialog.querySelector('[data-unsaved-keep]').addEventListener('click', dismiss);
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dismiss(); });
+    dialog.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            dismiss();
+        }
+    });
+    dialog.querySelector('[data-unsaved-discard]').addEventListener('click', () => {
+        const action = continuation;
+        reset(active);
+        dismiss();
+        proceed(action);
+    });
+    saveChoice.addEventListener('click', () => {
+        const action = continuation;
+        const entry = active;
+        dismiss();
+        const submitter = entry.form.querySelector('button[type="submit"]');
+        submitContinuation = action;
+        entry.form.requestSubmit(submitter || undefined);
+        submitContinuation = null;
+    });
+
+    window.addEventListener('beforeunload', event => {
+        if (!leaving && (saving || entries.some(dirty))) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
+    const resume = entries.find(entry => '#' + entry.form.id === window.location.hash);
+    if (resume) {
+        open(resume);
+        if (resume.form.hasAttribute('data-editor-success-inline')) {
+            const notice = document.querySelector('[data-admin-save-confirmation]');
+            if (notice) {
+                resume.form.closest('[data-course-facility]').querySelector('[data-course-add-feedback]').append(notice);
+                notice.classList.add('mb-0', 'py-1', 'px-2', 'small');
+                resetNoticeFade(notice, successKey === 'course-created');
+            }
+            window.addEventListener('load', () => {
+                resume.form.querySelector('input:not([type="hidden"])')?.focus({ preventScroll: true });
+                (notice || resume.toggle).scrollIntoView({ block: 'start' });
+            }, { once: true });
+        }
+        resume.toggle.scrollIntoView({ block: 'center' });
+    }
+});
+</script>

@@ -9,6 +9,39 @@ docker compose up -d
 
 And open http://localhost:3000 in your browser.
 
+## Admin editing
+
+Admin forms use inline editors, with one editor open at a time. Saved values remain visible in the surrounding cards or setting summaries. Add/edit forms, sport booking months, settings (including logo uploads), and editable credit-review forms share the same workflow.
+
+The Facilities directory has one **Add facility** button below the navigation and above the directory. It opens a **New facility** form above the directory, grouped into Facility details, Activities and Booking arrangements. Coordinates are under Advanced location settings. Booking-method radio buttons show only the relevant controls. Create facility closes the form and highlights the new directory card; Cancel uses the same unsaved-change protection as editing.
+
+Add and Edit use the same shared facility form, including field grouping, booking-method radios and optional advanced location settings. Editing preselects the saved values and uses **Save changes**; the separate Delete button remains on each existing directory card.
+
+Course rows keep **Edit** and **Delete** together on the same action row. Editing opens a separate panel below the row, with the course name retained in the accessible button label and unsaved-change prompt.
+
+Editing a course changes only its name and description; its existing facility is preserved. New courses belong to the facility card where they are added.
+
+Course creation, updates and deletion update the affected list and directory count in place without a page reload. A single local live status names the course and completed action. Added and updated rows briefly highlight (without animation when reduced motion is preferred); buttons show Adding, Saving or Deleting while pending and duplicate actions are blocked. Failed actions retain entered values and show an explicit error.
+
+After adding a course, the same facility's Add course form stays open with cleared fields and focus on Course name, ready for another entry. Update and delete keep focus near the affected row. The local confirmation is brought into view only when needed, without focusing the message. Non-enhanced submissions retain redirect-based confirmations.
+
+Add-course confirmations appear in reserved space beside the Add course control above the form, not beside the submit button below Description. Adding does not automatically scroll to the notification.
+These add confirmations stay visible for four seconds and fade over half a second without collapsing the reserved space. Each add restarts the timer. Updates use a green row highlight without a visible banner. Successful deletions highlight the row light red and fade it out before removal. Edit/delete completion is announced to screen readers; errors remain visible. Reduced-motion preferences disable the animations.
+
+Both forms use the full card width. On desktop, Name and Postcode share a row, activities use three or four columns, and opening hours and the booking limit share a row. Address and Description remain full width; controls stack into a single column on mobile.
+
+Changed forms show **Unsaved changes**. Opening another editor, cancelling, following a link, or submitting a different action offers **Save and continue**, **Discard changes**, and **Keep editing**. Saving must succeed before continuing; validation, permission, network and server errors leave the entered values in place with an explicit error. Save and continue still runs the form's normal validation and financial-action confirmation. Cancel/discard resets the form, including dependent controls.
+
+Closing or refreshing the tab uses the browser's native unsaved-change warning. There is no autosave or page-wide Save all. Existing booking-calendar transaction controls keep their specialised behaviour; the shared editor guard protects unsaved configuration when those actions are triggered. JavaScript is required for the single-editor workflow; the original server-rendered forms remain available without it.
+
+The unsaved-changes dialog orders actions as **Keep editing**, **Discard changes**, **Save and continue** on desktop. On mobile they stack as **Save and continue**, **Keep editing**, **Discard changes**. Keyboard order follows the displayed order; initial focus and Escape both use **Keep editing**.
+
+Facilities must have at least one activity selected when creating or editing them. Browser and server validation enforce this; when no sports are defined, create a sport before saving a facility.
+
+Successful inline admin saves show a green **Changes saved successfully.** status banner after reloading, including Save and continue to another admin editor or page. The confirmation is consumed so refreshing does not repeat it.
+
+The facility's maximum upcoming bookings per resident applies only to profiles with the **Resident** role. All other roles are exempt from this limit, including when using the self-service booking page. Other booking rules still apply.
+
 ## Seed data
 
 The database is populated from `app/seed/data.json`, a snapshot of the reference data: sports, opening hours, facilities, bookable courts and options, roles and their responsibilities, profiles, site settings and the site logo. Bookings and the audit log are not included.
@@ -29,6 +62,8 @@ docker cp activeHubApp:/usr/src/app/seed/data.json app/seed/data.json
 ```
 
 ## Daylight opening-hours overrides
+
+Facility coordinates are optional in the add/edit forms. Supply `latitude, longitude` in decimal degrees (for example `51.5074, -0.1278`) for an exact location, or leave blank to resolve the UK postcode through postcodes.io when saving. Only the postcode is sent to that service. The resulting coordinates are stored for maps, distance sorting and dawn/dusk calculations; availability does not depend on a live lookup. Failed or invalid lookups prevent saving with an explicit error and retain the form entries. Existing coordinates take precedence; clear the field to resolve a changed postcode. Postcode locations are approximate.
 
 Under **Admin > Bookings > [site] > Sport booking months**, each sport has January–December checkboxes, all enabled by default. The setting applies to every court for that sport at that site only; other sports and other sites are unaffected. Restrictions recur yearly using Europe/London booking dates, so Tennis and Netball sharing physical resources can have different seasons. Empty selection blocks all new bookings for that sport at that site. Availability hides disallowed slots and checkout/admin creation enforce the rules again transactionally, including every month touched by an interval. Changing months does not cancel existing bookings and is allowed even when courts have upcoming bookings. Month changes are audited.
 

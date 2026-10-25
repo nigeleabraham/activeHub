@@ -52,13 +52,14 @@
             <% } else { %>
                 <p class="text-muted">No logo set. Only the site title is shown.</p>
             <% } %>
-            <div class="form-group">
-                <label for="site_logo">Upload a logo</label>
-                <input class="form-control-file" id="site_logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="site-logo-help">
-                <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears beside the title in the header.</small>
-            </div>
-            <p class="text-danger" id="logo-error" role="alert" hidden></p>
-            <button class="btn btn-primary" type="button" id="logo-upload">Upload logo</button>
+            <form method="POST" action="/admin/settings/logo" data-admin-logo>
+                <div class="form-group">
+                    <label for="site_logo">Upload a logo</label>
+                    <input class="form-control-file" id="site_logo" name="site_logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="site-logo-help" required>
+                    <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears beside the title in the header.</small>
+                </div>
+                <button class="btn btn-primary" type="submit" id="logo-upload">Upload logo</button>
+            </form>
             <% if (hasLogo) { %>
                 <form class="d-inline ml-2" method="POST" action="/admin/settings/logo/remove">
                     <button class="btn btn-outline-danger" type="submit">Remove logo</button>
@@ -100,20 +101,6 @@
             </form>
         </section>
     </main>
-    <script>
-        document.getElementById('logo-upload').addEventListener('click', async () => {
-            const input = document.getElementById('site_logo');
-            const error = document.getElementById('logo-error');
-            const file = input.files[0];
-            error.hidden = true;
-            const fail = message => { error.textContent = message; error.hidden = false; };
-            if (!file) return fail('Choose an image first.');
-            if (file.size > <%= 512 * 1024 %>) return fail('That file is larger than 512 KB.');
-            const response = await fetch('/admin/settings/logo', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
-            if (response.ok) return window.location.assign('/admin/settings?saved=1');
-            fail(response.status === 415 ? 'Use a PNG, JPEG, WebP or SVG image.' : 'The logo could not be saved.');
-        });
-    </script>
 </body>
 
 </html>

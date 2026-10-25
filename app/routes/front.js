@@ -12,20 +12,21 @@ const Settings = require('./../models/Settings');
 const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
 const AuditLog = require('./../models/AuditLog');
 const auth = require('./../middleware/auth');
-const { parseFacilityInput } = require('./../facilityUtils');
+const { parseFacilityInput, resolveFacilityCoordinates } = require('./../facilityUtils');
 const { isValidEmail, parseDeclineComment, parseBookingMonths } = require('./../validation');
 
 const router = express.Router();
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function parseCourseInput(body) {
+function parseCourseInput(body, { requireFacility = true } = {}) {
     const description = typeof body.description === 'string' ? body.description.trim() : '';
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 160 ||
-        typeof body.facility_guid !== 'string' || !GUID_PATTERN.test(body.facility_guid) || description.length > 10000) {
+        (requireFacility && (typeof body.facility_guid !== 'string' || !GUID_PATTERN.test(body.facility_guid))) ||
+        description.length > 10000) {
         return null;
     }
-    return { name: body.name.trim(), facility_guid: body.facility_guid, description: description || null };
+    return { name: body.name.trim(), ...(requireFacility ? { facility_guid: body.facility_guid } : {}), description: description || null };
 }
 
 function parseOpeningHoursInput(body) {
@@ -78,7 +79,7 @@ async function parseFacilityForm(body) {
     const submittedSports = body.sport_guids === undefined
         ? []
         : Array.isArray(body.sport_guids) ? body.sport_guids : [body.sport_guids];
-    if (submittedSports.length > 100 || submittedSports.some(guid => typeof guid !== 'string' || !GUID_PATTERN.test(guid))) {
+    if (!submittedSports.length || submittedSports.length > 100 || submittedSports.some(guid => typeof guid !== 'string' || !GUID_PATTERN.test(guid))) {
         return null;
     }
 
@@ -99,7 +100,7 @@ async function parseFacilityForm(body) {
     }
 
     return {
-        ...facility,
+        ...await resolveFacilityCoordinates(facility),
         sport_guids: selectedGuids,
         opening_hours_template_guid: openingHoursTemplateGuid
     };
@@ -362,7 +363,7 @@ async function prepareBatch(req, { resident }) {
             return { redirect: `${bookingsPath}?error=month-unavailable` };
         }
     }
-    if (resident) {
+    if (resident && req.profile.role === 'Resident') {
         const existing = await Bookings.countUpcomingForProfile(req.profile.guid, facility_guid);
         if (existing + bookings.length > facility.max_resident_bookings) {
             return { redirect: `${bookingsPath}?error=booking-limit` };
@@ -917,7 +918,7 @@ router.get('/bookings', async (req, res) => {
         ]);
         const facilities = (await Promise.all(facilityRows.map(async facility => ({
             guid: facility.guid,
-            limit: facility.max_resident_bookings,
+            limit: req.profile.role === 'Resident' ? facility.max_resident_bookings : null,
             used: myBookings.filter(booking => booking.facility_guid === facility.guid).length,
             name: facility.name,
             address: facility.address,
@@ -1280,15 +1281,14 @@ admin.get('/facilities', async (req, res) => {
 });
 
 admin.post('/facilities', async (req, res) => {
-    const facility = await parseFacilityForm(req.body);
-    if (!facility) {
-        return res.sendStatus(400);
-    }
-
     try {
-        await Facilities.create(facility);
-        res.redirect('/admin/facilities');
+        const facility = await parseFacilityForm(req.body);
+        if (!facility) return res.sendStatus(400);
+        const created = await Facilities.create(facility);
+        res.redirect(`/admin/facilities?created=${encodeURIComponent(created.guid)}#facility-${encodeURIComponent(created.guid)}`);
     } catch (error) {
+        console.error('Unable to create facility:', error);
+        if (error.code === 'POSTCODE_LOOKUP_FAILED') return res.status(422).json({ error: error.message });
         res.sendStatus(500);
     }
 });
@@ -1299,18 +1299,17 @@ admin.post('/facilities/update', async (req, res) => {
         return res.sendStatus(400);
     }
 
-    const facility = await parseFacilityForm(req.body);
-    if (!facility) {
-        return res.sendStatus(400);
-    }
-
     try {
+        const facility = await parseFacilityForm(req.body);
+        if (!facility) return res.sendStatus(400);
         const updatedFacility = await Facilities.update(guid, facility);
         if (!updatedFacility) {
             return res.sendStatus(404);
         }
         res.redirect('/admin/facilities');
     } catch (error) {
+        console.error('Unable to update facility:', error);
+        if (error.code === 'POSTCODE_LOOKUP_FAILED') return res.status(422).json({ error: error.message });
         res.sendStatus(500);
     }
 });
@@ -1364,7 +1363,7 @@ admin.post('/courses', async (req, res) => {
 
     try {
         await Courses.create(course);
-        res.redirect('/admin/courses');
+        res.redirect(`/admin/courses?admin_saved=course-created&admin_saved_target=add-course-${course.facility_guid}#add-course-${course.facility_guid}`);
     } catch (error) {
         res.sendStatus(500);
     }
@@ -1374,7 +1373,7 @@ admin.post('/courses/update', async (req, res) => {
     if (typeof req.body.guid !== 'string' || !GUID_PATTERN.test(req.body.guid)) {
         return res.sendStatus(400);
     }
-    const course = parseCourseInput(req.body);
+    const course = parseCourseInput(req.body, { requireFacility: false });
     if (!course) {
         return res.sendStatus(400);
     }
@@ -1384,7 +1383,7 @@ admin.post('/courses/update', async (req, res) => {
         if (!updatedCourse) {
             return res.sendStatus(404);
         }
-        res.redirect('/admin/courses');
+        res.redirect(`/admin/courses?admin_saved=course-updated&admin_saved_target=facility-${updatedCourse.facility_guid}#facility-${updatedCourse.facility_guid}`);
     } catch (error) {
         res.sendStatus(500);
     }
@@ -1395,8 +1394,9 @@ admin.post('/courses/destroy', async (req, res) => {
         return res.sendStatus(400);
     }
     try {
-        await Courses.remove(req.body.guid);
-        res.redirect('/admin/courses');
+        const removedCourse = await Courses.remove(req.body.guid);
+        if (!removedCourse) return res.sendStatus(404);
+        res.redirect(`/admin/courses?admin_saved=course-deleted&admin_saved_target=facility-${removedCourse.facility_guid}#facility-${removedCourse.facility_guid}`);
     } catch (error) {
         res.sendStatus(500);
     }

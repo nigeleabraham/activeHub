@@ -1,0 +1,88 @@
+<%
+    const editing = Boolean(facility.guid);
+    const fieldId = name => editing ? `edit-${name}-${facility.guid}` : name;
+    const external = facility.booking_mode === 'external';
+%>
+<p class="small text-muted">All fields are required unless marked optional.</p>
+<form method="POST" action="<%= editing ? '/admin/facilities/update' : '/admin/facilities' %>" data-facility-form data-editor-preview="false" data-editor-label="<%= editing ? 'Edit facility' : 'New facility' %>">
+    <% if (editing) { %>
+        <input type="hidden" name="guid" value="<%= facility.guid %>">
+    <% } %>
+    <fieldset class="mb-4">
+        <legend class="h6">Facility details</legend>
+        <div class="row">
+            <div class="form-group col-md-8">
+                <label for="<%= fieldId('name') %>">Name</label>
+                <input class="form-control" id="<%= fieldId('name') %>" name="name" type="text" maxlength="160" value="<%= facility.name || '' %>" required>
+            </div>
+            <div class="form-group col-md-4">
+                <label for="<%= fieldId('postcode') %>">Postcode</label>
+                <input class="form-control" id="<%= fieldId('postcode') %>" name="postcode" type="text" maxlength="32" value="<%= facility.postcode || '' %>" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="<%= fieldId('address') %>">Address</label>
+            <input class="form-control" id="<%= fieldId('address') %>" name="address" type="text" maxlength="240" value="<%= facility.address || '' %>" required>
+        </div>
+        <div class="form-group">
+            <label for="<%= fieldId('description') %>">Description</label>
+            <textarea class="form-control" id="<%= fieldId('description') %>" name="description" rows="5" maxlength="10000" required><%= facility.description || '' %></textarea>
+        </div>
+        <details>
+            <summary class="text-primary">Advanced location settings <small class="text-muted">Optional</small></summary>
+            <div class="form-group mt-3">
+                <label for="<%= fieldId('coordinates') %>">Coordinates <small class="text-muted">Optional</small></label>
+                <input class="form-control" id="<%= fieldId('coordinates') %>" name="coordinates" type="text" value="<%= facility.latitude != null && facility.longitude != null ? `${facility.latitude}, ${facility.longitude}` : '' %>" aria-describedby="<%= fieldId('coordinates-help') %>">
+                <small id="<%= fieldId('coordinates-help') %>" class="form-text text-muted">Latitude, longitude in decimal degrees. Example: 51.5074, -0.1278. Leave blank to use postcode for geo-location features.</small>
+            </div>
+        </details>
+    </fieldset>
+    <fieldset class="mb-4">
+        <legend class="h6">Activities</legend>
+        <p class="small">Select at least one sport offered at this facility.</p>
+        <% if (sports.length) { %>
+            <div class="row">
+                <% sports.forEach(sport => { %>
+                    <div class="col-12 col-md-4 col-lg-3 mb-2">
+                        <div class="custom-control custom-checkbox">
+                            <input class="custom-control-input" id="<%= fieldId('sport-' + sport.guid) %>" name="sport_guids" type="checkbox" value="<%= sport.guid %>" <%= (facility.sports || []).some(assignedSport => assignedSport.guid === sport.guid) ? 'checked' : '' %>>
+                            <label class="custom-control-label" for="<%= fieldId('sport-' + sport.guid) %>"><%= sport.name %></label>
+                        </div>
+                    </div>
+                <% }); %>
+            </div>
+        <% } else { %>
+            <p class="text-muted mb-0">No sports defined. <a href="/admin/sports">Manage sports</a>.</p>
+        <% } %>
+    </fieldset>
+    <fieldset class="mb-4">
+        <legend class="h6">Booking arrangements</legend>
+        <fieldset class="form-group">
+            <legend class="col-form-label">Booking method</legend>
+            <label class="d-block"><input type="radio" name="booking_mode" value="in_app" <%= !external ? 'checked' : '' %> required> Book through this website</label>
+            <label class="d-block"><input type="radio" name="booking_mode" value="external" <%= external ? 'checked' : '' %> required> Book on another website</label>
+        </fieldset>
+        <div class="row">
+            <div class="form-group col-md-6" <%= external ? 'hidden' : '' %>>
+                <label for="<%= fieldId('opening-hours-template') %>">Opening hours template <small class="text-muted">Optional</small></label>
+                <select class="form-control" id="<%= fieldId('opening-hours-template') %>" name="opening_hours_template_guid">
+                    <option value="">No template assigned (24x7)</option>
+                    <% openingHoursTemplates.forEach(template => { %>
+                        <option value="<%= template.guid %>" <%= template.guid === facility.opening_hours_template_guid ? 'selected' : '' %>><%= template.name %></option>
+                    <% }); %>
+                </select>
+            </div>
+            <div class="form-group col-md-6" <%= external ? 'hidden' : '' %>>
+                <label for="<%= fieldId('max-resident-bookings') %>">Maximum upcoming bookings per resident</label>
+                <input class="form-control" id="<%= fieldId('max-resident-bookings') %>" name="max_resident_bookings" type="number" min="1" max="100" step="1" value="<%= facility.max_resident_bookings ?? 8 %>" required>
+                <small class="form-text text-muted">Applies to residents booking through the portal</small>
+            </div>
+        </div>
+        <div class="form-group external-booking-field" <%= !external ? 'hidden' : '' %>>
+            <label for="<%= fieldId('external-booking-url') %>">External booking URL</label>
+            <input class="form-control" id="<%= fieldId('external-booking-url') %>" name="external_booking_url" type="url" maxlength="2048" value="<%= facility.external_booking_url || '' %>" placeholder="https://example.com/book" <%= external ? 'required' : '' %>>
+        </div>
+    </fieldset>
+    <button class="btn btn-primary" type="submit"><%= editing ? 'Save changes' : 'Create facility' %></button>
+    <button class="btn btn-outline-secondary ml-2" type="button" data-cancel-edit>Cancel</button>
+</form>

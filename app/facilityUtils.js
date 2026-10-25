@@ -14,18 +14,21 @@ function parseFacilityInput(body) {
         facility[field] = body[field].trim();
     }
 
-    const coordinates = typeof body.coordinates === 'string'
-        ? body.coordinates.trim().match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))$/)
-        : null;
-    if (!coordinates) {
+    if (body.coordinates !== undefined && typeof body.coordinates !== 'string') {
         return null;
     }
-
-    facility.latitude = Number(coordinates[1]);
-    facility.longitude = Number(coordinates[2]);
-    if (!Number.isFinite(facility.latitude) || facility.latitude < -90 || facility.latitude > 90 ||
-        !Number.isFinite(facility.longitude) || facility.longitude < -180 || facility.longitude > 180) {
-        return null;
+    const coordinateText = (body.coordinates || '').trim();
+    facility.latitude = null;
+    facility.longitude = null;
+    if (coordinateText) {
+        const coordinates = coordinateText.match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))$/);
+        if (!coordinates) return null;
+        facility.latitude = Number(coordinates[1]);
+        facility.longitude = Number(coordinates[2]);
+        if (!Number.isFinite(facility.latitude) || facility.latitude < -90 || facility.latitude > 90 ||
+            !Number.isFinite(facility.longitude) || facility.longitude < -180 || facility.longitude > 180) {
+            return null;
+        }
     }
 
     const limitText = body.max_resident_bookings === undefined || body.max_resident_bookings === ''
@@ -62,6 +65,35 @@ function parseFacilityInput(body) {
     return facility;
 }
 
+async function resolveFacilityCoordinates(facility) {
+    if (facility.latitude !== null && facility.longitude !== null) return facility;
+    try {
+        const response = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(facility.postcode)}`, {
+            signal: AbortSignal.timeout(5000),
+            redirect: 'error'
+        });
+        if (response.status === 404 || response.status === 400) {
+            throw new Error('Postcode not found. Check the postcode or enter coordinates manually.');
+        }
+        if (!response.ok) throw new Error('Postcode lookup is unavailable. Try again or enter coordinates manually.');
+        const data = await response.json();
+        const latitude = data.result?.latitude;
+        const longitude = data.result?.longitude;
+        if (data.status !== 200 || typeof latitude !== 'number' || !Number.isFinite(latitude) ||
+            latitude < -90 || latitude > 90 || typeof longitude !== 'number' ||
+            !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+            throw new Error('The postcode service did not return a valid location. Enter coordinates manually or try again.');
+        }
+        return { ...facility, latitude, longitude };
+    } catch (cause) {
+        const error = new Error(cause instanceof TypeError || cause.name === 'TimeoutError'
+            ? 'Postcode lookup could not be completed. Try again or enter coordinates manually.'
+            : cause.message, { cause });
+        error.code = 'POSTCODE_LOOKUP_FAILED';
+        throw error;
+    }
+}
+
 function createGoogleMapsUrl(latitude, longitude) {
     const url = new URL('https://www.google.com/maps/search/');
     url.searchParams.set('api', '1');
@@ -70,4 +102,4 @@ function createGoogleMapsUrl(latitude, longitude) {
     return url.toString();
 }
 
-module.exports = { parseFacilityInput, createGoogleMapsUrl, DEFAULT_MAX_RESIDENT_BOOKINGS, MAX_RESIDENT_BOOKINGS_LIMIT };
+module.exports = { parseFacilityInput, resolveFacilityCoordinates, createGoogleMapsUrl, DEFAULT_MAX_RESIDENT_BOOKINGS, MAX_RESIDENT_BOOKINGS_LIMIT };

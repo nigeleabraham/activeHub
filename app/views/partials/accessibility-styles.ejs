@@ -238,6 +238,7 @@
     });
 
     document.addEventListener('click', function (event) {
+        if (document.documentElement.hasAttribute('data-admin-editors')) { return; }
         var toggle = event.target.closest('[data-edit-toggle]');
         if (toggle) {
             var panel = document.getElementById(toggle.getAttribute('aria-controls'));

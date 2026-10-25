@@ -56,5 +56,6 @@ const navigationItems = currentProfile && isAdmin && adminArea ? adminItems : []
                 <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
             <% }); %>
         </nav>
+        <%- include('admin-editors') %>
     <% } %>
 </div>

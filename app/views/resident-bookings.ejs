@@ -73,7 +73,7 @@
                 <p class="font-weight-bold">You have £<%= (creditBalance / 100).toFixed(2) %> of booking credit. It is used automatically at checkout.</p>
             <% } %>
             <% if (facilities.length) { %>
-                <p class="text-muted">Bookings are for you only, you can book up to one month in advance, and each facility limits how many upcoming bookings you can hold. Pick several slots to book them together.</p>
+                <p class="text-muted">Bookings are for you only and you can book up to one month in advance. Upcoming booking limits apply only to the Resident role. Pick several slots to book them together.</p>
                 <div class="form-group">
                     <label for="facility-picker" class="font-weight-bold">Facility</label>
                     <select id="facility-picker" class="form-control">
@@ -85,8 +85,12 @@
                 <% facilities.forEach(facility => { %>
                     <div data-facility-panel="<%= facility.guid %>" <%= facility.guid !== selectedFacilityGuid ? 'hidden' : '' %>>
                         <p class="text-muted small"><%= facility.address %>, <%= facility.postcode %></p>
-                        <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> of <%= facility.limit %> upcoming bookings at this facility<%= facility.used >= facility.limit ? '. You have reached the limit.' : '.' %></p>
-                        <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>">
+                        <% if (facility.limit !== null) { %>
+                            <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> of <%= facility.limit %> upcoming bookings at this facility<%= facility.used >= facility.limit ? '. You have reached the limit.' : '.' %></p>
+                        <% } else { %>
+                            <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> upcoming bookings at this facility. Your role has no upcoming booking limit.</p>
+                        <% } %>
+                        <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" <% if (facility.limit !== null) { %>data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>"<% } %>>
                             <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
                                 <div class="form-group mb-2 mr-3">
                                     <label for="calendar-option-<%= facility.guid %>">Court or space</label>

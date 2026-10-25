@@ -8,10 +8,83 @@ const Bookings = require('../models/Bookings');
 const Profiles = require('../models/Profiles');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
+const OpeningHours = require('../models/OpeningHours');
 const router = require('../routes/front');
 
 const GUID = '123e4567-e89b-42d3-a456-426614174000';
 const profile = { guid: GUID, name: 'Resident', email: 'resident@example.test', role: 'Resident' };
+
+test('upcoming booking limits apply only to the Resident role in the calendar, checkout and payment', async t => {
+    t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
+    t.mock.method(Settings, 'getLogo', async () => null);
+    t.mock.method(Bookings, 'findInAppFacilities', async () => [{
+        guid: GUID, name: 'Hall', max_resident_bookings: 2
+    }]);
+    t.mock.method(Bookings, 'findOptions', async () => [{
+        guid: GUID, name: 'Court', allowed_months: Array.from({ length: 12 }, (_, i) => i + 1)
+    }]);
+    t.mock.method(Bookings, 'findUpcomingForProfile', async () => [
+        { facility_guid: GUID, starts_at: '2027-01-01T10:00:00Z', ends_at: '2027-01-01T11:00:00Z' },
+        { facility_guid: GUID, starts_at: '2027-01-02T10:00:00Z', ends_at: '2027-01-02T11:00:00Z' }
+    ]);
+    let existing = 2;
+    const count = t.mock.method(Bookings, 'countUpcomingForProfile', async () => existing);
+    t.mock.method(Profiles, 'findByGuid', async () => ({ ...profile, credit_pence: 1000 }));
+    t.mock.method(OpeningHours, 'isBookingWithinHours', async () => true);
+    const create = t.mock.method(Bookings, 'createBookings', async () => [{ guid: GUID }]);
+    t.mock.method(AuditLog, 'record', async () => {});
+    const starts = new Date(Date.now() + 86400000);
+    const body = {
+        facility_guid: GUID,
+        slots: JSON.stringify([{
+            option_guid: GUID, starts_at: starts.toISOString(),
+            ends_at: new Date(starts.getTime() + 3600000).toISOString()
+        }])
+    };
+    const handler = (url, method) => router.stack.findLast(
+        layer => layer.route?.path === url && layer.route.methods[method]
+    ).route.stack[0].handle;
+    for (const role of ['Resident', 'Administrator', 'Coach', 'Receptionist']) {
+        const currentProfile = { ...profile, role, credit_pence: 1000 };
+        let locals;
+        await handler('/bookings', 'get')({ profile: currentProfile, query: {} }, {
+            render(view, values) { locals = values; }
+        });
+        assert.equal(locals.facilities[0].limit, role === 'Resident' ? 2 : null);
+        const html = await ejs.renderFile(path.join(__dirname, '../views/resident-bookings.ejs'), {
+            ...locals, currentProfile, isAdmin: role === 'Administrator', canSwitchRole: false
+        });
+        assert.equal(html.includes('data-max-selectable="0"'), role === 'Resident');
+        assert.equal(html.includes('Your role has no upcoming booking limit.'), role !== 'Resident');
+        for (const url of ['/bookings/checkout', '/bookings/pay']) {
+            let location;
+            let rendered;
+            const counted = count.mock.callCount();
+            const created = create.mock.callCount();
+            const res = {
+                redirect(value) { location = value; },
+                status(value) { assert.equal(value, 200); return this; },
+                render(view) { rendered = view; },
+                sendStatus(value) { assert.fail(`Unexpected status ${value}`); }
+            };
+            await handler(url, 'post')({ profile: currentProfile, body }, res);
+            assert.equal(count.mock.callCount() - counted, role === 'Resident' ? 1 : 0);
+            if (role === 'Resident') {
+                assert.equal(location, '/bookings?error=booking-limit');
+                assert.equal(create.mock.callCount(), created);
+                existing = 1;
+                await handler(url, 'post')({ profile: currentProfile, body }, res);
+                existing = 2;
+            }
+            if (url.endsWith('/checkout')) {
+                assert.equal(rendered, 'resident-checkout');
+            } else {
+                assert.match(location, /^\/bookings\?created=1&/);
+                assert.equal(create.mock.callCount(), created + 1);
+            }
+        }
+    }
+});
 
 test('checkout distinguishes available balance, credit deduction and card remainder', async () => {
     for (const [availableCredit, credit, due] of [
