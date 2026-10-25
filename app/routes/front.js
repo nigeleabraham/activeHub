@@ -12,6 +12,7 @@ const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
 const AuditLog = require('./../models/AuditLog');
 const auth = require('./../middleware/auth');
 const { parseFacilityInput } = require('./../facilityUtils');
+const { isValidEmail } = require('./../validation');
 
 const router = express.Router();
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -174,7 +175,7 @@ for (const [path, definition] of Object.entries(MANAGEMENT_ACTIONS)) {
         res.on('finish', () => {
             const location = res.getHeader('Location') || '';
             if (res.statusCode >= 300 && res.statusCode < 400 && !String(location).includes('error=')) {
-                recordAudit(req.profile, {
+                void recordAudit(req.profile, {
                     action: definition.action,
                     entityType: definition.entity,
                     entityGuid: GUID_PATTERN.test(entityGuid || '') ? entityGuid : null,
@@ -707,7 +708,7 @@ router.get('/profile', async (req, res) => {
 router.post('/profile', async (req, res) => {
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
-    if (!name || name.length > 120 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email)) {
         return res.redirect('/profile?error=invalid');
     }
     try {
@@ -855,7 +856,7 @@ admin.get('/profiles', async (req, res) => {
 function parseProfileInput(body, roleNames) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
-    if (!name || name.length > 120 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+    if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email) ||
         !roleNames.includes(body.role)) {
         return null;
     }
