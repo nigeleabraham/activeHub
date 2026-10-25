@@ -16,11 +16,12 @@
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Credit requests</h1>
-                <p class="text-muted mb-0">Residents asking for credit on a past booking because of inclement weather</p>
+                <p class="text-muted mb-0">Weather and discretionary credit requests for past bookings</p>
             </div>
             <%- include('partials/navigation') %>
         </header>
 
+        <% if (declineError) { %><div class="alert alert-danger" role="alert">Enter a decline comment of 1 to 500 characters. This will be visible to the requestor.</div><% } %>
         <% if (decision) { %>
             <div class="alert alert-success" role="status">Request for booking <strong><%= decisionRef %></strong> was <%= decision %>.<%= decision === 'approved' ? ' The amount paid has been added to the profile\'s credit.' : '' %></div>
         <% } else if (error) { %>
@@ -31,6 +32,26 @@
         <% const pending = requests.filter(request => request.status === 'pending'); %>
         <% const decided = requests.filter(request => request.status !== 'pending'); %>
 
+        <section class="mb-4" aria-labelledby="auto-slots-heading">
+            <h2 id="auto-slots-heading" class="h5">Auto-approved weather time slots (last <%= creditRequestDays %> days)</h2>
+            <p><%= autoApprovalEnabled ? 'Enabled' : 'Disabled - saved slots are paused' %>. Matches exact start and end times across all facilities. <a href="/admin/settings#auto-approval-heading">Change in Settings</a>.</p>
+            <% if (autoApprovalSlots.length) { %>
+                <div class="table-responsive bg-white border rounded">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Start</th><th>End</th><th>Bank refund</th><th>Approved by</th></tr></thead>
+                        <tbody><% autoApprovalSlots.forEach(slot => { %>
+                            <tr>
+                                <td><time data-local-time datetime="<%= new Date(slot.starts_at).toISOString() %>"><%= new Date(slot.starts_at).toISOString() %></time></td>
+                                <td><time data-local-time datetime="<%= new Date(slot.ends_at).toISOString() %>"><%= new Date(slot.ends_at).toISOString() %></time></td>
+                                <td><%= slot.refundable ? 'Refundable' : 'Non-refundable' %></td>
+                                <td><%= slot.approved_by_name %></td>
+                            </tr>
+                        <% }) %></tbody>
+                    </table>
+                </div>
+            <% } else { %><p class="text-muted">No auto-approved slots in this period.</p><% } %>
+        </section>
+
         <section class="mb-4" aria-labelledby="pending-heading">
             <h2 id="pending-heading" class="h5 mb-3">Waiting for a decision (<%= pending.length %>)</h2>
             <% if (pending.length) { %>
@@ -40,17 +61,30 @@
                         <tbody>
                             <% pending.forEach(request => { %>
                                 <tr>
-                                    <td><code><%= request.booking_ref %></code></td>
+                                    <td><code><%= request.booking_ref %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span></td>
                                     <td><%= request.profile_name || 'Unknown' %><br><span class="small text-muted"><%= request.profile_email %></span><br>
                                         <span class="small text-muted"><time data-local-time datetime="<%= new Date(request.requested_at).toISOString() %>"><%= new Date(request.requested_at).toISOString() %></time></span></td>
                                     <td><%= request.facility_name %><br><span class="small text-muted"><%= request.option_name %> · <%= request.sport_name %></span><br>
                                         <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time></td>
                                     <td><%= money(request.amount_paid_pence) %></td>
-                                    <td class="small"><%= request.note || '—' %></td>
+                                    <td class="small"><strong><%= request.reason === 'weather' ? 'Weather' : 'Discretionary (Other)' %></strong><br><%= request.note || '—' %></td>
                                     <td>
                                         <form method="POST" action="/admin/credit-requests/decide">
                                             <input type="hidden" name="request_guid" value="<%= request.guid %>">
+                                            <% if (request.reason === 'weather') { %>
+                                                <p class="small mb-1">Weather credit is always refundable.</p>
+                                            <% } else { %>
+                                                <label class="d-block small"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit (Other credits are non-refundable by default)</label>
+                                            <% } %>
+                                            <% if (autoApprovalEnabled && request.reason === 'weather') { %>
+                                                <label class="d-block small"><input type="checkbox" name="approve_slot" value="1"> Also auto-approve existing and future weather requests at all facilities with this exact start and end time. All Weather credits are refundable.</label>
+                                            <% } %>
                                             <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve and add credit</button>
+                                        </form>
+                                        <form method="POST" action="/admin/credit-requests/decide">
+                                            <input type="hidden" name="request_guid" value="<%= request.guid %>">
+                                            <label class="small d-block" for="decline-<%= request.guid %>">Decline reason (visible to requestor)</label>
+                                            <textarea class="form-control form-control-sm mb-1" id="decline-<%= request.guid %>" name="decline_comment" maxlength="500" rows="2" required></textarea>
                                             <button class="btn btn-outline-secondary btn-sm mb-1" type="submit" name="decision" value="decline" data-confirm="Decline the request for booking <%= request.booking_ref %>?">Decline</button>
                                         </form>
                                     </td>
@@ -73,11 +107,13 @@
                         <tbody>
                             <% decided.forEach(request => { %>
                                 <tr>
-                                    <td><code><%= request.booking_ref %></code></td>
+                                    <td><code><%= request.booking_ref %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span></td>
                                     <td><%= request.profile_name || 'Unknown' %></td>
-                                    <td><%= request.facility_name %> · <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time></td>
+                                    <td><%= request.facility_name %> · <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time><br><strong><%= request.reason === 'weather' ? 'Weather' : 'Discretionary (Other)' %></strong><br><span class="small"><%= request.note || '—' %></span></td>
                                     <td><span class="badge badge-<%= request.status === 'approved' ? 'success' : 'secondary' %>"><%= request.status === 'approved' ? 'Credited ' + money(request.amount_paid_pence) : 'Declined' %></span>
-                                        <span class="small text-muted"><%= request.decided_by_name ? 'by ' + request.decided_by_name : '' %></span></td>
+                                        <span class="small text-muted"><%= request.decided_by_name ? 'by ' + request.decided_by_name : '' %></span>
+                                        <% if (request.auto_approved) { %><span class="badge badge-info">Auto-approved weather slot</span><% } %>
+                                        <% if (request.status === 'declined') { %><p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p><% } %></td>
                                 </tr>
                             <% }) %>
                         </tbody>

@@ -56,6 +56,7 @@
                                     <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
                                     <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
                                     <% if (booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
+                                        <label class="d-block small mt-1"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit</label>
                                         <button class="btn btn-outline-primary btn-sm mt-1" type="submit" name="credit" value="1">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> paid to <%= booking.profile_name %></button>
                                     <% } %>
                                 </form>

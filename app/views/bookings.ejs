@@ -35,6 +35,29 @@
                     <div>
                         <div class="mb-4">
                             <details>
+                                <summary class="h5 mb-3">Sport booking months</summary>
+                                <p class="small text-muted">Set the allowed booking months for each sport at this site. Applies every year to all courts for that sport, using UK booking dates. Other sites are unaffected. Existing bookings are not cancelled.</p>
+                                <% facility.sports.forEach(sport => { %>
+                                    <form class="border rounded p-3 mb-3" method="POST" action="/admin/bookings/sports/months">
+                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                        <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                                        <fieldset>
+                                            <legend class="h6">Allowed booking months for <%= sport.name %></legend>
+                                            <% ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].forEach((month, index) => { %>
+                                                <label class="mr-3"><input type="checkbox" name="allowed_months" value="<%= index + 1 %>" <%= sport.allowed_months.includes(index + 1) ? 'checked' : '' %>> <%= month %></label>
+                                            <% }) %>
+                                        </fieldset>
+                                        <p class="small text-muted">All months are enabled by default. Clear all to disable new bookings for this sport at this site year-round.</p>
+                                        <button class="btn btn-primary btn-sm" type="submit">Save months</button>
+                                    </form>
+                                <% }) %>
+                                <% if (!facility.sports.length) { %>
+                                    <p class="text-muted">Assign sports to this facility to configure their booking months.</p>
+                                <% } %>
+                            </details>
+                        </div>
+                        <div class="mb-4">
+                            <details>
                                 <summary class="h5 mb-3">Resources (<%= facility.resources.length %>)</summary>
                                 <p class="text-muted small">Resources are exclusive booking claims. Courts sharing a resource block each other. Use a separate resource for each court-pair conflict so unrelated courts remain available.</p>
                                 <form class="form-inline mb-3" method="POST" action="/admin/bookings/resources">
@@ -105,6 +128,7 @@
                                                 </div>
                                             <% }); %>
                                         </fieldset>
+                                        <p class="small text-muted">This court uses the selected sport's allowed booking months at this site. Configure these under Sport booking months.</p>
                                         <button class="btn btn-primary btn-sm" type="submit">Add court</button>
                                     </form>
                                 <% } else if (!facility.sports.length) { %>

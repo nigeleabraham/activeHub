@@ -12,6 +12,10 @@
             The court option could not be saved. Check its sport and resource selections.
         <% } else if (error === 'outside-opening-hours') { %>
             The selected time is outside this facility's opening hours.
+        <% } else if (error === 'sport-months-moved') { %>
+            Booking months are now managed per sport at each site. Your old court-month form has not been saved. Open Sport booking months for this site, review the sport's months and save them there.
+        <% } else if (error === 'month-unavailable') { %>
+            This sport is not available for booking at this site in the selected month. Choose a court for another sport or a different date.
         <% } else if (error === 'booking-limit') { %>
             You have reached the maximum number of upcoming bookings allowed at this facility. Some of your current bookings need to finish before you can book more.
         <% } else if (error === 'too-far-ahead') { %>

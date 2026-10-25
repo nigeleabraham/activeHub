@@ -28,6 +28,12 @@
                     <label for="new-template-name">Template name</label>
                     <input class="form-control" id="new-template-name" name="name" type="text" maxlength="120" required>
                 </div>
+                <fieldset class="form-group">
+                    <legend class="h6">Daylight overrides</legend>
+                    <label class="d-block"><input type="checkbox" name="dawn_override"> Dawn: no booking may start before sunrise</label>
+                    <label class="d-block"><input type="checkbox" name="dusk_override"> Dusk: bookings must end by civil dusk + 20 minutes</label>
+                    <small class="form-text text-muted">Calculated for each facility's coordinates and booking date. These limits never extend the weekly hours below. Opening rounds up to the nearest minute. When dusk limits closing, closing rounds down to the hour to reflect the last possible booking.</small>
+                </fieldset>
                 <div class="table-responsive">
                     <table class="table table-sm">
                         <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>
@@ -66,6 +72,8 @@
                         <div class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;">
                             <div>
                                 <h3 class="h6 mb-1"><%= template.name %></h3>
+                                <% if (template.dawn_override) { %><span class="badge badge-info">Dawn limit</span><% } %>
+                                <% if (template.dusk_override) { %><span class="badge badge-info">Dusk + 20 min limit</span><% } %>
                                 <p class="text-muted small mb-0">
                                     <% if (template.rules.length) { %>
                                         <%= template.rules.map(rule => `${weekdays[rule.day_of_week]} ${String(rule.opens_at).slice(0, 5)}–${String(rule.closes_at).slice(0, 5)}`).join(' · ') %>
@@ -89,6 +97,12 @@
                                     <label for="template-name-<%= template.guid %>">Template name</label>
                                     <input class="form-control" id="template-name-<%= template.guid %>" name="name" type="text" maxlength="120" value="<%= template.name %>" required>
                                 </div>
+                                <fieldset class="form-group">
+                                    <legend class="h6">Daylight overrides</legend>
+                                    <label class="d-block"><input type="checkbox" name="dawn_override" <%= template.dawn_override ? 'checked' : '' %>> Dawn: no booking may start before sunrise</label>
+                                    <label class="d-block"><input type="checkbox" name="dusk_override" <%= template.dusk_override ? 'checked' : '' %>> Dusk: bookings must end by civil dusk + 20 minutes</label>
+                                    <small class="form-text text-muted">Uses each facility's coordinates and booking date without extending the weekly hours. Opening rounds up to the nearest minute. When dusk limits closing, closing rounds down to the hour to reflect the last possible booking.</small>
+                                </fieldset>
                                 <div class="table-responsive">
                                     <table class="table table-sm">
                                         <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>

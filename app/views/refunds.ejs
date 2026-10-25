@@ -82,7 +82,7 @@
                             <tbody>
                                 <% bookings.forEach(booking => { %>
                                     <tr>
-                                        <td><code><%= booking.booking_ref %></code></td>
+                                        <td><code><%= booking.booking_ref %></code><br><span class="small">Payment ID: <code><%= booking.payment_reference || 'Not recorded' %></code></span></td>
                                         <td><time data-local-time datetime="<%= new Date(booking.starts_at).toISOString() %>"><%= new Date(booking.starts_at).toISOString() %></time></td>
                                         <td><%= booking.facility_name %><br><span class="small text-muted"><%= booking.option_name %> · <%= booking.sport_name %></span></td>
                                         <td><%= booking.profile_name || 'Unassigned' %><% if (booking.profile_email) { %><br><span class="small text-muted"><%= booking.profile_email %></span><% } %></td>
@@ -103,6 +103,7 @@
                                                         <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
                                                         <input type="hidden" name="return_to" value="/admin/refunds?<%= new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, value]) => value))).toString() %>">
                                                         <% if (booking.refundable) { %>
+                                                            <label class="d-block small"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit</label>
                                                             <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="method" value="credit" data-confirm="Add <%= money(booking.amount_paid_pence) %> to <%= booking.profile_name %>'s credit for booking <%= booking.booking_ref %>? The booking stays in place and can't be credited again.">Add credit to profile</button>
                                                         <% } %>
                                                         <% if (booking.externallyRefundable) { %>

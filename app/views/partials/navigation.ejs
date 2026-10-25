@@ -8,6 +8,7 @@ const adminItems = [
     { key: 'opening-hours', label: 'Opening hours', href: '/admin/opening-hours' },
     { key: 'bookings', label: 'Bookings', href: '/admin/bookings' },
     { key: 'credit-requests', label: 'Credit requests', href: '/admin/credit-requests' },
+    { key: 'credit-refunds', label: 'Credit refunds', href: '/admin/credit-refunds' },
     { key: 'refunds', label: 'Refunds', href: '/admin/refunds' },
     { key: 'profiles', label: 'Profiles', href: '/admin/profiles' },
     { key: 'roles', label: 'Roles', href: '/admin/roles' },
@@ -46,7 +47,12 @@ const navigationItems = currentProfile && isAdmin && adminArea ? adminItems : []
     <% } %>
     <% if (navigationItems.length) { %>
         <nav class="d-flex flex-wrap justify-content-end" style="gap: 0.5rem;" aria-label="Main navigation">
-            <% navigationItems.forEach(item => { %>
+            <div class="d-flex flex-wrap justify-content-end w-100" style="gap: 0.5rem;">
+                <% navigationItems.slice(0, 2).forEach(item => { %>
+                    <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
+                <% }); %>
+            </div>
+            <% navigationItems.slice(2).forEach(item => { %>
                 <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
             <% }); %>
         </nav>

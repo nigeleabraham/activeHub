@@ -37,7 +37,7 @@ async function seedKeyedTable(client, table, rows, guidMaps) {
         );
         let guid = existing.rows[0]?.guid;
         if (!guid) {
-            const columns = Object.keys(row);
+            const columns = Object.keys(row).filter(column => !(table.skip || []).includes(column));
             const { rows: created } = await client.query(
                 `${insertQuery(table.name, columns)} RETURNING guid`,
                 columns.map(column => toDbValue(row[column]))

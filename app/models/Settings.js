@@ -4,8 +4,27 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const DEFAULTS = { site_title: 'ActiveHub' };
+const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365' };
 const SITE_TITLE_MAX_LENGTH = 60;
+
+function parseCreditRequestDays(value) {
+    if (typeof value !== 'string' || !/^\d{1,3}$/.test(value)) return null;
+    const days = Number(value);
+    return days >= 1 && days <= 365 ? days : null;
+}
+
+function parseCreditLifetimeDays(value) {
+    if (typeof value !== 'string' || !/^\d{1,5}$/.test(value)) return null;
+    const days = Number(value);
+    return days >= 1 && days <= 36500 ? days : null;
+}
+
+async function getCreditRequestDays() {
+    const settings = await getAll();
+    const days = parseCreditRequestDays(settings.credit_request_days);
+    if (days === null) throw new Error('Invalid configured credit request day limit');
+    return days;
+}
 
 async function initialize() {
     await pool.query(`
@@ -58,4 +77,4 @@ async function set(key, value) {
     );
 }
 
-module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH };
+module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays };

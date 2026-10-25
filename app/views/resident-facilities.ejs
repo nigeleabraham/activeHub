@@ -135,7 +135,9 @@
                         <% } %>
                         <div class="mt-3">
                             <a class="btn btn-outline-brand btn-sm mr-2" href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">Directions<span class="sr-only"> to <%= facility.name %> (opens in a new tab)</span></a>
-                            <% if (facility.external_booking_url) { %>
+                            <% if (facility.booking_mode === 'in_app') { %>
+                                <a class="btn btn-brand btn-sm" href="/bookings?facility=<%= encodeURIComponent(facility.guid) %>#make-booking">Book online<span class="sr-only"> at <%= facility.name %></span></a>
+                            <% } else if (facility.external_booking_url) { %>
                                 <a class="btn btn-brand btn-sm" href="<%= facility.external_booking_url %>" target="_blank" rel="noopener noreferrer">Book online<span class="sr-only"> at <%= facility.name %> (opens in a new tab)</span></a>
                             <% } %>
                         </div>

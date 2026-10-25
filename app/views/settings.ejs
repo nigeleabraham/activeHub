@@ -16,7 +16,7 @@
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Settings</h1>
-                <p class="text-muted mb-0">Configure the public-facing site</p>
+                <p class="text-muted mb-0">Configure the site and booking credit requests</p>
             </div>
             <%- include('partials/navigation') %>
         </header>
@@ -33,6 +33,15 @@
                     <small class="form-text text-muted" id="site-title-help">Up to <%= maxLength %> characters.</small>
                 </div>
                 <button class="btn btn-primary" type="submit">Save</button>
+            </form>
+            <% if (organisationError) { %><div class="alert alert-danger mt-3" role="alert">Enter an organisation name of <%= maxLength %> characters or fewer.</div><% } %>
+            <form class="mt-3" method="POST" action="/admin/settings/organisation">
+                <div class="form-group">
+                    <label for="organisation-name">Organisation name</label>
+                    <input class="form-control" id="organisation-name" name="organisation_name" type="text" maxlength="<%= maxLength %>" required value="<%= organisationName %>" aria-describedby="organisation-help">
+                    <small class="form-text text-muted" id="organisation-help">Used in the credit and refund guidance. Defaults to Peck'em.</small>
+                </div>
+                <button class="btn btn-primary" type="submit">Save organisation name</button>
             </form>
         </section>
 
@@ -55,6 +64,40 @@
                     <button class="btn btn-outline-danger" type="submit">Remove logo</button>
                 </form>
             <% } %>
+        </section>
+        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="request-window">
+            <h2 id="request-window" class="h5">Credit request period</h2>
+            <p>Credits and refunds shows only bookings that ended within this many days. Residents can submit new credit requests only for those bookings. Existing requests remain available for review.</p>
+            <% if (windowSaved) { %><div class="alert alert-success" role="status">Credit request period saved.</div><% } %>
+            <% if (windowError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</div><% } %>
+            <form method="POST" action="/admin/settings/credit-request-period">
+                <label for="credit-request-days">Number of days</label>
+                <input class="form-control mb-2" id="credit-request-days" name="days" type="number" min="1" max="365" step="1" required value="<%= creditRequestDays %>">
+                <button class="btn btn-primary btn-sm" type="submit">Save period</button>
+            </form>
+        </section>
+        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="credit-lifetime-heading">
+            <h2 id="credit-lifetime-heading" class="h5">Credit lifetime</h2>
+            <p>How many days newly issued credits remain available, measured from issue time. Changing this does not alter existing expiry dates. Spent or expired credits are hidden and cannot be used at checkout. A bank refund requested before expiry remains available for administrator review.</p>
+            <% if (lifetimeError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 36500.</div><% } %>
+            <form method="POST" action="/admin/settings/credit-lifetime">
+                <label for="credit-lifetime-days">Credit lifetime in days</label>
+                <input class="form-control mb-2" id="credit-lifetime-days" name="days" type="number" min="1" max="36500" step="1" required value="<%= creditLifetimeDays %>">
+                <button class="btn btn-primary btn-sm" type="submit">Save credit lifetime</button>
+            </form>
+        </section>
+        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="auto-approval-heading">
+            <h2 id="auto-approval-heading" class="h5">Weather credit slot auto-approval</h2>
+            <p>Allow administrators to approve a time slot across all facilities. Pending and later Weather requests for the exact same start and end time receive refundable credit automatically. Only Weather requests can be auto-approved. Other requests require individual review and are non-refundable unless the administrator allows a bank refund.</p>
+            <p>Disabling pauses all saved slots without removing them or reversing credits. Re-enabling applies them to new requests; requests submitted while disabled still require review. The slot list uses the Credit request period above.</p>
+            <form method="POST" action="/admin/settings/credit-slot-auto-approval">
+                <label for="credit-slot-auto-approval">Auto-approval</label>
+                <select class="form-control mb-2" id="credit-slot-auto-approval" name="enabled">
+                    <option value="0" <%= !autoApprovalEnabled ? 'selected' : '' %>>Disabled</option>
+                    <option value="1" <%= autoApprovalEnabled ? 'selected' : '' %>>Enabled</option>
+                </select>
+                <button class="btn btn-primary btn-sm" type="submit">Save auto-approval</button>
+            </form>
         </section>
     </main>
     <script>

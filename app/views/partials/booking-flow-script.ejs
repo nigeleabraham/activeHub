@@ -201,12 +201,13 @@
             const buttons = form.querySelectorAll('button');
             const button = { set disabled(value) { buttons.forEach(item => { item.disabled = value; }); } };
             const submitter = event.submitter;
+            const body = new URLSearchParams(new FormData(form, submitter));
             button.disabled = true;
             try {
                 const response = await fetch(form.action, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'fetch' },
-                    body: new URLSearchParams(new FormData(form, submitter))
+                    body
                 });
                 if (!response.ok && response.status !== 404) throw new Error('Cancel failed');
                 const details = form.closest('details');
@@ -482,14 +483,21 @@
                     const slotStart = new Date(day);
                     slotStart.setHours(hour, 0, 0, 0);
                     const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
-                    if (slotStart.getHours() !== hour || !isWithinOpeningHours(slotStart, slotEnd)) continue;
+                    const bookingMonth = date => Number(calendarScheduleFormatter.formatToParts(date).find(part => part.type === 'month').value);
+                    if (slotStart.getHours() !== hour || !selectedOption ||
+                        !selectedOption.allowed_months.includes(bookingMonth(slotStart)) ||
+                        !selectedOption.allowed_months.includes(bookingMonth(new Date(slotEnd.getTime() - 1))) ||
+                        !isWithinOpeningHours(slotStart, slotEnd)) continue;
                     dayPanel.append(createSlotButton(slotStart, slotEnd, claimedResources, selectedOption));
                     slotCount += 1;
                 }
-                if (!slotCount && schedules !== null) {
+                if (!slotCount) {
                     const emptyState = document.createElement('p');
                     emptyState.className = 'text-center text-muted';
-                    emptyState.textContent = 'No open booking hours for this day.';
+                    emptyState.textContent = selectedOption && !selectedOption.allowed_months.includes(
+                        Number(calendarScheduleFormatter.formatToParts(day).find(part => part.type === 'month').value))
+                        ? 'This sport is not available for booking at this site in this month.'
+                        : 'No open booking hours for this day.';
                     dayPanel.append(emptyState);
                 }
                 slotsList.append(dayPanel);

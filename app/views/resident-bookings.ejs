@@ -78,12 +78,12 @@
                     <label for="facility-picker" class="font-weight-bold">Facility</label>
                     <select id="facility-picker" class="form-control">
                         <% facilities.forEach(facility => { %>
-                            <option value="<%= facility.guid %>"><%= facility.name %></option>
+                            <option value="<%= facility.guid %>" <%= facility.guid === selectedFacilityGuid ? 'selected' : '' %>><%= facility.name %></option>
                         <% }) %>
                     </select>
                 </div>
-                <% facilities.forEach((facility, index) => { %>
-                    <div data-facility-panel="<%= facility.guid %>" <%= index ? 'hidden' : '' %>>
+                <% facilities.forEach(facility => { %>
+                    <div data-facility-panel="<%= facility.guid %>" <%= facility.guid !== selectedFacilityGuid ? 'hidden' : '' %>>
                         <p class="text-muted small"><%= facility.address %>, <%= facility.postcode %></p>
                         <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> of <%= facility.limit %> upcoming bookings at this facility<%= facility.used >= facility.limit ? '. You have reached the limit.' : '.' %></p>
                         <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>">

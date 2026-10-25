@@ -4,6 +4,7 @@ const Facilities = require('./../models/Facilities');
 const Courses = require('./../models/Courses');
 const Sports = require('./../models/Sports');
 const Bookings = require('./../models/Bookings');
+const Credits = require('./../models/Credits');
 const OpeningHours = require('./../models/OpeningHours');
 const Profiles = require('./../models/Profiles');
 const Roles = require('./../models/Roles');
@@ -12,7 +13,7 @@ const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
 const AuditLog = require('./../models/AuditLog');
 const auth = require('./../middleware/auth');
 const { parseFacilityInput } = require('./../facilityUtils');
-const { isValidEmail } = require('./../validation');
+const { isValidEmail, parseDeclineComment, parseBookingMonths } = require('./../validation');
 
 const router = express.Router();
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,7 +42,7 @@ function parseOpeningHoursInput(body) {
         rules.push({ day_of_week: day, opens_at: opensAt, closes_at: closesAt });
     }
 
-    return { name, rules };
+    return { name, rules, dawn_override: body.dawn_override === 'on', dusk_override: body.dusk_override === 'on' };
 }
 
 function parseResourceInput(body) {
@@ -121,7 +122,8 @@ const ADMIN_LINKS = [
     { href: '/admin/sports', title: 'Sports', text: 'The sports facilities can offer' },
     { href: '/admin/opening-hours', title: 'Opening hours', text: 'Weekly schedules and exceptions' },
     { href: '/admin/bookings', title: 'Bookings', text: 'Book and manage slots for any profile' },
-    { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather credit requests from residents' },
+    { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
+    { href: '/admin/credit-refunds', title: 'Credit refunds', text: 'Review requests to transfer booking credit to a bank account' },
     { href: '/admin/refunds', title: 'Refunds', text: 'Find a booking and refund it as account credit' },
     { href: '/admin/profiles', title: 'Profiles', text: 'People and the role each one holds' },
     { href: '/admin/roles', title: 'Roles', text: 'Create roles and assign responsibilities' },
@@ -284,7 +286,8 @@ const availabilityHandler = ({ resident = false } = {}) => async (req, res) => {
             OpeningHours.getSchedules(
                 facility.opening_hours_template_guid,
                 startsAt,
-                9
+                9,
+                facility
             )
         ]);
         res.json({
@@ -349,6 +352,16 @@ async function prepareBatch(req, { resident }) {
     const facilities = await Bookings.findInAppFacilities();
     const facility = facilities.find(item => item.guid === facility_guid);
     if (!facility) return { status: 404 };
+    const options = await Bookings.findOptions(facility_guid);
+    const monthFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', month: 'numeric' });
+    for (const booking of bookings) {
+        const option = options.find(item => item.guid === booking.option_guid);
+        if (!option) return { status: 404 };
+        if (!option.allowed_months.includes(Number(monthFormatter.format(new Date(booking.starts_at)))) ||
+            !option.allowed_months.includes(Number(monthFormatter.format(new Date(new Date(booking.ends_at).getTime() - 1))))) {
+            return { redirect: `${bookingsPath}?error=month-unavailable` };
+        }
+    }
     if (resident) {
         const existing = await Bookings.countUpcomingForProfile(req.profile.guid, facility_guid);
         if (existing + bookings.length > facility.max_resident_bookings) {
@@ -362,7 +375,8 @@ async function prepareBatch(req, { resident }) {
         const withinOpeningHours = await OpeningHours.isBookingWithinHours(
             facility.opening_hours_template_guid,
             new Date(booking.starts_at),
-            new Date(booking.ends_at)
+            new Date(booking.ends_at),
+            facility
         );
         if (!withinOpeningHours) return { redirect: `${bookingsPath}?error=outside-opening-hours` };
     }
@@ -396,6 +410,7 @@ const createBatchHandler = async (req, res) => {
         return res.redirect(`/admin/bookings?created=${prepared.bookings.length}`);
     } catch (error) {
         if (error.code === '23P01') return res.status(409).json({ code: 'booking-conflict' });
+        if (error.code === 'OPTION_MONTH_UNAVAILABLE') return res.redirect('/admin/bookings?error=month-unavailable');
         return res.redirect('/admin/bookings?error=invalid-booking');
     }
 };
@@ -437,6 +452,7 @@ async function renderCheckout(req, res, prepared, { cardError, values = {} } = {
         slotsJson: JSON.stringify(prepared.bookings.map(({ option_guid, starts_at, ends_at }) => ({ option_guid, starts_at, ends_at }))),
         total: formatPounds(pricing.total),
         credit: formatPounds(pricing.credit),
+        availableCredit: formatPounds(req.profile.credit_pence),
         due: formatPounds(pricing.due),
         fullyCovered: pricing.due === 0,
         unitPrice: formatPounds(SIMULATED_SLOT_PRICE_PENCE),
@@ -531,6 +547,7 @@ const residentPayHandler = async (req, res) => {
         return res.redirect(`/bookings?created=${prepared.bookings.length}&paid=${encodeURIComponent(formatPounds(pricing.due))}&credit=${encodeURIComponent(formatPounds(pricing.credit))}`);
     } catch (error) {
         if (error.code === '23P01') return res.redirect('/bookings?error=booking-conflict');
+        if (error.code === 'OPTION_MONTH_UNAVAILABLE') return res.redirect('/bookings?error=month-unavailable');
         if (error.code === 'INSUFFICIENT_CREDIT') return res.redirect('/bookings?error=invalid-booking');
         return res.redirect('/bookings?error=invalid-booking');
     }
@@ -555,14 +572,14 @@ const cancelBookingHandler = async (req, res) => {
         // booking made by an admin can't be turned into credit. The amount comes from the stored booking.
         const creditPence = req.body.credit === '1' && isRefundable(booking) ? booking.amount_paid_pence : 0;
         const removed = creditPence
-            ? await Bookings.removeBookingWithCredit(facility_guid, booking_guid, booking.profile_guid, creditPence, req.profile.name)
+            ? await Bookings.removeBookingWithCredit(facility_guid, booking_guid, booking.profile_guid, creditPence, req.profile.name, req.body.refundable === '1')
             : await Bookings.removeBooking(facility_guid, booking_guid);
         if (!removed) return res.sendStatus(404);
         await recordAudit(req.profile, {
             action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
             details: {
                 reference: booking.booking_ref, option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_for: booking.profile_name,
-                ...(creditPence ? { credited: formatPounds(creditPence) } : {})
+                ...(creditPence ? { credited: formatPounds(creditPence), refundable: req.body.refundable === '1' } : {})
             }
         });
         // In-page cancels update the list without a reload.
@@ -635,11 +652,11 @@ admin.post('/refunds/refund', async (req, res) => {
             return res.redirect('/admin/refunds?' + withParams({ done: 'external', ref: booking.booking_ref, amount: formatPounds(pence) }));
         }
         if (!isRefundable(booking)) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
-        const credited = await Bookings.addCreditToBooking(facility_guid, booking_guid, req.profile.name);
+        const credited = await Bookings.addCreditToBooking(facility_guid, booking_guid, req.profile.name, req.body.refundable === '1');
         if (!credited) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
         await recordAudit(req.profile, {
             action: 'booking.credit', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
-            details: { ...details, credited: formatPounds(credited) }
+            details: { ...details, credited: formatPounds(credited), refundable: req.body.refundable === '1' }
         });
         return res.redirect('/admin/refunds?' + withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
     } catch (error) {
@@ -649,32 +666,127 @@ admin.post('/refunds/refund', async (req, res) => {
 
 admin.get('/credit-requests', async (req, res) => {
     try {
+        const settings = await Settings.getAll();
         res.render('credit-requests', {
             activePage: 'credit-requests',
+            declineError: req.query.error === 'comment',
             requests: await Bookings.findCreditRequests(),
+            autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
+            autoApprovalSlots: await Bookings.findAutoApprovalSlots(),
+            creditRequestDays: await Settings.getCreditRequestDays(),
             decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
             decisionRef: typeof req.query.ref === 'string' ? req.query.ref.slice(0, 20) : '',
             error: req.query.error === '1'
         });
     } catch (error) {
+        console.error('Unable to load credit requests:', error);
         res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/credit-request-period', async (req, res) => {
+    const days = Settings.parseCreditRequestDays(req.body.days);
+    if (days === null) return res.redirect('/admin/settings?error=days');
+    try {
+        const previous = await Settings.getCreditRequestDays();
+        await Settings.set('credit_request_days', String(days));
+        await recordAudit(req.profile, {
+            action: 'settings.credit_request_days', entityType: 'setting', entityLabel: 'Credit request day limit',
+            details: { from: previous, to: days }
+        });
+        return res.redirect('/admin/settings?window_saved=1');
+    } catch (error) {
+        console.error('Unable to save credit request day limit:', error);
+        return res.sendStatus(500);
     }
 });
 
 admin.post('/credit-requests/decide', async (req, res) => {
     const { request_guid } = req.body;
     if (!GUID_PATTERN.test(request_guid || '') || !['approve', 'decline'].includes(req.body.decision)) return res.sendStatus(400);
+    const declineComment = req.body.decision === 'decline' ? parseDeclineComment(req.body.decline_comment) : null;
+    if (req.body.decision === 'decline' && !declineComment) return res.redirect('/admin/credit-requests?error=comment');
     try {
         const approve = req.body.decision === 'approve';
-        const result = await Bookings.decideCreditRequest(request_guid, approve, req.profile.name);
+        const approveSlot = req.body.approve_slot === '1';
+        const result = await Bookings.decideCreditRequest(request_guid, approve, req.profile.name, req.body.refundable === '1', declineComment, approveSlot);
         if (!result) return res.redirect('/admin/credit-requests?error=1');
         await recordAudit(req.profile, {
             action: approve ? 'credit-request.approve' : 'credit-request.decline', entityType: 'booking', entityGuid: result.booking_guid,
-            entityLabel: 'Weather credit request',
-            details: { reference: result.booking_ref, ...(approve ? { credited: formatPounds(result.credited) } : {}) }
+            entityLabel: 'Booking credit request',
+            details: { reference: result.booking_ref, reason: result.reason, note: result.note, ...(approve ? { credited: formatPounds(result.credited), refundable: result.refundable, slot_approved: result.slot_approved || false, auto_approved_count: result.auto_approved_count || 0, starts_at: result.starts_at, ends_at: result.ends_at } : { decline_comment: declineComment }) }
         });
         return res.redirect(`/admin/credit-requests?${new URLSearchParams({ decision: approve ? 'approved' : 'declined', ref: result.booking_ref })}`);
     } catch (error) {
+        console.error('Unable to decide credit request:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/credit-slot-auto-approval', async (req, res) => {
+    if (!['0', '1'].includes(req.body.enabled)) return res.sendStatus(400);
+    try {
+        await Settings.set('credit_slot_auto_approval', req.body.enabled);
+        await recordAudit(req.profile, {
+            action: 'settings.credit_slot_auto_approval', entityType: 'setting', entityLabel: 'Weather slot auto-approval',
+            details: { enabled: req.body.enabled === '1' }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save weather slot auto-approval setting:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/credit-lifetime', async (req, res) => {
+    const days = Settings.parseCreditLifetimeDays(req.body.days);
+    if (days === null) return res.redirect('/admin/settings?error=lifetime');
+    try {
+        const settings = await Settings.getAll();
+        await Settings.set('credit_lifetime_days', String(days));
+        await recordAudit(req.profile, {
+            action: 'settings.credit_lifetime_days', entityType: 'setting', entityLabel: 'Credit lifetime',
+            details: { from: settings.credit_lifetime_days, to: days }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save credit lifetime:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.get('/credit-refunds', async (req, res) => {
+    try {
+        res.render('credit-refunds', {
+            activePage: 'credit-refunds',
+            declineError: req.query.error === 'comment',
+            requests: await Credits.findRefundRequests(),
+            decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
+            error: req.query.error === '1'
+        });
+    } catch (error) {
+        console.error('Unable to load credit refund requests:', error);
+        res.sendStatus(500);
+    }
+});
+
+admin.post('/credit-refunds/decide', async (req, res) => {
+    const { request_guid, decision } = req.body;
+    if (!GUID_PATTERN.test(request_guid || '') || !['approve', 'decline'].includes(decision)) return res.sendStatus(400);
+    const declineComment = decision === 'decline' ? parseDeclineComment(req.body.decline_comment) : null;
+    if (decision === 'decline' && !declineComment) return res.redirect('/admin/credit-refunds?error=comment');
+    try {
+        const approve = decision === 'approve';
+        const result = await Credits.decideRefund(request_guid, approve, req.profile.name, declineComment);
+        if (!result) return res.redirect('/admin/credit-refunds?error=1');
+        await recordAudit(req.profile, {
+            action: approve ? 'credit-refund.approve' : 'credit-refund.decline',
+            entityType: 'credit', entityGuid: result.credit_guid, entityLabel: result.booking_ref,
+            details: { profile_guid: result.profile_guid, refunded: formatPounds(result.refunded_pence), ...(!approve ? { decline_comment: declineComment } : {}) }
+        });
+        return res.redirect(approve ? '/admin/credit-refunds?decision=approved' : '/admin/credit-refunds?decision=declined');
+    } catch (error) {
+        console.error('Unable to decide credit refund request:', error);
         return res.sendStatus(500);
     }
 });
@@ -689,27 +801,67 @@ router.post('/bookings/checkout', residentCheckoutHandler);
 router.post('/bookings/pay', residentPayHandler);
 router.get('/profile', async (req, res) => {
     try {
-        const [settings, hasLogo, upcoming, past, profile] = await Promise.all([
+        const [settings, logo, profile] = await Promise.all([
+            Settings.getAll(), Settings.getLogo(), Profiles.findByGuid(req.profile.guid)
+        ]);
+        if (!profile) return res.sendStatus(404);
+        return res.render('resident-profile', {
+            activePage: 'profile', siteTitle: settings.site_title, hasLogo: Boolean(logo), profile,
+            saved: req.query.saved === '1',
+            error: ['invalid', 'duplicate-email'].includes(req.query.error) ? req.query.error : ''
+        });
+    } catch (error) {
+        console.error('Unable to load profile:', error);
+        return res.sendStatus(500);
+    }
+});
+
+router.get('/credits-and-refunds', async (req, res) => {
+    try {
+        const [settings, hasLogo, past, profile, credits, expiredPendingRefunds] = await Promise.all([
             Settings.getAll(),
             Settings.getLogo().then(Boolean),
-            Bookings.findUpcomingForProfile(req.profile.guid),
             Bookings.findRecentPastForProfile(req.profile.guid),
-            Profiles.findByGuid(req.profile.guid)
+            Profiles.findByGuid(req.profile.guid),
+            Credits.findForProfile(req.profile.guid),
+            Credits.findExpiredPendingRefunds(req.profile.guid)
         ]);
-        res.render('resident-profile', {
-            activePage: 'profile',
+        res.render('resident-credits', {
+            activePage: 'credits-and-refunds',
             siteTitle: settings.site_title,
             hasLogo,
             profile: { name: profile?.name || req.profile.name, email: profile?.email || req.profile.email },
-            saved: req.query.saved === '1',
-            error: ['invalid', 'duplicate-email', 'confirm-weather', 'not-eligible'].includes(req.query.error) ? req.query.error : '',
+            error: ['invalid-reason', 'description-required', 'not-eligible'].includes(req.query.error) ? req.query.error : '',
             requested: req.query.requested === '1',
-            creditBalance: profile?.credit_pence || 0,
-            upcoming,
+            autoApproved: req.query.requested === 'auto',
+            creditBalance: credits.reduce((sum, credit) => sum + credit.remaining_pence, 0),
+            creditRequestDays: Settings.parseCreditRequestDays(settings.credit_request_days),
+            organisationName: settings.organisation_name,
+            credits,
+            expiredPendingRefunds,
+            refundRequested: req.query.refund_requested === '1',
+            refundError: req.query.refund_error === '1',
             past
         });
     } catch (error) {
         res.sendStatus(500);
+    }
+});
+
+router.post(['/credits-and-refunds/credit-refunds', '/profile/credit-refunds'], async (req, res) => {
+    const { credit_guid } = req.body;
+    if (!GUID_PATTERN.test(credit_guid || '')) return res.sendStatus(400);
+    try {
+        const result = await Credits.requestRefund(req.profile.guid, credit_guid);
+        if (!result) return res.redirect('/credits-and-refunds?refund_error=1#booking-credit');
+        await recordAudit(req.profile, {
+            action: 'credit-refund.request', entityType: 'credit', entityGuid: credit_guid,
+            entityLabel: 'Bank refund request', details: { requested: formatPounds(result.requested_pence) }
+        });
+        return res.redirect('/credits-and-refunds?refund_requested=1#booking-credit');
+    } catch (error) {
+        console.error('Unable to request credit refund:', error);
+        return res.sendStatus(500);
     }
 });
 
@@ -733,20 +885,23 @@ router.post('/profile', async (req, res) => {
     }
 });
 
-router.post('/profile/credit-requests', async (req, res) => {
+router.post(['/credits-and-refunds/credit-requests', '/profile/credit-requests'], async (req, res) => {
     const { booking_guid } = req.body;
     if (!GUID_PATTERN.test(booking_guid || '')) return res.sendStatus(400);
-    // The resident must tick the box confirming the only accepted reason.
-    if (req.body.weather_confirm !== '1') return res.redirect('/profile?error=confirm-weather#past-bookings');
+    const reason = req.body.reason;
+    const note = reason === 'discretionary' && typeof req.body.note === 'string' ? req.body.note.trim() : '';
+    if (!['weather', 'discretionary'].includes(reason)) return res.redirect('/credits-and-refunds?error=invalid-reason#past-bookings');
+    if ((reason === 'discretionary' && !note) || note.length > 500) return res.redirect('/credits-and-refunds?error=description-required#past-bookings');
     try {
-        const note = typeof req.body.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
-        const created = await Bookings.requestWeatherCredit(req.profile.guid, booking_guid, note || null);
-        if (!created) return res.redirect('/profile?error=not-eligible#past-bookings');
+        const created = await Bookings.requestCredit(req.profile.guid, booking_guid, reason, note || null);
+        if (!created) return res.redirect('/credits-and-refunds?error=not-eligible#past-bookings');
         await recordAudit(req.profile, {
-            action: 'credit-request.create', entityType: 'booking', entityGuid: booking_guid, entityLabel: 'Weather credit request',
-            details: { reason: 'inclement weather', ...(note ? { note } : {}) }
+            action: 'credit-request.create', entityType: 'booking', entityGuid: booking_guid, entityLabel: 'Booking credit request',
+            details: { reason, auto_approved: created.auto_approved === true, ...(note ? { note } : {}) }
         });
-        return res.redirect('/profile?requested=1#past-bookings');
+        return res.redirect(created.auto_approved
+            ? '/credits-and-refunds?requested=auto#booking-credit'
+            : '/credits-and-refunds?requested=1#past-bookings');
     } catch (error) {
         return res.sendStatus(500);
     }
@@ -775,6 +930,8 @@ router.get('/bookings', async (req, res) => {
             hasLogo,
             facilities,
             myBookings,
+            selectedFacilityGuid: facilities.some(facility => facility.guid === req.query.facility)
+                ? req.query.facility : facilities[0]?.guid,
             maxDate: latestResidentBookingStart().toISOString(),
             error: typeof req.query.error === 'string' ? req.query.error : undefined,
             created: Number.parseInt(req.query.created, 10) || 0,
@@ -805,7 +962,7 @@ router.get('/facilities', async (req, res) => {
             Sports.findAll()
         ]);
         const facilities = await Promise.all(facilityRows.map(async facility => {
-            const week = await OpeningHours.getSchedules(facility.opening_hours_template_guid, new Date(), 7);
+            const week = await OpeningHours.getSchedules(facility.opening_hours_template_guid, new Date(), 7, facility);
             const isWebUrl = /^https?:\/\//i.test(facility.external_booking_url || '');
             return {
                 guid: facility.guid,
@@ -817,6 +974,7 @@ router.get('/facilities', async (req, res) => {
                 google_maps_url: facility.google_maps_url,
                 description: facility.description,
                 external_booking_url: isWebUrl ? facility.external_booking_url : null,
+                booking_mode: facility.booking_mode,
                 sports: facility.sports,
                 courses: facility.courses,
                 today: week ? week[0] : null,
@@ -1007,8 +1165,16 @@ admin.get('/settings', async (req, res) => {
             siteTitle: settings.site_title,
             hasLogo: Boolean(await Settings.getLogo()),
             maxLength: Settings.SITE_TITLE_MAX_LENGTH,
+            organisationName: settings.organisation_name,
+            organisationError: req.query.error === 'organisation',
+            creditRequestDays: await Settings.getCreditRequestDays(),
+            autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
+            creditLifetimeDays: settings.credit_lifetime_days,
+            lifetimeError: req.query.error === 'lifetime',
+            windowSaved: req.query.window_saved === '1',
+            windowError: req.query.error === 'days',
             saved: req.query.saved === '1',
-            error: req.query.error
+            error: req.query.error === 'invalid-title'
         });
     } catch (error) {
         res.sendStatus(500);
@@ -1039,6 +1205,23 @@ admin.post('/settings/logo/remove', async (req, res) => {
         await recordAudit(req.profile, { action: 'settings.logo_remove', entityType: 'setting', entityLabel: 'site_logo' });
         return res.redirect('/admin/settings?saved=1');
     } catch (error) {
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/organisation', async (req, res) => {
+    const name = typeof req.body.organisation_name === 'string' ? req.body.organisation_name.trim().replace(/\s+/g, ' ') : '';
+    if (!name || name.length > Settings.SITE_TITLE_MAX_LENGTH) return res.redirect('/admin/settings?error=organisation');
+    try {
+        const previous = (await Settings.getAll()).organisation_name;
+        await Settings.set('organisation_name', name);
+        await recordAudit(req.profile, {
+            action: 'settings.update', entityType: 'setting', entityLabel: 'organisation_name',
+            details: { from: previous, to: name }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save organisation name:', error);
         return res.sendStatus(500);
     }
 });
@@ -1088,7 +1271,7 @@ admin.get('/facilities', async (req, res) => {
         ]);
         const facilities = await Promise.all(facilityRows.map(async facility => ({
             ...facility,
-            today_opening_hours: await OpeningHours.getToday(facility.opening_hours_template_guid)
+            today_opening_hours: await OpeningHours.getToday(facility.opening_hours_template_guid, new Date(), facility)
         })));
         res.render('facilities', { facilities, sports, openingHoursTemplates, activePage: 'facilities' });
     } catch (error) {
@@ -1399,6 +1582,30 @@ admin.post('/bookings/options', async (req, res) => {
     }
 });
 
+admin.post('/bookings/options/months', (req, res) => {
+    return res.redirect('/admin/bookings?error=sport-months-moved');
+});
+
+admin.post('/bookings/sports/months', async (req, res) => {
+    const { facility_guid, sport_guid } = req.body;
+    const months = parseBookingMonths(req.body.allowed_months);
+    if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(sport_guid || '') || months === null) {
+        return res.sendStatus(400);
+    }
+    try {
+        const updated = await Bookings.updateSportMonths(facility_guid, sport_guid, months);
+        if (!updated) return res.sendStatus(404);
+        await recordAudit(req.profile, {
+            action: 'facility-sport.months', entityType: 'sport', entityGuid: sport_guid,
+            entityLabel: 'Allowed booking months', details: { facility_guid, allowed_months: months }
+        });
+        return res.redirect('/admin/bookings');
+    } catch (error) {
+        console.error('Unable to save allowed booking months:', error);
+        return res.sendStatus(500);
+    }
+});
+
 admin.post('/bookings/options/update', async (req, res) => {
     const option = parseBookableOptionInput(req.body);
     if (!option?.guid) return res.sendStatus(400);
@@ -1440,7 +1647,8 @@ admin.post('/bookings/create', async (req, res) => {
         const withinOpeningHours = await OpeningHours.isBookingWithinHours(
             facility.opening_hours_template_guid,
             startDate,
-            endDate
+            endDate,
+            facility
         );
         if (!withinOpeningHours) return res.redirect('/admin/bookings?error=outside-opening-hours');
 
@@ -1458,6 +1666,7 @@ admin.post('/bookings/create', async (req, res) => {
         return res.redirect('/admin/bookings?created=1');
     } catch (error) {
         if (error.code === '23P01') return res.status(409).json({ code: 'booking-conflict' });
+        if (error.code === 'OPTION_MONTH_UNAVAILABLE') return res.redirect('/admin/bookings?error=month-unavailable');
         return res.redirect('/admin/bookings?error=invalid-booking');
     }
 });

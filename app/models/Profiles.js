@@ -56,7 +56,10 @@ async function initialize() {
 
 async function findAll() {
     const { rows } = await pool.query(
-        `SELECT guid, name, email, role, credit_pence, created_at FROM profiles
+        `SELECT guid, name, email, role,
+                (SELECT COALESCE(SUM(remaining_pence), 0)::int FROM credits
+                 WHERE profile_guid = profiles.guid AND expires_at > statement_timestamp()) AS credit_pence,
+                created_at FROM profiles
          ORDER BY CASE role WHEN 'Administrator' THEN 0 WHEN 'Coach' THEN 1 WHEN 'Resident' THEN 2 ELSE 3 END, role, LOWER(name)`
     );
     return rows;
@@ -64,7 +67,10 @@ async function findAll() {
 
 async function findByGuid(guid) {
     const { rows } = await pool.query(
-        'SELECT guid, name, email, role, credit_pence, created_at FROM profiles WHERE guid = $1',
+        `SELECT guid, name, email, role,
+                (SELECT COALESCE(SUM(remaining_pence), 0)::int FROM credits
+                 WHERE profile_guid = profiles.guid AND expires_at > statement_timestamp()) AS credit_pence,
+                created_at FROM profiles WHERE guid = $1`,
         [guid]
     );
     return rows[0] || null;

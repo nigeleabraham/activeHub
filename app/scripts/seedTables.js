@@ -5,7 +5,7 @@ const TABLES = [
     { name: 'sports', keyBy: 'name', orderBy: 'LOWER(name)' },
     { name: 'opening_hours_templates', keyBy: 'name', orderBy: 'LOWER(name)' },
     { name: 'roles', keyBy: 'name', orderBy: 'LOWER(name)', skip: ['guid'] },
-    { name: 'profiles', keyBy: 'email', orderBy: 'LOWER(email)' },
+    { name: 'profiles', keyBy: 'email', orderBy: 'LOWER(email)', skip: ['credit_pence'] },
     // The app creates default rules for its default template; on the first seed the snapshot's hours replace them.
     { name: 'opening_hours_rules', orderBy: 'template_guid, day_of_week', remap: { template_guid: 'opening_hours_templates' },
         upsert: { conflict: ['template_guid', 'day_of_week'], update: ['opens_at', 'closes_at'] } },

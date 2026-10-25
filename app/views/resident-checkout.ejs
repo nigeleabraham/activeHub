@@ -69,17 +69,14 @@
             <div class="col-lg-6">
                 <section class="panel first" aria-labelledby="card">
                     <h2 id="card" class="h4 mb-3"><%= fullyCovered ? 'Confirm booking' : 'Pay by card' %></h2>
+                    <p>You have <strong><%= availableCredit %></strong> credit in your account. <strong><%= credit %></strong> will be deducted from the account.<% if (!fullyCovered) { %> The remaining <strong><%= due %></strong> will be charged to your card.<% } %></p>
                     <% if (fullyCovered) { %>
-                        <p>Your account credit of <strong><%= credit %></strong> covers this booking, so no card payment is needed.</p>
                         <form method="POST" action="/bookings/pay">
                             <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                             <input type="hidden" name="slots" value="<%= slotsJson %>">
                             <button class="btn btn-brand btn-block" type="submit">Confirm booking using credit</button>
                         </form>
                     <% } else { %>
-                    <% if (credit !== '£0.00' && !fullyCovered) { %>
-                        <p>Your account credit of <strong><%= credit %></strong> has been applied. Pay the remaining <strong><%= due %></strong> by card.</p>
-                    <% } %>
                     <div class="sim-banner mb-3" role="note">
                         <strong>This is a simulated payment.</strong> No money is taken and nothing is sent to a payment provider.
                         Use <code>4242 4242 4242 4242</code> to succeed or <code>4000 0000 0000 0002</code> to see a declined card.
