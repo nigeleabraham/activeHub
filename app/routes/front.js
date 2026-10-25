@@ -606,34 +606,42 @@ admin.get('/refunds', async (req, res) => {
 admin.post('/refunds/refund', async (req, res) => {
     const { facility_guid, booking_guid } = req.body;
     const external = req.body.method === 'external';
-    const back = typeof req.body.return_to === 'string' && req.body.return_to.startsWith('/admin/refunds?')
-        ? req.body.return_to.split('#')[0] : '/admin/refunds';
-    const withParams = params => `${back}${back.includes('?') ? '&' : '?'}${new URLSearchParams(params)}`;
+    const returnQuery = typeof req.body.return_to === 'string' && req.body.return_to.startsWith('/admin/refunds?')
+        ? new URLSearchParams(req.body.return_to.slice('/admin/refunds?'.length).split('#')[0])
+        : new URLSearchParams();
+    const withParams = params => {
+        const query = new URLSearchParams();
+        for (const key of ['reference', 'profile', 'location', 'from', 'to']) {
+            if (returnQuery.has(key)) query.set(key, returnQuery.get(key));
+        }
+        for (const [key, value] of Object.entries(params)) query.set(key, value);
+        return query.toString();
+    };
     if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(booking_guid || '')) return res.sendStatus(400);
     try {
         const booking = await Bookings.findBooking(facility_guid, booking_guid);
-        if (!booking) return res.redirect(withParams({ error: 'not-found' }));
+        if (!booking) return res.redirect('/admin/refunds?' + withParams({ error: 'not-found' }));
         const details = { reference: booking.booking_ref, option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_for: booking.profile_name };
         if (external) {
-            if (!isExternallyRefundable(booking)) return res.redirect(withParams({ error: 'not-refundable' }));
+            if (!isExternallyRefundable(booking)) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
             const pence = externalRefundPence(booking);
             if (!await Bookings.cancelWithExternalRefund(facility_guid, booking_guid, pence, req.profile.name)) {
-                return res.redirect(withParams({ error: 'not-found' }));
+                return res.redirect('/admin/refunds?' + withParams({ error: 'not-found' }));
             }
             await recordAudit(req.profile, {
                 action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
                 details: { ...details, refunded_externally: formatPounds(pence) }
             });
-            return res.redirect(withParams({ done: 'external', ref: booking.booking_ref, amount: formatPounds(pence) }));
+            return res.redirect('/admin/refunds?' + withParams({ done: 'external', ref: booking.booking_ref, amount: formatPounds(pence) }));
         }
-        if (!isRefundable(booking)) return res.redirect(withParams({ error: 'not-refundable' }));
+        if (!isRefundable(booking)) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
         const credited = await Bookings.addCreditToBooking(facility_guid, booking_guid, req.profile.name);
-        if (!credited) return res.redirect(withParams({ error: 'not-refundable' }));
+        if (!credited) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
         await recordAudit(req.profile, {
             action: 'booking.credit', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
             details: { ...details, credited: formatPounds(credited) }
         });
-        return res.redirect(withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
+        return res.redirect('/admin/refunds?' + withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
     } catch (error) {
         return res.sendStatus(500);
     }

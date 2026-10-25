@@ -71,7 +71,7 @@ function startPurgeSchedule() {
     const run = () => purgeExpired()
         .then(count => { if (count) console.log(`Deleted ${count} audit entries older than ${RETENTION}`); })
         .catch(error => console.error('Audit purge failed:', error));
-    run();
+    void run();
     setInterval(run, PURGE_INTERVAL_MS).unref();
 }
 
