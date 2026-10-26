@@ -11,6 +11,7 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
@@ -18,7 +19,6 @@
                 <h1 class="h2 mb-1">Credit requests</h1>
                 <p class="text-muted mb-0">Weather and discretionary credit requests for past bookings</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <% if (declineError) { %><div class="alert alert-danger" role="alert">Enter a decline comment of 1 to 500 characters. This will be visible to the requestor.</div><% } %>
@@ -38,12 +38,11 @@
             <% if (autoApprovalSlots.length) { %>
                 <div class="table-responsive bg-white border rounded">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th>Start</th><th>End</th><th>Bank refund</th><th>Approved by</th></tr></thead>
+                        <thead><tr><th>Start</th><th>End</th><th>Approved by</th></tr></thead>
                         <tbody><% autoApprovalSlots.forEach(slot => { %>
                             <tr>
                                 <td><time data-local-time datetime="<%= new Date(slot.starts_at).toISOString() %>"><%= new Date(slot.starts_at).toISOString() %></time></td>
                                 <td><time data-local-time datetime="<%= new Date(slot.ends_at).toISOString() %>"><%= new Date(slot.ends_at).toISOString() %></time></td>
-                                <td><%= slot.refundable ? 'Refundable' : 'Non-refundable' %></td>
                                 <td><%= slot.approved_by_name %></td>
                             </tr>
                         <% }) %></tbody>
@@ -66,20 +65,28 @@
                                         <span class="small text-muted"><time data-local-time datetime="<%= new Date(request.requested_at).toISOString() %>"><%= new Date(request.requested_at).toISOString() %></time></span></td>
                                     <td><%= request.facility_name %><br><span class="small text-muted"><%= request.option_name %> · <%= request.sport_name %></span><br>
                                         <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time></td>
-                                    <td><%= money(request.amount_paid_pence) %></td>
+                                    <td><%= money(request.amount_paid_pence) %>
+                                        <%- include('partials/booking-funding', { booking: request }) %>
+                                    </td>
                                     <td class="small"><strong><%= request.reason === 'weather' ? 'Weather' : 'Discretionary (Other)' %></strong><br><%= request.note || '—' %></td>
                                     <td>
                                         <form method="POST" action="/admin/credit-requests/decide">
                                             <input type="hidden" name="request_guid" value="<%= request.guid %>">
                                             <% if (request.reason === 'weather') { %>
-                                                <p class="small mb-1">Weather credit is always refundable.</p>
+                                                <p class="small mb-1">Weather credit for the card-paid portion is refundable. Reissued credits retain their original refund eligibility.</p>
                                             <% } else { %>
-                                                <label class="d-block small"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit (Other credits are non-refundable by default)</label>
+                                                <input type="hidden" name="decision" value="approve">
+                                                <p class="small mb-1">Non-refundable approval makes the entire award non-refundable, including any refundable credit used. Refundable approval preserves original credit eligibility and makes the card-paid portion refundable.</p>
                                             <% } %>
                                             <% if (autoApprovalEnabled && request.reason === 'weather') { %>
-                                                <label class="d-block small"><input type="checkbox" name="approve_slot" value="1"> Also auto-approve existing and future weather requests at all facilities with this exact start and end time. All Weather credits are refundable.</label>
+                                                <label class="d-block small"><input type="checkbox" name="approve_slot" value="1"> Also auto-approve existing and future weather requests at all facilities with this exact start and end time. Only the card-paid portion gains refund eligibility; reissued credits keep their original eligibility.</label>
                                             <% } %>
-                                            <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve and add credit</button>
+                                            <% if (request.reason === 'weather') { %>
+                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve and add credit</button>
+                                            <% } else { %>
+                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="refundable" value="1" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>, with the card-paid portion refundable? Reissued credits retain their original refund eligibility.">Approve (refundable)</button>
+                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="refundable" value="0" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %> as entirely non-refundable credit? This overrides the eligibility of any refundable credit originally used.">Approve (non-refundable)</button>
+                                            <% } %>
                                         </form>
                                         <form method="POST" action="/admin/credit-requests/decide">
                                             <input type="hidden" name="request_guid" value="<%= request.guid %>">
@@ -110,7 +117,7 @@
                                     <td><code><%= request.booking_ref %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span></td>
                                     <td><%= request.profile_name || 'Unknown' %></td>
                                     <td><%= request.facility_name %> · <time data-local-time datetime="<%= new Date(request.starts_at).toISOString() %>"><%= new Date(request.starts_at).toISOString() %></time><br><strong><%= request.reason === 'weather' ? 'Weather' : 'Discretionary (Other)' %></strong><br><span class="small"><%= request.note || '—' %></span></td>
-                                    <td><span class="badge badge-<%= request.status === 'approved' ? 'success' : 'secondary' %>"><%= request.status === 'approved' ? 'Credited ' + money(request.amount_paid_pence) : 'Declined' %></span>
+                                    <td><span class="badge badge-<%= request.status === 'approved' ? 'success' : 'secondary' %>"><%= request.status === 'approved' ? 'Credited ' + money(request.amount_paid_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : 'Declined' %></span>
                                         <span class="small text-muted"><%= request.decided_by_name ? 'by ' + request.decided_by_name : '' %></span>
                                         <% if (request.auto_approved) { %><span class="badge badge-info">Auto-approved weather slot</span><% } %>
                                         <% if (request.status === 'declined') { %><p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p><% } %></td>

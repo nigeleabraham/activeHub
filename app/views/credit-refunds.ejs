@@ -9,6 +9,7 @@
     <%- include('partials/accessibility-styles') %>
 </head>
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
@@ -16,7 +17,6 @@
                 <h1 class="h2 mb-1">Credit refunds</h1>
                 <p class="text-muted">Requests to transfer refundable booking credit to a bank account.</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
         <p>Accepting deducts the current remaining credit immediately. Arrange the bank transfer outside ActiveHub. Pending amounts may decrease if credit is spent; fully spent requests close automatically.</p>
         <% if (decision) { %>
@@ -55,7 +55,7 @@
                                                     <button class="btn btn-outline-secondary btn-sm mb-1" type="submit" name="decision" value="decline">Decline</button>
                                                 </form>
                                             <% } else { %>
-                                                <strong><%= request.status === 'approved' ? 'Accepted ' + money(request.refunded_pence) : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
+                                                <strong><%= request.status === 'approved' ? 'Accepted ' + money(request.refunded_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
                                                 <% if (request.decided_by_name) { %><br><span class="small">By <%= request.decided_by_name %></span><% } %>
                                                 <% if (request.status === 'declined') { %><p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p><% } %>
                                             <% } %>

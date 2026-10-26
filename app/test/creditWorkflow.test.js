@@ -14,6 +14,21 @@ const router = require('../routes/front');
 const GUID = '123e4567-e89b-42d3-a456-426614174000';
 const profile = { guid: GUID, name: 'Resident', email: 'resident@example.test', role: 'Resident' };
 
+test('booking funding displays refundable and non-refundable amounts and flags missing history', async () => {
+    const template = path.join(__dirname, '../views/partials/booking-funding.ejs');
+    const booking = {
+        amount_paid_pence: 1000, credit_applied_pence: 800, card_paid_pence: 200,
+        refundable_credit_pence: 300, non_refundable_credit_pence: 500, untraced_credit_pence: 100
+    };
+    const html = await ejs.renderFile(template, { booking });
+    assert.match(html, /Card paid: £2\.00/);
+    assert.match(html, /Refundable credit used: £3\.00/);
+    assert.match(html, /Non-refundable credit used: £5\.00/);
+    assert.match(html, /£1\.00 with missing funding history; treated as non-refundable/);
+    const cashOnly = await ejs.renderFile(template, { booking: { ...booking, credit_applied_pence: 0 } });
+    assert.doesNotMatch(cashOnly, /credit used/);
+});
+
 test('upcoming booking limits apply only to the Resident role in the calendar, checkout and payment', async t => {
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
     t.mock.method(Settings, 'getLogo', async () => null);
@@ -107,6 +122,8 @@ test('checkout distinguishes available balance, credit deduction and card remain
 });
 
 test('profile editing is separate from the credits and refunds page', async t => {
+    t.mock.method(require('../models/CourseOrders'), 'familyMembers', async () => []);
+    t.mock.method(require('../models/Sports'), 'findAll', async () => []);
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub', credit_request_days: '30' }));
     t.mock.method(Settings, 'getLogo', async () => null);
     t.mock.method(Profiles, 'findByGuid', async () => profile);
@@ -127,7 +144,8 @@ test('profile editing is separate from the credits and refunds page', async t =>
     assert.ok(!html.includes('id="past-bookings"'));
     const save = router.stack.find(layer => layer.route?.path === '/profile' && layer.route.methods.post).route.stack[0].handle;
     let location;
-    await save({ profile, body: { name: 'Updated Resident', email: profile.email } }, {
+    await save({ profile, body: { name: 'Updated Resident', email: profile.email,
+        medical_concern: 'no', activity_limitation: 'no' } }, {
         redirect(value) { location = value; }
     });
     assert.equal(location, '/profile?saved=1');
@@ -373,12 +391,65 @@ test('weather slot controls and history render only as appropriate', async () =>
                 { ...request, status: 'approved', auto_approved: true }]
         });
         assert.equal((html.match(/name="approve_slot"/g) || []).length, enabled ? 1 : 0);
-        assert.equal((html.match(/name="refundable"/g) || []).length, 1);
-        assert.ok(html.includes('Weather credit is always refundable.'));
+        assert.equal((html.match(/name="refundable"/g) || []).length, 2);
+        assert.doesNotMatch(html, /type="checkbox" name="refundable"/);
+        const approvalForm = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/g)
+            .find(form => form.includes('<input type="hidden" name="decision" value="approve">'));
+        assert.match(approvalForm, /name="refundable" value="1"[^>]*>Approve \(refundable\)<\/button>/);
+        assert.match(approvalForm, /name="refundable" value="0"[^>]*>Approve \(non-refundable\)<\/button>/);
+        assert.match(approvalForm, /Non-refundable approval makes the entire award non-refundable/);
+        assert.match(approvalForm, /This overrides the eligibility of any refundable credit originally used/);
+        assert.equal((html.match(/>Decline<\/button>/g) || []).length, 2);
+        assert.ok(html.includes('Weather credit for the card-paid portion is refundable.'));
         assert.ok(!html.includes('name="refundable" value="1" checked'));
         assert.ok(html.includes('last 7 days'));
         assert.ok(html.includes('&lt;Admin&gt;'));
         assert.ok(html.includes('Auto-approved weather slot'));
+        const slotsTable = html.match(/<section[^>]*aria-labelledby="auto-slots-heading"[\s\S]*?<\/section>/)[0];
+        assert.deepEqual([...slotsTable.matchAll(/<th>(.*?)<\/th>/g)].map(match => match[1]), [
+            'Start', 'End', 'Approved by'
+        ]);
+        assert.equal((slotsTable.match(/<td>/g) || []).length, 3);
+        assert.doesNotMatch(slotsTable, /Bank refund|Refundable|Non-refundable/);
         assert.equal(html.includes('saved slots are paused'), !enabled);
+    }
+});
+
+test('resident pending requests remain explained and cannot be submitted again outside the window', async () => {
+    const past = [{
+        guid: GUID, booking_ref: 'AH-PENDING-OLD', facility_name: 'Hall', option_name: 'Court',
+        sport_name: 'Tennis', address: 'Test road', postcode: 'AB1 2CD',
+        starts_at: new Date(Date.now() - 40 * 86400000), ends_at: new Date(Date.now() - 39 * 86400000),
+        payment_status: 'paid', amount_paid_pence: 1000, credit_applied_pence: 0,
+        credit_request_status: 'pending', credit_request_reason: 'weather'
+    }];
+    const html = await ejs.renderFile(path.join(__dirname, '../views/resident-credits.ejs'), {
+        siteTitle: 'ActiveHub', organisationName: 'Council', hasLogo: false, error: '', requested: false,
+        autoApproved: false, profile, upcoming: [], past, credits: [], expiredPendingRefunds: [],
+        creditBalance: 0, creditRequestDays: 30, refundRequested: false, refundError: false,
+        currentProfile: profile, isAdmin: false, canSwitchRole: false, activePage: 'profile'
+    });
+    assert.match(html, /AH-PENDING-OLD/);
+    assert.match(html, /Weather credit requested, waiting for a decision/);
+    assert.match(html, /Pending requests remain visible and can still be approved after this period ends/);
+    assert.doesNotMatch(html, /action="\/credits-and-refunds\/credit-requests"/);
+});
+
+test('discretionary approval buttons pass the selected card refund eligibility to the model', async t => {
+    const decide = t.mock.method(Bookings, 'decideCreditRequest', async (_guid, _approve, _name, refundable) => ({
+        booking_guid: GUID, booking_ref: 'AH-OTHER', reason: 'discretionary', credited: 1000,
+        refundable, refundable_pence: refundable ? 1000 : 0, non_refundable_pence: refundable ? 0 : 1000
+    }));
+    const audit = t.mock.method(AuditLog, 'record', async () => {});
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    const handler = admin.stack.find(layer => layer.route?.path === '/credit-requests/decide').route.stack[0].handle;
+    for (const refundable of ['1', '0']) {
+        let location;
+        await handler({
+            profile, body: { request_guid: GUID, decision: 'approve', refundable }
+        }, { redirect(value) { location = value; } });
+        assert.deepEqual(decide.mock.calls.at(-1).arguments, [GUID, true, profile.name, refundable === '1', null, false]);
+        assert.match(location, /decision=approved/);
+        assert.equal(audit.mock.calls.at(-1).arguments[1].details.card_portion_refundable, refundable === '1');
     }
 });

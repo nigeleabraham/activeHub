@@ -4,7 +4,7 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365' };
+const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365' };
 const SITE_TITLE_MAX_LENGTH = 60;
 
 function parseCreditRequestDays(value) {

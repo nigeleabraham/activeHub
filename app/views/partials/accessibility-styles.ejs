@@ -2,6 +2,23 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
+    @media (min-width: 1200px) {
+        .container {
+            width: calc(100% - 4rem);
+            max-width: 1600px;
+        }
+        main .form-control,
+        main .custom-select {
+            max-width: 48rem;
+        }
+    }
+
+    .readable-content,
+    main dd {
+        max-width: 75ch;
+        overflow-wrap: anywhere;
+    }
+
     /* Keep option text clear of the dropdown arrow. */
     select.form-control:not([multiple]):not([size]), select.custom-select {
         -webkit-appearance: none;
@@ -21,6 +38,46 @@
         --camden-secondary-text: #505a5f;
         --camden-error: #a81010;
         --camden-success: #00703c;
+    }
+
+    .admin-site-header { background: #fff; color: #0b0c0c; }
+    .admin-site-masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 0; }
+    .admin-site-brand { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; min-width: 0; }
+    .admin-site-header .admin-site-brand { color: #0b0c0c; text-decoration: none; }
+    .admin-site-header .admin-site-brand:hover { color: #0b0c0c; text-decoration: underline; }
+    .admin-site-header .admin-site-brand:focus { color: #0b0c0c; }
+    .admin-site-logo { height: 3rem; width: auto; max-width: 12rem; object-fit: contain; background: #fff; padding: 0.375rem; }
+    .admin-site-title { font-size: 1.5rem; font-weight: 700; overflow-wrap: anywhere; }
+    .admin-site-label { border-left: 1px solid #b1b4b6; padding-left: 1rem; font-size: 0.875rem; }
+    .admin-site-masthead > form { margin-bottom: 0 !important; gap: 0.5rem; }
+    .admin-site-masthead .btn { color: #0b0c0c; background: #fff; border-color: #0b0c0c; }
+    .admin-site-masthead .btn:hover { color: #fff; background: #0b0c0c; }
+    .admin-site-masthead .btn:focus { color: #0b0c0c; background: #ffde02; }
+    .admin-navigation-bar { background: #0b0c0c; color: #fff; }
+    .admin-navigation { display: flex; flex-wrap: nowrap; background: #0b0c0c; text-align: left; }
+    .admin-navigation-group { position: relative; flex: 1 1 auto; }
+    .admin-navigation-group > summary { color: #fff; padding: 1rem; font-weight: 600; cursor: pointer; white-space: nowrap; list-style: none; }
+    .admin-navigation-group > summary::-webkit-details-marker { display: none; }
+    .admin-navigation-label { display: inline-block; position: relative; }
+    .admin-navigation-label::before { content: ""; display: inline-block; border-top: 0.3rem solid transparent; border-bottom: 0.3rem solid transparent; border-left: 0.4rem solid currentColor; margin-right: 0.5rem; }
+    .admin-navigation-group[open] > summary .admin-navigation-label::before { transform: rotate(90deg); }
+    .admin-navigation-group-current > summary .admin-navigation-label::after { content: ""; position: absolute; left: 0; bottom: -1rem; width: calc(100% + 1ch); height: 4px; background: #ffde02; }
+    .admin-navigation-group > summary:hover,
+    .admin-navigation-group[open] > summary { background: #303333; }
+    .admin-navigation-group > summary:focus-visible { color: #0b0c0c; background: #ffde02; outline: 3px solid #ffde02; outline-offset: -3px; }
+    .admin-navigation-group > ul { position: absolute; top: 100%; left: 0; z-index: 100; min-width: 100%; width: max-content; max-width: 100vw; list-style: none; padding: 0.5rem 0; margin: 0; background: #0b0c0c; box-shadow: 0 4px 8px #0003; }
+    .admin-navigation-group:last-child > ul { left: auto; right: 0; }
+    .admin-navigation-group > ul a { display: block; padding: 0.75rem 1rem; color: #fff; text-decoration: none; }
+    .admin-navigation-group > ul a:hover { color: #fff; background: #303333; text-decoration: underline; }
+    .admin-navigation-group > ul a[aria-current="page"] { border-left: 4px solid #ffde02; font-weight: 700; }
+    .admin-navigation-group > ul a:focus { color: #0b0c0c; background: #ffde02; box-shadow: none; outline: 3px solid #ffde02; }
+    @media (max-width: 991.98px) {
+        .admin-navigation { flex-direction: column; }
+        .admin-navigation-group > summary { border-left: 4px solid transparent; padding-left: calc(1rem - 4px); }
+        .admin-navigation-group-current > summary { border-left-color: #ffde02; box-shadow: none; }
+        .admin-navigation-group-current > summary .admin-navigation-label::after { display: none; }
+        .admin-navigation-group > ul { position: static; width: 100%; box-shadow: none; }
+        .admin-navigation-group > ul a { padding-left: 2.5rem; }
     }
 
     body,

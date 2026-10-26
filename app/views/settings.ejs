@@ -11,6 +11,7 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
@@ -18,7 +19,6 @@
                 <h1 class="h2 mb-1">Settings</h1>
                 <p class="text-muted mb-0">Configure the site and booking credit requests</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <% if (saved) { %><div class="alert alert-success" role="status">Settings saved.</div><% } %>
@@ -45,6 +45,18 @@
             </form>
         </section>
 
+        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="membership-scheme-heading">
+            <h2 class="h5" id="membership-scheme-heading">Membership scheme</h2>
+            <% if (locals.membershipError) { %><div class="alert alert-danger" role="alert">Enter a membership scheme name of <%= maxLength %> characters or fewer.</div><% } %>
+            <form method="POST" action="/admin/settings/membership-scheme">
+                <div class="form-group">
+                    <label for="membership-scheme">Membership scheme name</label>
+                    <input class="form-control" id="membership-scheme" name="membership_scheme" type="text" maxlength="<%= maxLength %>" required value="<%= locals.membershipScheme || 'GLL Better Card' %>" aria-describedby="membership-scheme-help">
+                    <small class="form-text text-muted" id="membership-scheme-help">Used before "membership number" in My membership. Changing the scheme name does not change saved membership numbers.</small>
+                </div>
+                <button class="btn btn-primary" type="submit">Save membership scheme</button>
+            </form>
+        </section>
         <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="site-logo-heading">
             <h2 class="h5" id="site-logo-heading">Logo</h2>
             <% if (hasLogo) { %>
@@ -56,7 +68,7 @@
                 <div class="form-group">
                     <label for="site_logo">Upload a logo</label>
                     <input class="form-control-file" id="site_logo" name="site_logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="site-logo-help" required>
-                    <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears beside the title in the header.</small>
+                    <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears in the public header and admin navigation bar.</small>
                 </div>
                 <button class="btn btn-primary" type="submit" id="logo-upload">Upload logo</button>
             </form>
@@ -89,7 +101,7 @@
         </section>
         <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="auto-approval-heading">
             <h2 id="auto-approval-heading" class="h5">Weather credit slot auto-approval</h2>
-            <p>Allow administrators to approve a time slot across all facilities. Pending and later Weather requests for the exact same start and end time receive refundable credit automatically. Only Weather requests can be auto-approved. Other requests require individual review and are non-refundable unless the administrator allows a bank refund.</p>
+            <p>Allow administrators to approve a time slot across all facilities. Pending and later Weather requests for the exact same start and end time receive credit automatically. The card-paid portion is refundable; reissued credits retain their original refund eligibility. Only Weather requests can be auto-approved. Other requests require individual review; their card-paid portion is non-refundable unless the administrator allows a bank refund.</p>
             <p>Disabling pauses all saved slots without removing them or reversing credits. Re-enabling applies them to new requests; requests submitted while disabled still require review. The slot list uses the Credit request period above.</p>
             <form method="POST" action="/admin/settings/credit-slot-auto-approval">
                 <label for="credit-slot-auto-approval">Auto-approval</label>

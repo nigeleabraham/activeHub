@@ -1,10 +1,11 @@
+<% const configuring = activePage === 'court-configuration'; %>
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bookings | ActiveHub</title>
+    <title><%= configuring ? 'Court configuration' : 'Bookings management' %> | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
@@ -12,17 +13,25 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1">In-app bookings</h1>
-                <p class="text-muted mb-0">Configure bookable courts and their shared resources</p>
+                <h1 class="h2 mb-1"><%= configuring ? 'Court configuration' : 'Bookings management' %></h1>
+                <p class="text-muted mb-0"><%= configuring ? 'Configure bookable courts, shared resources and sport booking months' : 'Make and manage bookings for any profile' %></p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <%- include('partials/booking-messages') %>
+
+        <p class="mb-4">
+            <% if (configuring) { %>
+                <a href="/admin/bookings">Go to bookings management</a> to make bookings and manage existing slots.
+            <% } else { %>
+                <a href="/admin/court-configuration">Go to court configuration</a> to manage courts, resources and sport booking months.
+            <% } %>
+        </p>
 
         <% if (facilities.length) { %>
             <% facilities.forEach(facility => { %>
@@ -32,6 +41,7 @@
                         <p class="text-muted mb-0"><%= facility.address %>, <%= facility.postcode %></p>
                     </header>
 
+                    <% if (configuring) { %>
                     <div>
                         <div class="mb-4">
                             <details>
@@ -188,14 +198,18 @@
                         </div>
                     </div>
 
-                    <%- include('partials/booking-flow', { facility }) %>
+                    <% } else { %>
+                        <%- include('partials/booking-flow', { facility }) %>
+                    <% } %>
                 </section>
             <% }); %>
         <% } else { %>
             <p class="text-muted border-top pt-3">No in-app-managed facilities are available.</p>
         <% } %>
     </main>
-    <%- include('partials/booking-flow-script') %>
+    <% if (!configuring) { %>
+        <%- include('partials/booking-flow-script') %>
+    <% } %>
 </body>
 
 </html>

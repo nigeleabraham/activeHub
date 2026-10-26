@@ -47,7 +47,9 @@
                             <td><time data-local-booking-time datetime="<%= moment.utc(booking.starts_at).toISOString() %>"><%= moment.utc(booking.starts_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
                             <td><time data-local-booking-time datetime="<%= moment.utc(booking.ends_at).toISOString() %>"><%= moment.utc(booking.ends_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
                             <td><%= booking.resource_names.join(', ') %></td>
-                            <td><% if (booking.payment_status === 'paid' || booking.payment_status === 'credit') { %>Fee £<%= (booking.amount_pence / 100).toFixed(2) %> · paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %><%= booking.payment_status === 'credit' ? ' (credit)' : booking.credit_applied_pence ? ' (incl. £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit)' : '' %><% } else { %>Free · paid £0.00<% } %></td>
+                            <td><% if (booking.payment_status === 'paid' || booking.payment_status === 'credit') { %>Fee £<%= (booking.amount_pence / 100).toFixed(2) %> · paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %><%= booking.payment_status === 'credit' ? ' (credit)' : booking.credit_applied_pence ? ' (incl. £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit)' : '' %><% } else { %>Free · paid £0.00<% } %>
+                                <%- include('booking-funding', { booking }) %>
+                            </td>
                             <td><%= booking.profile_name || 'Unassigned' %></td>
                             <td><%= booking.booked_by_name || 'Not recorded' %></td>
                             <td>
@@ -55,8 +57,9 @@
                                     <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                     <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
                                     <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
-                                    <% if (booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
-                                        <label class="d-block small mt-1"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit</label>
+                                    <% if (isAdmin && booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
+                                        <label class="d-block small mt-1"><input type="checkbox" name="refundable" value="1"> Allow bank refund of the card-paid portion</label>
+                                        <p class="small mb-1">Reissued credits retain their original refund eligibility.</p>
                                         <button class="btn btn-outline-primary btn-sm mt-1" type="submit" name="credit" value="1">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> paid to <%= booking.profile_name %></button>
                                     <% } %>
                                 </form>

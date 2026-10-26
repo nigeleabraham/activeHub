@@ -152,6 +152,7 @@ async function initialize() {
     `);
     await pool.query("ALTER TABLE booking_refunds ADD COLUMN IF NOT EXISTS method text NOT NULL DEFAULT 'credit'");
     await pool.query('ALTER TABLE booking_refunds ADD COLUMN IF NOT EXISTS payment_reference text');
+    await pool.query('ALTER TABLE booking_refunds ADD COLUMN IF NOT EXISTS credit_applied_pence integer NOT NULL DEFAULT 0');
     // One resident credit request per past booking.
     await pool.query(`
         CREATE TABLE IF NOT EXISTS booking_credit_requests (
@@ -168,6 +169,10 @@ async function initialize() {
     `);
     await pool.query('ALTER TABLE booking_credit_requests ADD COLUMN IF NOT EXISTS decline_comment text');
     await pool.query('ALTER TABLE booking_credit_requests ADD COLUMN IF NOT EXISTS auto_approved boolean NOT NULL DEFAULT false');
+    await pool.query(`
+        ALTER TABLE booking_credit_requests DROP CONSTRAINT IF EXISTS booking_credit_requests_status_check,
+        ADD CONSTRAINT booking_credit_requests_status_check CHECK (status IN ('pending', 'approved', 'declined', 'cancelled'))
+    `);
     await pool.query(`
         CREATE TABLE IF NOT EXISTS credit_auto_approval_slots (
             starts_at timestamptz NOT NULL,
@@ -307,7 +312,7 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null) {
          ORDER BY bookings.starts_at`,
                 [facilityGuid, startsAt, endsAt]
     );
-    return rows;
+    return Credits.fundingForBookings(rows);
 }
 
 function findBookingsForProfile(profileGuid, condition, order, parameters = []) {
@@ -335,12 +340,15 @@ function findUpcomingForProfile(profileGuid) {
     return findBookingsForProfile(profileGuid, 'bookings.ends_at > now()', 'bookings.starts_at');
 }
 
-// Visibility and request eligibility use the same rolling day window.
+// Pending requests remain visible after the window for submitting new requests closes.
 async function findRecentPastForProfile(profileGuid) {
     const days = await Settings.getCreditRequestDays();
     return findBookingsForProfile(
         profileGuid,
-        "bookings.ends_at <= now() AND bookings.ends_at > now() - $2 * INTERVAL '24 hours' AND bookings.credited_at IS NULL",
+        `bookings.ends_at <= now() AND bookings.credited_at IS NULL
+         AND (bookings.ends_at > now() - $2 * INTERVAL '24 hours'
+              OR EXISTS (SELECT 1 FROM booking_credit_requests requests
+                         WHERE requests.booking_guid = bookings.guid AND requests.status = 'pending'))`,
         'bookings.starts_at DESC',
         [days]
     );
@@ -558,8 +566,10 @@ async function createBookings(bookings, creditUse = null) {
             (applied > 0 && bookings.some(booking => booking.profile_guid !== creditUse.profile_guid))) {
             throw new Error('Invalid booking credit allocation');
         }
-        if (applied > 0) {
-            await client.query('SELECT guid FROM profiles WHERE guid = $1 FOR UPDATE', [creditUse.profile_guid]);
+        const profileGuids = [...new Set(bookings.map(booking => booking.profile_guid).filter(Boolean))].sort();
+        for (const profileGuid of profileGuids) {
+            const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
+            if (!profile.rowCount) throw new Error('The booking profile no longer exists.');
         }
         const created = [];
         for (const booking of bookings) {
@@ -633,7 +643,7 @@ async function search({ reference, profile, location, from, to } = {}) {
     const refunded = await pool.query(
         `SELECT guid, booking_ref, facility_guid, starts_at, ends_at, profile_guid, profile_name, profile_email,
                 booked_by_name, amount_pence, amount_paid_pence, facility_name, address, postcode, option_name, sport_name,
-                refunded_pence, refunded_by_name, refunded_at, method, payment_reference
+                refunded_pence, refunded_by_name, refunded_at, method, payment_reference, credit_applied_pence
          FROM booking_refunds
          WHERE ($1::text IS NULL OR booking_ref ILIKE $1)
            AND ($2::text IS NULL OR profile_name ILIKE $2 OR profile_email ILIKE $2)
@@ -645,17 +655,17 @@ async function search({ reference, profile, location, from, to } = {}) {
         [reference ? like(reference) : null, profile ? like(profile) : null, location ? like(location) : null, from || null, to || null]
     );
     const all = [...rows, ...refunded.rows].sort((a, b) => new Date(b.starts_at) - new Date(a.starts_at));
-    return { bookings: all.slice(0, SEARCH_LIMIT), truncated: all.length > SEARCH_LIMIT };
+    return { bookings: await Credits.fundingForBookings(all.slice(0, SEARCH_LIMIT)), truncated: all.length > SEARCH_LIMIT };
 }
 
 async function snapshotRefund(client, facilityGuid, bookingGuid, pence, byName, method) {
     await client.query(
         `INSERT INTO booking_refunds (guid, booking_ref, facility_guid, facility_name, address, postcode, option_name, sport_name,
                 starts_at, ends_at, profile_guid, profile_name, profile_email, booked_by_name,
-                amount_pence, amount_paid_pence, refunded_pence, refunded_by_name, method, payment_reference)
+                amount_pence, amount_paid_pence, refunded_pence, refunded_by_name, method, payment_reference, credit_applied_pence)
          SELECT bookings.guid, bookings.booking_ref, bookings.facility_guid, facilities.name, facilities.address, facilities.postcode,
                 options.name, sports.name, bookings.starts_at, bookings.ends_at, bookings.profile_guid, profiles.name, profiles.email,
-                booked_by.name, bookings.amount_pence, bookings.amount_paid_pence, $3, $4, $5, bookings.payment_reference
+                booked_by.name, bookings.amount_pence, bookings.amount_paid_pence, $3, $4, $5, bookings.payment_reference, bookings.credit_applied_pence
          FROM bookings
          JOIN facilities ON facilities.guid = bookings.facility_guid
          JOIN bookable_options AS options ON options.guid = bookings.option_guid
@@ -687,7 +697,7 @@ async function inTransaction(work) {
 function removeBookingWithCredit(facilityGuid, bookingGuid, profileGuid, creditPence, refundedByName = null, refundable = false) {
     return inTransaction(async client => {
         const found = await client.query(`
-            SELECT b.guid, b.profile_guid, b.booking_ref, b.amount_paid_pence, f.name AS facility_name
+            SELECT b.guid, b.profile_guid, b.booking_ref, b.amount_paid_pence, b.credit_applied_pence, f.name AS facility_name
             FROM bookings b JOIN facilities f ON f.guid = b.facility_guid
             WHERE b.facility_guid = $1 AND b.guid = $2 AND b.credited_at IS NULL FOR UPDATE OF b`,
         [facilityGuid, bookingGuid]);
@@ -711,7 +721,7 @@ function addCreditToBooking(facilityGuid, bookingGuid, byName = null, refundable
             `UPDATE bookings SET credited_pence = amount_paid_pence, credited_at = now(), credited_by_name = $3
              WHERE facility_guid = $1 AND guid = $2 AND credited_at IS NULL
                AND amount_paid_pence > 0 AND profile_guid IS NOT NULL
-             RETURNING guid, profile_guid, amount_paid_pence, booking_ref,
+             RETURNING guid, profile_guid, amount_paid_pence, credit_applied_pence, booking_ref,
                        (SELECT name FROM facilities WHERE guid = bookings.facility_guid) AS facility_name`,
             [facilityGuid, bookingGuid, byName]
         );
@@ -752,6 +762,8 @@ async function requestCredit(profileGuid, bookingGuid, reason, note) {
     const days = await Settings.getCreditRequestDays();
     return inTransaction(async client => {
         await lockCreditRequests(client);
+        const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
+        if (!profile.rowCount) return null;
         const { rows } = await client.query(
             `INSERT INTO booking_credit_requests (booking_guid, profile_guid, reason, note)
              SELECT bookings.guid, bookings.profile_guid, $3, $4
@@ -805,7 +817,7 @@ async function findCreditRequests(status) {
     const { rows } = await pool.query(
         `SELECT requests.guid, requests.status, requests.reason, requests.note, requests.decline_comment, requests.auto_approved, requests.requested_at, requests.decided_at, requests.decided_by_name,
                 bookings.guid AS booking_guid, bookings.facility_guid, bookings.booking_ref, bookings.starts_at, bookings.ends_at,
-                bookings.amount_paid_pence, bookings.payment_reference, bookings.credited_at,
+                bookings.amount_paid_pence, bookings.credit_applied_pence, bookings.payment_reference, bookings.credited_at,
                 profiles.name AS profile_name, profiles.email AS profile_email,
                 facilities.name AS facility_name, options.name AS option_name, sports.name AS sport_name
          FROM booking_credit_requests requests
@@ -819,7 +831,7 @@ async function findCreditRequests(status) {
          LIMIT 100`,
         [status || null]
     );
-    return rows;
+    return Credits.fundingForBookings(rows, 'booking_guid');
 }
 
 // Approving gives the profile what was paid (once per booking); declining just closes the request.
@@ -864,23 +876,26 @@ async function decideCreditRequestInTransaction(client, requestGuid, approve, by
     if (!found.rowCount) return null;
     const creditRefundable = found.rows[0].reason === 'weather' || refundable;
     let credited = 0;
+    let breakdown = {};
     if (approve) {
         const marked = await client.query(
             `UPDATE bookings SET credited_pence = amount_paid_pence, credited_at = now(), credited_by_name = $2
              WHERE guid = $1 AND credited_at IS NULL AND amount_paid_pence > 0 AND profile_guid IS NOT NULL
-             RETURNING guid, profile_guid, amount_paid_pence, booking_ref,
+             RETURNING guid, profile_guid, amount_paid_pence, credit_applied_pence, booking_ref,
                        (SELECT name FROM facilities WHERE guid = bookings.facility_guid) AS facility_name`,
             [found.rows[0].booking_guid, byName]
         );
         if (!marked.rowCount) return null;
         credited = marked.rows[0].amount_paid_pence;
-        await Credits.grant(client, marked.rows[0], credited, byName, creditRefundable);
+        breakdown = await Credits.grant(client, marked.rows[0], credited, byName, creditRefundable, {
+            forceNonRefundable: found.rows[0].reason === 'discretionary' && !refundable
+        });
     }
     await client.query(
         'UPDATE booking_credit_requests SET status = $2, decided_at = now(), decided_by_name = $3, decline_comment = $4, auto_approved = $5 WHERE guid = $1',
         [requestGuid, approve ? 'approved' : 'declined', byName, declineComment, automatic]
     );
-    return { ...found.rows[0], credited, refundable: creditRefundable };
+    return { ...found.rows[0], credited, refundable: creditRefundable, ...breakdown };
 }
 
 module.exports = {

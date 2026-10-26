@@ -135,7 +135,8 @@ async function findAll() {
                  ORDER BY LOWER(courses.name)
              ) AS courses
              FROM courses
-             WHERE courses.facility_guid = facilities.guid
+             WHERE EXISTS (SELECT 1 FROM course_runs cf
+                           WHERE cf.course_guid = courses.guid AND cf.facility_guid = facilities.guid)
          ) AS course_data ON TRUE
          LEFT JOIN LATERAL (
              SELECT json_agg(

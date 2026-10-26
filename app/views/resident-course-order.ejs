@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course confirmation | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <%- include('partials/resident-banner-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/cookie-banner') %>
+    <header class="bg-white border-bottom">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><%= siteTitle %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </header>
+    <main class="container py-4">
+        <h1>Course enrolment confirmed</h1>
+        <p role="status">Your course places are confirmed. Card payments are simulated; no money has been taken.</p>
+        <p>Order reference: <strong><%= order.guid %></strong></p>
+        <ul class="list-unstyled">
+            <% order.items.forEach(item => { %>
+                <li class="bg-white border rounded p-3 mb-3">
+                    <h2 class="h5"><%= item.course_name %></h2>
+                    <p><%= item.run_name %> &mdash; <%= item.facility_name %></p>
+                    <p>Attendee: <%= item.attendee_name %></p>
+                    <p>Reference: <%= item.booking_ref %></p>
+                    <p>Price: <%= money(item.amount_pence) %></p>
+                </li>
+            <% }); %>
+        </ul>
+        <p>Total: <%= money(order.total_pence) %>. Account credit used: <%= money(order.credit_pence) %>.
+            Card payment (simulated): <%= money(order.total_pence - order.credit_pence) %>.</p>
+        <a class="btn btn-primary" href="/courses">Return to courses</a>
+    </main>
+</body>
+</html>

@@ -51,7 +51,7 @@ async function seedRefunda(pool) {
                 INSERT INTO bookings (facility_guid, option_guid, profile_guid, booked_by_guid, starts_at, ends_at,
                                       payment_status, payment_reference, amount_pence, amount_paid_pence, booking_ref)
                 VALUES ($1, $2, $3, $3, $4, $5, 'paid', 'DUMMY-NOT-A-REAL-PAYMENT', $6, $6, $7)
-                RETURNING guid, profile_guid, booking_ref`,
+                RETURNING guid, profile_guid, booking_ref, amount_paid_pence, credit_applied_pence`,
             [facility.guid, option.guid, profile.guid, start, end, scenario.pence, scenario.ref]);
             await client.query(`
                 INSERT INTO booking_reservations (booking_guid, resource_guid, starts_at, ends_at)

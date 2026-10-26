@@ -25,9 +25,15 @@
         .text-muted { color: #505a5f !important; }
         .sim-banner { background: #fff9cc; border-left: 0.4rem solid #ffde02; padding: 0.75rem 1rem; }
     </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 
 <body>
+    <% const courseCheckout = Boolean(locals.basket);
+       const paymentAction = courseCheckout ? '/basket/pay' : '/bookings/pay';
+       const paymentFields = courseCheckout
+           ? { token: basket.revision, total: basket.total, credit: basket.credit }
+           : { facility_guid: facility.guid, slots: slotsJson }; %>
     <%- include('partials/cookie-banner') %>
     <div class="site-bar">
         <div class="container py-3 d-md-flex justify-content-between align-items-center">
@@ -38,9 +44,10 @@
 
     <header class="page-head">
         <div class="container">
-            <p class="mb-2"><a href="/bookings">&larr; Back to bookings</a></p>
+            <%- include('partials/basket-button') %>
+            <p class="mb-2"><a href="<%= courseCheckout ? '/basket' : '/bookings' %>">&larr; Back to <%= courseCheckout ? 'basket' : 'bookings' %></a></p>
             <h1 class="mb-2">Payment</h1>
-            <p class="lead mb-0">Review your booking and pay to confirm it.</p>
+            <p class="lead mb-0"><%= courseCheckout ? 'Review your course places and pay to confirm them.' : 'Review your booking and pay to confirm it.' %></p>
         </div>
     </header>
 
@@ -48,7 +55,20 @@
         <div class="row">
             <div class="col-lg-6">
                 <section class="panel first" aria-labelledby="order">
-                    <h2 id="order" class="h4 mb-3">Your booking</h2>
+                    <h2 id="order" class="h4 mb-3"><%= courseCheckout ? 'Your course places' : 'Your booking' %></h2>
+                    <% if (courseCheckout) { %>
+                    <ul class="list-group list-group-flush mb-3">
+                        <% basket.items.forEach(item => { %>
+                            <li class="list-group-item px-0">
+                                <strong><%= item.course_name %></strong>
+                                <p class="mb-1"><%= item.run_name %> &mdash; <%= item.facility_name %></p>
+                                <p class="mb-1">Attendee: <strong><%= item.attendee_name %></strong></p>
+                                <p class="mb-0"><%= item.remaining_sessions %> remaining sessions &middot; <%= `£${(item.amount_pence / 100).toFixed(2)}` %></p>
+                            </li>
+                        <% }); %>
+                    </ul>
+                    <p>Places are not reserved until payment is confirmed.</p>
+                    <% } else { %>
                     <p class="mb-2"><strong><%= facility.name %></strong></p>
                     <ul class="list-group list-group-flush mb-3">
                         <% items.forEach(item => { %>
@@ -59,6 +79,7 @@
                             </li>
                         <% }) %>
                     </ul>
+                    <% } %>
                     <p class="d-flex justify-content-between mb-1"><span>Total</span><span><%= total %></span></p>
                     <% if (credit !== '£0.00') { %>
                         <p class="d-flex justify-content-between mb-1"><span>Account credit applied</span><span>&minus;<%= credit %></span></p>
@@ -68,13 +89,18 @@
             </div>
             <div class="col-lg-6">
                 <section class="panel first" aria-labelledby="card">
-                    <h2 id="card" class="h4 mb-3"><%= fullyCovered ? 'Confirm booking' : 'Pay by card' %></h2>
+                    <h2 id="card" class="h4 mb-3"><%= fullyCovered ? courseCheckout ? 'Confirm enrolment' : 'Confirm booking' : 'Pay by card' %></h2>
+                    <% if (courseCheckout) { %>
+                    <p><strong><%= credit %></strong> will be deducted from your account credit.<% if (!fullyCovered) { %> The remaining <strong><%= due %></strong> will be charged to your card.<% } %></p>
+                    <% } else { %>
                     <p>You have <strong><%= availableCredit %></strong> credit in your account. <strong><%= credit %></strong> will be deducted from the account.<% if (!fullyCovered) { %> The remaining <strong><%= due %></strong> will be charged to your card.<% } %></p>
+                    <% } %>
                     <% if (fullyCovered) { %>
-                        <form method="POST" action="/bookings/pay">
-                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                            <input type="hidden" name="slots" value="<%= slotsJson %>">
-                            <button class="btn btn-brand btn-block" type="submit">Confirm booking using credit</button>
+                        <form method="POST" action="<%= paymentAction %>">
+                            <% Object.entries(paymentFields).forEach(([name, value]) => { %>
+                                <input type="hidden" name="<%= name %>" value="<%= value %>">
+                            <% }); %>
+                            <button class="btn btn-brand btn-block" type="submit"><%= courseCheckout ? 'Confirm enrolment using credit' : 'Confirm booking using credit' %></button>
                         </form>
                     <% } else { %>
                     <div class="sim-banner mb-3" role="note">
@@ -85,9 +111,10 @@
                     <% if (cardError) { %>
                         <div class="alert alert-danger" role="alert"><%= cardError %></div>
                     <% } %>
-                    <form method="POST" action="/bookings/pay" autocomplete="off">
-                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                        <input type="hidden" name="slots" value="<%= slotsJson %>">
+                    <form method="POST" action="<%= paymentAction %>" autocomplete="off">
+                        <% Object.entries(paymentFields).forEach(([name, value]) => { %>
+                            <input type="hidden" name="<%= name %>" value="<%= value %>">
+                        <% }); %>
                         <div class="form-group">
                             <label for="card-name" class="font-weight-bold">Name on card</label>
                             <input class="form-control" id="card-name" name="card_name" type="text" maxlength="100" autocomplete="cc-name" value="<%= values.card_name || '' %>" required>

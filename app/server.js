@@ -34,6 +34,16 @@ app.use(express.urlencoded({ extended: false }));
 app.locals.moment = moment;
 
 app.use(require('./middleware/auth').loadProfile);
+app.use(async (req, res, next) => {
+    try {
+        if (req.profile && !req.path.startsWith('/admin') && req.accepts('html')) {
+            res.locals.basketItemCount = await require('./models/CourseOrders').itemCount(req.profile.guid);
+        }
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
 app.use(FrontRouter);
 
 
@@ -47,6 +57,7 @@ Facilities.initialize()
     .then(() => Profiles.initialize())
     .then(() => AuditLog.initialize())
     .then(() => Bookings.initialize())
+    .then(() => require('./models/CourseOrders').initialize())
     .then(() => {
         console.log('PostgreSQL connected');
         AuditLog.startPurgeSchedule();

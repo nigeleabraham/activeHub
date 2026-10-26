@@ -1,12 +1,14 @@
 <style>
     .admin-editor-status { display: block; width: 100%; margin: 0.5rem 0; }
-    .admin-editor-dirty { border-left: 4px solid #805b00; padding-left: 0.75rem; }
+    .admin-editor-dirty { border-left: 4px solid #805b00 !important; padding-left: 0.75rem; }
     .admin-unsaved-dialog { max-width: 34rem; width: calc(100% - 2rem); border: 2px solid #212529; padding: 1.5rem; }
     .admin-unsaved-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
     .admin-unsaved-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
     .admin-course-highlight { animation: admin-course-saved 2s ease-out; }
     [data-course-feedback], [data-admin-save-confirmation] { transition: opacity 0.5s ease-out; }
     .admin-notice-fading { opacity: 0; }
+    .admin-save-feedback { display: grid; }
+    .admin-save-feedback > * { grid-area: 1 / 1; margin-bottom: 0; }
     [data-course-add-feedback] > .alert {
         display: flex;
         align-items: center;
@@ -29,6 +31,24 @@
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const navigationGroups = Array.from(document.querySelectorAll('.admin-navigation-group'));
+    navigationGroups.forEach(group => {
+        group.addEventListener('toggle', () => {
+            if (group.open) navigationGroups.forEach(other => { if (other !== group) other.open = false; });
+        });
+    });
+    document.addEventListener('click', event => {
+        if (!event.target.closest('.admin-navigation')) navigationGroups.forEach(group => { group.open = false; });
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const group = event.target.closest('.admin-navigation-group');
+        if (group?.open) {
+            group.open = false;
+            group.querySelector('summary').focus();
+            event.preventDefault();
+        }
+    });
     document.documentElement.setAttribute('data-admin-editors', '');
     const entries = [];
     let active = null;
@@ -40,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let submitContinuation = null;
     const noticeTimers = new WeakMap();
 
-    function resetNoticeFade(notice, fade) {
+    function resetNoticeFade(notice, fade, onHidden) {
         const previous = noticeTimers.get(notice);
         if (previous) previous.forEach(timer => window.clearTimeout(timer));
         noticeTimers.delete(notice);
@@ -48,16 +68,41 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!fade) return;
         const fadeTimer = window.setTimeout(() => notice.classList.add('admin-notice-fading'), 4000);
         const hideTimer = window.setTimeout(() => {
-            notice.hidden = true;
             notice.classList.remove('admin-notice-fading');
             noticeTimers.delete(notice);
+            if (onHidden) onHidden();
+            else notice.hidden = true;
         }, 4500);
         noticeTimers.set(notice, [fadeTimer, hideTimer]);
     }
 
     const pageUrl = new URL(window.location.href);
+    const sportScrollKey = 'activehub-sport-save-scroll';
+    const savedSportScroll = pageUrl.pathname === '/admin/sports' && pageUrl.searchParams.get('admin_saved') === 'sport-updated'
+        ? window.sessionStorage.getItem(sportScrollKey) : null;
+    window.sessionStorage.removeItem(sportScrollKey);
+    const savedSportPanels = window.sessionStorage.getItem('activehub-sport-save-panels');
+    window.sessionStorage.removeItem('activehub-sport-save-panels');
+    if (savedSportScroll !== null && savedSportPanels) {
+        const openSports = JSON.parse(savedSportPanels);
+        document.querySelectorAll('[data-sport-details]').forEach(details => {
+            details.open = openSports.includes(details.closest('[data-sport-guid]').dataset.sportGuid);
+        });
+    }
+    if (savedSportScroll !== null && Number.isFinite(Number(savedSportScroll))) {
+        window.addEventListener('load', () => {
+            window.requestAnimationFrame(() => window.scrollTo(0, Number(savedSportScroll)));
+        }, { once: true });
+    }
     const successMessages = {
         '1': 'Changes saved successfully.',
+        'facility-updated': 'Changes saved successfully.',
+        'facility-created': 'Facility added successfully.',
+        'template-created': 'Opening hours template added successfully.',
+        'template-updated': 'Changes saved successfully.',
+        'sport-updated': 'Changes saved successfully.',
+        'profile-created': 'Profile added successfully.',
+        'profile-updated': 'Changes saved successfully.',
         'course-created': 'Course added successfully.',
         'course-updated': 'Course updated successfully.',
         'course-deleted': 'Course deleted successfully.'
@@ -74,8 +119,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const main = document.querySelector('main');
         const header = main?.querySelector('header');
         const target = document.getElementById(pageUrl.hash.slice(1));
+        const facilityCard = successKey === 'facility-updated' && pageUrl.pathname === '/admin/facilities'
+            ? document.getElementById(pageUrl.searchParams.get('admin_saved_target')) : null;
+        const sportRow = successKey === 'sport-updated' && pageUrl.pathname === '/admin/sports'
+            ? document.getElementById(pageUrl.searchParams.get('admin_saved_target')) : null;
+        const templateCard = successKey === 'template-updated' && pageUrl.pathname === '/admin/opening-hours'
+            ? document.getElementById(pageUrl.searchParams.get('admin_saved_target')) : null;
+        const profileRow = successKey === 'profile-updated' && pageUrl.pathname === '/admin/profiles'
+            ? document.getElementById(pageUrl.searchParams.get('admin_saved_target')) : null;
+        const savedItem = facilityCard?.matches('article') ? facilityCard
+            : sportRow?.matches('[data-sport-guid]') ? sportRow
+            : templateCard?.matches('article') ? templateCard
+            : profileRow?.matches('[data-profile-guid]') ? profileRow : null;
         const card = successKey.startsWith('course-') ? target?.closest('article') : null;
-        if (card) {
+        if (savedItem) {
+            const name = sportRow ? sportRow.dataset.sportName
+                : profileRow ? profileRow.dataset.profileName : savedItem.querySelector('h3').textContent.trim();
+            notice.textContent = `"${name}" updated successfully.`;
+            notice.classList.add('mb-0', 'py-1', 'px-2', 'small');
+            savedItem.querySelector(profileRow ? '[data-profile-edit-feedback]' : sportRow ? '[data-sport-edit-feedback]'
+                : templateCard ? '[data-template-edit-feedback]' : '[data-facility-edit-feedback]').append(notice);
+            resetNoticeFade(notice, true, () => { notice.style.visibility = 'hidden'; });
+            window.addEventListener('load', () => {
+                notice.tabIndex = -1;
+                notice.focus({ preventScroll: true });
+                if (!sportRow || savedSportScroll === null) notice.scrollIntoView({ block: 'nearest' });
+            }, { once: true });
+        } else if (card) {
             card.prepend(notice);
             if (target === card && !notice.classList.contains('sr-only')) {
                 window.addEventListener('load', () => {
@@ -83,6 +153,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     notice.focus();
                 }, { once: true });
             }
+        } else if (main?.querySelector('[data-admin-save-placeholder]')) {
+            const placeholder = main.querySelector('[data-admin-save-placeholder]');
+            placeholder.style.visibility = 'hidden';
+            placeholder.after(notice);
+            resetNoticeFade(notice, true, () => {
+                notice.style.visibility = 'hidden';
+                placeholder.style.visibility = '';
+            });
         } else if (header) header.after(notice);
         else if (main) main.prepend(notice);
         pageUrl.searchParams.delete('admin_saved');
@@ -135,36 +213,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function close(entry) {
+        if (entry.form.hasAttribute('data-profile-editor') && entry.panel && !entry.panel.hidden) {
+            entry.form.dispatchEvent(new CustomEvent('profile-editor-toggle', { detail: { open: false } }));
+        }
         if (entry.panel) {
             entry.panel.hidden = true;
             entry.toggle.setAttribute('aria-expanded', 'false');
             if (entry.toggle.hasAttribute('data-hide-when-editing')) entry.toggle.hidden = false;
-        } else {
+        } else if (entry.details) {
             entry.details.open = false;
         }
     }
 
     function open(entry) {
+        const profileEditor = entry.form.hasAttribute('data-profile-editor');
+        const scrollPosition = profileEditor ? { left: window.scrollX, top: window.scrollY, behavior: 'instant' } : null;
         for (const other of entries) {
             if (other !== entry) close(other);
         }
         active = entry;
+        if (profileEditor) entry.form.dispatchEvent(new CustomEvent('profile-editor-toggle', { detail: { open: true } }));
         if (entry.panel) {
             entry.panel.hidden = false;
             entry.toggle.setAttribute('aria-expanded', 'true');
             if (entry.toggle.hasAttribute('data-hide-when-editing')) entry.toggle.hidden = true;
-        } else {
+        } else if (entry.details) {
             entry.details.open = true;
         }
         for (let parent = entry.form.parentElement; parent; parent = parent.parentElement) {
             if (parent.tagName === 'DETAILS') parent.open = true;
         }
-        entry.form.querySelector('input:not([type="hidden"]), select, textarea')?.focus();
+        entry.form.querySelector('input:not([type="hidden"]), select, textarea')?.focus(profileEditor ? { preventScroll: true } : undefined);
+        if (profileEditor) window.scrollTo(scrollPosition);
     }
 
     function reset(entry) {
         entry.form.reset();
-        entry.form.querySelectorAll('input, select, textarea').forEach(field =>
+        if (entry.form.hasAttribute('data-profile-editor')) entry.form.dispatchEvent(new Event('profile-reset', { bubbles: true }));
+        else entry.form.querySelectorAll('input, select, textarea').forEach(field =>
             field.dispatchEvent(new Event('change', { bubbles: true })));
         entry.error.hidden = true;
         update(entry);
@@ -191,6 +277,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return navigate(destination.href);
         }
         if (action.kind === 'navigate') return navigate(action.url);
+        if (action.kind === 'faq-disclosure') {
+            if (active && (action.details.contains(active.form) || action.open)) {
+                close(active);
+                active = null;
+            }
+            action.details.open = action.open;
+            action.details.querySelector(':scope > summary').focus();
+            return;
+        }
         if (action.kind === 'editor') {
             const entry = entries.find(item => item.form.id === action.entry.form.id);
             if (entry) return open(entry);
@@ -199,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (action.kind === 'close') {
             if (!active) return;
             close(active);
-            active.toggle.focus();
+            (active.toggle || active.form.querySelector('input:not([type="hidden"]), select, textarea'))?.focus({ preventScroll: true });
             active = null;
         } else if (action.kind === 'submit') {
             if (!action.form.isConnected && action.form.action.endsWith('/courses/destroy')) {
@@ -237,6 +332,46 @@ document.addEventListener('DOMContentLoaded', () => {
         entry.error.hidden = false;
     }
 
+<%- include('deletion-animation') %>
+
+    async function refreshDirectory(form, response, type = 'sport') {
+        const directory = form.closest(`[data-${type}s-directory]`);
+        const rowSelector = `[data-${type}-guid]`;
+        const listSelector = `[data-${type}-list]`;
+        const countSelector = `[data-${type}-count]`;
+        const row = form.closest(rowSelector);
+        const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const newList = html.querySelector(listSelector);
+        const count = html.querySelector(countSelector);
+        const serverError = html.querySelector('main [role="alert"]');
+        if (serverError && !serverError.hidden && serverError.textContent.trim()) {
+            throw new Error(serverError.textContent.trim());
+        }
+        if (!newList || !count || Array.from(newList.querySelectorAll(rowSelector))
+            .some(item => item.getAttribute(`data-${type}-guid`) === row.getAttribute(`data-${type}-guid`))) {
+            throw new Error(`The ${type} deletion could not be confirmed. Check the directory before retrying.`);
+        }
+        const rows = Array.from(directory.querySelectorAll(rowSelector));
+        const index = rows.indexOf(row);
+        await animateDeletion(row);
+        row.remove();
+        directory.querySelector(countSelector).textContent = count.textContent;
+        if (!directory.querySelector(rowSelector)) directory.querySelector(listSelector).replaceWith(newList);
+        for (let i = entries.length - 1; i >= 0; i--) {
+            if (!entries[i].form.isConnected) {
+                if (active === entries[i]) active = null;
+                entries.splice(i, 1);
+            }
+        }
+        directory.querySelector(`[data-${type}-feedback]`).textContent = `"${row.getAttribute(`data-${type}-name`)}" deleted successfully.`;
+        const remaining = directory.querySelectorAll(rowSelector);
+        const target = remaining[Math.min(index, remaining.length - 1)]?.querySelector('form[action$="/destroy"] button')
+            || (type === 'sport' ? document.getElementById('sport-name')
+                : type === 'profile' ? document.getElementById('profile-name')
+                    : document.querySelector('[aria-controls="add-template-panel"]'));
+        target.focus({ preventScroll: true });
+    }
+
     async function refreshCourses(form, response) {
         const card = form.closest('[data-course-facility]');
         const sourceRow = form.closest('[data-course-guid]');
@@ -252,15 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const count = html.querySelector('[data-course-count]');
         if (!newList || !count) throw new Error('The course change could not be confirmed. Check the directory before retrying.');
         if (operation === 'deleted' && sourceRow) {
-            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            sourceRow.style.backgroundColor = '#f8d7da';
-            if (!reducedMotion) {
-                await sourceRow.animate([
-                    { backgroundColor: '#f8d7da', opacity: 1, offset: 0 },
-                    { backgroundColor: '#f8d7da', opacity: 1, offset: 0.55 },
-                    { backgroundColor: '#f8d7da', opacity: 0, offset: 1 }
-                ], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished;
-            }
+            await animateDeletion(sourceRow);
         }
         const notice = card.querySelector('[data-course-feedback]');
         // Keep the live region mounted when replacing the course rows.
@@ -306,8 +433,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function refreshFaqs(entry, response) {
+        const card = entry.form.closest('[data-sport-faq-card]');
+        const editing = entry.form.hasAttribute('data-faq-edit');
+        const guid = editing ? entry.form.elements.namedItem('guid').value : null;
+        const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const updatedCard = html.getElementById(card.id);
+        const list = updatedCard?.querySelector('[data-sport-faq-list]');
+        const count = updatedCard?.querySelector('[data-sport-faq-count]');
+        if (!list || !count || (editing && !Array.from(list.querySelectorAll('form[data-faq-edit]')).some(form =>
+            form.elements.namedItem('guid').value === guid))) {
+            throw new Error('The FAQ change could not be confirmed. Check the list before retrying.');
+        }
+        card.querySelector('[data-sport-faq-list]').replaceWith(list);
+        card.querySelector('[data-sport-faq-count]').replaceWith(count);
+        for (let i = entries.length - 1; i >= 0; i--) {
+            if (!entries[i].form.isConnected) {
+                if (active === entries[i]) active = null;
+                entries.splice(i, 1);
+            }
+        }
+        initializeEditors();
+        if (editing) {
+            entry = entries.find(item => item.form.hasAttribute('data-faq-edit') &&
+                item.form.elements.namedItem('guid').value === guid);
+            open(entry);
+        } else entry.form.reset();
+        const notice = entry.form.querySelector('[data-faq-feedback]');
+        notice.textContent = editing ? 'Changes saved successfully.' : 'FAQ added successfully.';
+        notice.hidden = false;
+        resetNoticeFade(notice, true);
+        entry.form.inert = false;
+        entry.form.querySelector('[name="question"]').focus({ preventScroll: true });
+    }
+
     async function save(entry, submitter) {
         if (!entry.form.reportValidity()) return null;
+        const scrollBeforeSave = window.scrollY;
         entry.error.hidden = true;
         const buttons = Array.from(entry.form.querySelectorAll('button, input[type="submit"]'));
         const states = buttons.map(button => button.disabled);
@@ -346,12 +508,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? 'The changes could not be saved. Check the entered values and try again.'
                     : `The save could not be confirmed (HTTP ${response.status}). Your entries have been kept. Check the saved record before retrying.`);
             }
+            if (entry.form.hasAttribute('data-profile-editor')) {
+                if (!response.headers.get('content-type')?.includes('application/json')) {
+                    throw new Error('The save could not be confirmed. Your entries have been kept; check your session before retrying.');
+                }
+                const result = await response.json();
+                if (result.saved !== true || !result.values || typeof result.values !== 'object') {
+                    throw new Error('The save could not be confirmed. Your entries have been kept; check the saved record before retrying.');
+                }
+                Array.from(entry.form.elements).forEach(field => {
+                    if (!field.name || !Object.hasOwn(result.values, field.name)) return;
+                    const value = result.values[field.name];
+                    if (field.type === 'checkbox') field.checked = Array.isArray(value) && value.includes(field.value);
+                    else if (field.type === 'radio') field.checked = field.value === (typeof value === 'boolean' ? value ? 'yes' : 'no' : value);
+                    else field.value = typeof value === 'boolean' ? value ? 'yes' : 'no' : value ?? '';
+                });
+                entry.form.dispatchEvent(new Event('profile-reset', { bubbles: true }));
+                Array.from(entry.form.elements).forEach(field => {
+                    if (['checkbox', 'radio'].includes(field.type)) field.defaultChecked = field.checked;
+                    else if (field.tagName === 'SELECT') Array.from(field.options).forEach(option => { option.defaultSelected = option.selected; });
+                    else if (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') field.defaultValue = field.value;
+                });
+                entry.baseline = snapshot(entry.form);
+                entry.form.dispatchEvent(new Event('profile-saved'));
+                entry.form.dispatchEvent(new Event('profile-feedback'));
+                const notice = entry.form.closest('[data-profile-section]').querySelector('.alert-success');
+                resetNoticeFade(notice, true);
+                return destination.href;
+            }
             if (destination.searchParams.has('error')) {
                 const html = new DOMParser().parseFromString(await response.text(), 'text/html');
                 const message = html.querySelector('.alert[role="alert"], .alert-danger, .alert-warning')?.textContent.trim();
                 throw new Error(message || 'The changes could not be saved. Check the entered values and try again.');
             }
-            if (!(logo && response.status === 204) && destination.pathname !== window.location.pathname) {
+            const ownRoleChanged = new URL(entry.form.action).pathname === '/admin/profiles/update'
+                && destination.pathname === '/profile' && destination.searchParams.get('saved') === '1';
+            if (!(logo && response.status === 204) && !ownRoleChanged && destination.pathname !== window.location.pathname) {
                 throw new Error('The save returned an unexpected page. Your entries have been kept; check your session and the saved record before retrying.');
             }
             if (courseForm) {
@@ -361,8 +553,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 await refreshCourses(entry.form, response);
             }
-            entry.baseline = courseForm && entry.form.isConnected ? snapshot(entry.form) : submittedSnapshot;
+            const faqForm = entry.form.matches('[data-faq-add], [data-faq-edit]');
+            if (faqForm) {
+                if (destination.searchParams.get('admin_saved') !== '1') {
+                    throw new Error('The FAQ change could not be confirmed. Your entries have been kept; check the list before retrying.');
+                }
+                await refreshFaqs(entry, response);
+            }
+            entry.baseline = (courseForm || faqForm) && entry.form.isConnected ? snapshot(entry.form) : submittedSnapshot;
             const savedTarget = destination.searchParams.get('admin_saved_target');
+            if (['/admin/sports/update', '/admin/sports/course-defaults'].includes(new URL(entry.form.action).pathname)) {
+                window.sessionStorage.setItem(sportScrollKey, String(scrollBeforeSave));
+                window.sessionStorage.setItem('activehub-sport-save-panels', JSON.stringify(
+                    Array.from(document.querySelectorAll('[data-sport-details][open]'))
+                        .map(details => details.closest('[data-sport-guid]').dataset.sportGuid)));
+            }
             if (savedTarget) destination.hash = savedTarget;
             return logo ? '/admin/settings?saved=1' : destination.href;
         } catch (error) {
@@ -383,11 +588,123 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initializeEditors() {
+    document.querySelectorAll('[data-description-sections]').forEach(editor => {
+        if (editor.dataset.initialized) return;
+        editor.dataset.initialized = 'true';
+        const value = editor.querySelector('input[type="hidden"]');
+        const rows = editor.querySelector('[data-section-rows]');
+        const sync = () => {
+            value.value = JSON.stringify(Array.from(rows.children).map(row => ({
+                id: row.dataset.sectionId,
+                heading: row.querySelector('input').value,
+                text: row.querySelector('textarea').value
+            })));
+            value.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const add = section => {
+            const row = document.createElement('div');
+            row.className = 'border rounded p-3 mb-3';
+            row.dataset.sectionId = section.id;
+            for (const [tag, title, content, max] of [
+                ['input', 'Section heading (optional)', section.heading, 160],
+                ['textarea', 'Section text', section.text, 10000]
+            ]) {
+                const label = document.createElement('label');
+                label.className = 'd-block';
+                label.textContent = title;
+                const control = document.createElement(tag);
+                control.className = 'form-control mb-2';
+                control.maxLength = max;
+                control.defaultValue = control.value = content;
+                if (tag === 'textarea') { control.rows = 4; control.required = true; }
+                control.addEventListener('input', sync);
+                label.append(control);
+                row.append(label);
+            }
+            for (const [title, action] of [
+                ['Move up', () => { if (row.previousElementSibling) rows.insertBefore(row, row.previousElementSibling); }],
+                ['Move down', () => { if (row.nextElementSibling) rows.insertBefore(row.nextElementSibling, row); }],
+                ['Remove section', () => row.remove()]
+            ]) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-outline-secondary btn-sm mr-2';
+                button.textContent = title;
+                button.addEventListener('click', () => { action(); sync(); });
+                row.append(button);
+            }
+            rows.append(row);
+        };
+        JSON.parse(value.value).forEach(add);
+        const initial = JSON.stringify(Array.from(rows.children).map(row => ({
+            id: row.dataset.sectionId, heading: row.querySelector('input').value, text: row.querySelector('textarea').value
+        })));
+        value.value = initial;
+        editor.closest('form').addEventListener('reset', () => {
+            rows.replaceChildren();
+            JSON.parse(initial).forEach(add);
+            value.value = initial;
+        });
+        editor.querySelector('[data-section-add]').addEventListener('click', () => {
+            add({ id: crypto.randomUUID(), heading: '', text: '' });
+            sync();
+            rows.lastElementChild.querySelector('input').focus();
+        });
+    });
+    document.querySelectorAll('[data-description-source]').forEach(select => {
+        if (select.dataset.initialized) return;
+        select.dataset.initialized = 'true';
+        const form = select.form;
+        const stored = form.querySelector('[data-description-overrides]');
+        const sync = () => {
+            const overrides = {};
+            const assigned = Array.from(form.querySelectorAll('[name="sport_guids"]:checked')).map(input => input.value);
+            select.setCustomValidity(select.value && !assigned.includes(select.value)
+                ? 'Select this sport in the course sport choices, or choose a different description source.' : '');
+            form.querySelectorAll('[data-description-defaults]').forEach(group => {
+                const active = group.dataset.descriptionDefaults === select.value;
+                group.hidden = group.disabled = !active;
+                group.querySelectorAll('[data-description-override]').forEach(row => {
+                    const unique = row.querySelector('[data-override-mode]').value === 'override';
+                    const heading = row.querySelector('[data-override-heading]');
+                    const text = row.querySelector('[data-override-text]');
+                    heading.disabled = text.disabled = !active || !unique;
+                    heading.parentElement.hidden = text.parentElement.hidden = !unique;
+                    row.querySelector('[data-default-preview]').hidden = unique;
+                    text.required = active && unique;
+                    if (active && unique) overrides[row.dataset.descriptionOverride] = { heading: heading.value, text: text.value };
+                });
+            });
+            stored.value = JSON.stringify(overrides);
+        };
+        select.addEventListener('change', sync);
+        form.addEventListener('reset', () => queueMicrotask(sync));
+        form.querySelectorAll('[name="sport_guids"]').forEach(input => input.addEventListener('change', sync));
+        form.querySelectorAll('[data-description-defaults]').forEach(group => {
+            group.addEventListener('input', sync);
+            group.addEventListener('change', sync);
+        });
+        sync();
+    });
+    document.querySelectorAll('[data-run-mode]').forEach(select => {
+        if (select.dataset.initialized) return;
+        select.dataset.initialized = 'true';
+        const sync = () => {
+            const weekly = select.form.querySelector('[data-run-weekly]');
+            const individual = select.form.querySelector('[data-run-individual]');
+            weekly.hidden = weekly.disabled = select.value !== 'weekly';
+            individual.hidden = individual.disabled = select.value !== 'individual';
+            weekly.querySelectorAll('input, select').forEach(input => { input.required = !weekly.disabled; });
+            individual.querySelector('textarea').required = !individual.disabled;
+        };
+        select.addEventListener('change', sync);
+        sync();
+    });
     document.querySelectorAll('form[method="POST"]').forEach(form => {
         if (entries.some(entry => entry.form === form)) return;
-        if (!new URL(form.action).pathname.startsWith('/admin/') ||
+        if ((!new URL(form.action).pathname.startsWith('/admin/') && !form.hasAttribute('data-profile-editor')) ||
             form.matches('[data-booking-form], [data-cancel-booking]') ||
-            !form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea')) return;
+            !form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea, [data-description-sections]')) return;
         if (!form.id) {
             const identity = Array.from(form.querySelectorAll('input[type="hidden"]'))
                 .filter(field => field.name === 'guid' || field.name.endsWith('_guid'))
@@ -406,8 +723,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const legend = form.querySelector('legend')?.textContent.trim();
         const label = form.dataset.editorLabel || [heading?.textContent.trim(), name || legend || submitter?.textContent.trim()]
             .filter(Boolean).join(' - ') || 'Admin form';
-        if (!panel) {
-            const existingDetails = form.parentElement.tagName === 'DETAILS' && form.parentElement.querySelectorAll('form').length === 1
+        if (!panel && !form.hasAttribute('data-editor-inline')) {
+            const existingDetails = form.parentElement.tagName === 'DETAILS' &&
+                !form.parentElement.hasAttribute('data-sport-faq-details') && form.parentElement.querySelectorAll('form').length === 1
                 ? form.parentElement : null;
             details = existingDetails || document.createElement('details');
             toggle = existingDetails?.querySelector(':scope > summary') || document.createElement('summary');
@@ -446,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         error.hidden = true;
         form.prepend(error);
         form.append(status);
-        if (!form.querySelector('[data-cancel-edit]')) {
+        if (!form.querySelector('[data-cancel-edit]') && !form.hasAttribute('data-editor-inline')) {
             const cancel = document.createElement('button');
             cancel.type = 'button';
             cancel.className = 'btn btn-outline-secondary btn-sm ml-2';
@@ -457,6 +775,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const entry = { form, panel, toggle, details, status, error, label, baseline: snapshot(form) };
         entries.push(entry);
         close(entry);
+        if (form.hasAttribute('data-editor-inline')) {
+            form.addEventListener('focusin', () => {
+                if (active !== entry) guard({ kind: 'editor', entry });
+            });
+        }
         form.addEventListener('input', () => update(entry));
         form.addEventListener('change', () => update(entry));
     });
@@ -469,7 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
             event.stopImmediatePropagation();
             return;
         }
-        const entry = entries.find(item => item.toggle.contains(event.target));
+        const entry = entries.find(item => item.toggle?.contains(event.target));
         if (entry) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -487,6 +810,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const summary = event.target.closest('summary');
+        if (summary?.parentElement.matches('[data-sport-faq-details], [data-sport-details]') && active && dirty(active)) {
+            event.preventDefault();
+            guard({ kind: 'faq-disclosure', details: summary.parentElement, open: !summary.parentElement.open });
+            return;
+        }
         if (summary && active && summary.parentElement.contains(active.form) && summary.parentElement.open && dirty(active)) {
             event.preventDefault();
             guard({ kind: 'close' });
@@ -517,11 +845,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('submit', event => {
         if (event.defaultPrevented) return;
         const form = event.target;
-        if (form.matches('form[action="/admin/courses/destroy"]') && form.closest('[data-course-facility]')) {
+        const sportDelete = form.matches('form[action="/admin/sports/destroy"]') && form.closest('[data-sports-directory]');
+        const templateDelete = form.matches('form[action="/admin/opening-hours/destroy"]') && form.closest('[data-templates-directory]');
+        const profileDelete = form.matches('form[action="/admin/profiles/destroy"]') && form.closest('[data-profiles-directory]');
+        const directoryDelete = sportDelete || templateDelete || profileDelete;
+        if (directoryDelete || (form.matches('form[action="/admin/courses/destroy"]') && form.closest('[data-course-facility]'))) {
             event.preventDefault();
             const button = form.querySelector('button[type="submit"]');
-            const card = form.closest('[data-course-facility]');
-            const error = card.querySelector('[data-course-error]');
+            const card = directoryDelete || form.closest('[data-course-facility]');
+            const type = sportDelete ? 'sport' : templateDelete ? 'template' : profileDelete ? 'profile' : 'course';
+            const error = card.querySelector(`[data-${type}-error]`);
             const label = button.textContent;
             saving = true;
             button.disabled = true;
@@ -532,13 +865,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const response = await fetch(form.action, { method: 'POST', body: new URLSearchParams(new FormData(form)) });
                     const destination = new URL(response.url);
-                    if (!response.ok || destination.pathname !== '/admin/courses' ||
-                        destination.searchParams.get('admin_saved') !== 'course-deleted') {
+                    if (!response.ok || destination.pathname !== (sportDelete ? '/admin/sports' : templateDelete ? '/admin/opening-hours' : profileDelete ? '/admin/profiles' : '/admin/courses') ||
+                        (!directoryDelete && destination.searchParams.get('admin_saved') !== 'course-deleted')) {
                         throw new Error('The deletion could not be confirmed. Check your session and the directory before retrying.');
                     }
-                    await refreshCourses(form, response);
+                    if (directoryDelete) await refreshDirectory(form, response, type);
+                    else await refreshCourses(form, response);
                 } catch (problem) {
-                    console.error('Unable to delete course', problem);
+                    console.error(`Unable to delete ${type}`, problem);
                     error.textContent = problem instanceof TypeError
                         ? 'The deletion could not be confirmed because of a connection problem. Check the directory before retrying.'
                         : problem.message;
@@ -561,7 +895,12 @@ document.addEventListener('DOMContentLoaded', () => {
         void (async () => {
             const location = await save(entry, event.submitter);
             if (!location) return;
-            if (courseForm) {
+            if (entry.form.hasAttribute('data-profile-editor')) {
+                if (action) proceed(action);
+                else proceed({ kind: 'close' });
+                return;
+            }
+            if (courseForm || entry.form.matches('[data-faq-add], [data-faq-edit]')) {
                 if (action) proceed(action);
                 return;
             }

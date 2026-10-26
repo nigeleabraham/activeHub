@@ -1,0 +1,48 @@
+<input type="hidden" name="course_guid" value="<%= course.guid %>">
+<% if (run) { %><input type="hidden" name="guid" value="<%= run.guid %>"><% } %>
+<div class="form-group">
+    <label for="<%= prefix %>-name">Run name (for example, Tuesday beginners)</label>
+    <input class="form-control" id="<%= prefix %>-name" name="name" maxlength="120" value="<%= run?.name || '' %>" required>
+</div>
+<div class="form-group">
+    <label for="<%= prefix %>-facility">Location</label>
+    <select class="form-control" id="<%= prefix %>-facility" name="facility_guid" required>
+        <option value="">Choose a location</option>
+        <% facilities.forEach(facility => { %><option value="<%= facility.guid %>" <%= run?.facility_guid === facility.guid ? 'selected' : '' %>><%= facility.name %></option><% }); %>
+    </select>
+</div>
+<div class="form-group">
+    <label for="<%= prefix %>-price">Full-course price (&pound;)</label>
+    <input class="form-control" id="<%= prefix %>-price" name="price" type="number" min="0" max="999999.99" step="0.01" value="<%= run?.full_price_pence === null || !run ? '' : (run.full_price_pence / 100).toFixed(2) %>" required>
+</div>
+<div class="form-group">
+    <label for="<%= prefix %>-capacity">Maximum spaces</label>
+    <input class="form-control" id="<%= prefix %>-capacity" name="capacity" type="number" min="1" max="99999" step="1" value="<%= run?.capacity || '' %>" required>
+</div>
+<div class="form-group">
+    <label for="<%= prefix %>-mode">Session entry method</label>
+    <select class="form-control" id="<%= prefix %>-mode" name="schedule_mode" data-run-mode aria-controls="<%= prefix %>-weekly <%= prefix %>-individual">
+        <option value="weekly" <%= !run?.sessions.length ? 'selected' : '' %>>Generate weekly sessions</option>
+        <option value="individual" <%= run?.sessions.length ? 'selected' : '' %>>Edit individual sessions</option>
+    </select>
+</div>
+<fieldset id="<%= prefix %>-weekly" data-run-weekly>
+    <legend class="h6">Weekly schedule</legend>
+    <p class="small text-muted">All dates and times are UK local time. Saving replaces the session list. You can then edit individual dates below. Maximum weekly range: two years.</p>
+    <% for (const [field, label, type] of [['start_date', 'First date', 'date'], ['end_date', 'Last date (inclusive)', 'date'], ['start_time', 'Start time', 'time'], ['end_time', 'End time (same day)', 'time']]) { %>
+        <div class="form-group"><label for="<%= prefix %>-<%= field %>"><%= label %></label><input class="form-control" id="<%= prefix %>-<%= field %>" name="<%= field %>" type="<%= type %>"></div>
+    <% } %>
+    <div class="form-group">
+        <label for="<%= prefix %>-weekday">Day of week</label>
+        <select class="form-control" id="<%= prefix %>-weekday" name="weekday">
+            <% ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].forEach((day, index) => { %><option value="<%= index %>"><%= day %></option><% }); %>
+        </select>
+    </div>
+</fieldset>
+<fieldset id="<%= prefix %>-individual" data-run-individual>
+    <legend class="h6">Individual sessions</legend>
+    <label for="<%= prefix %>-sessions">One session per line: YYYY-MM-DD HH:mm HH:mm</label>
+    <textarea class="form-control mb-2" id="<%= prefix %>-sessions" name="sessions" rows="6" maxlength="20000" aria-describedby="<%= prefix %>-sessions-help"><%= (run?.sessions || []).map(session => session.starts_local + ' ' + session.ends_local.slice(11)).join('\n') %></textarea>
+    <p class="small text-muted" id="<%= prefix %>-sessions-help">Example: 2027-01-12 18:00 19:00. Edit dates or times, add or remove lines. Sessions must end on the same day and must not overlap. Maximum 366 sessions.</p>
+</fieldset>
+<p class="small text-muted">The current price is the full-course price multiplied by remaining sessions, divided by all sessions, rounded once to the nearest penny. Sessions stop counting at their start time. Editing the session list recalculates the price using the new total.</p>

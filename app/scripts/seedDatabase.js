@@ -9,10 +9,23 @@ const { TABLES, SEEDED_KEY } = require('./seedTables');
 const DATA_FILE = path.join(__dirname, '..', 'seed', 'data.json');
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
-const MODELS = ['Facilities', 'OpeningHours', 'Courses', 'Sports', 'Settings', 'Roles', 'Profiles', 'AuditLog', 'Bookings'];
+const MODELS = ['Facilities', 'OpeningHours', 'Courses', 'Sports', 'Settings', 'Roles', 'Profiles', 'AuditLog', 'Bookings', 'CourseOrders'];
 
 function toDbValue(value) {
     return typeof value === 'string' && value.startsWith('\\x') ? Buffer.from(value.slice(2), 'hex') : value;
+}
+
+function remapValues(table, row, guidMaps) {
+    const values = { ...row };
+    for (const [column, source] of Object.entries(table.remap || {})) {
+        const remap = value => guidMaps[source].get(value) || value;
+        if (Array.isArray(values[column])) values[column] = values[column].map(remap);
+        else if (values[column]) values[column] = remap(values[column]);
+    }
+    for (const column of table.json || []) {
+        if (values[column] !== undefined) values[column] = JSON.stringify(values[column]);
+    }
+    return values;
 }
 
 function insertQuery(table, columns, upsert) {
@@ -37,10 +50,11 @@ async function seedKeyedTable(client, table, rows, guidMaps) {
         );
         let guid = existing.rows[0]?.guid;
         if (!guid) {
+            const values = remapValues(table, row, guidMaps);
             const columns = Object.keys(row).filter(column => !(table.skip || []).includes(column));
             const { rows: created } = await client.query(
                 `${insertQuery(table.name, columns)} RETURNING guid`,
-                columns.map(column => toDbValue(row[column]))
+                columns.map(column => toDbValue(values[column]))
             );
             guid = created[0]?.guid;
             inserted += 1;
@@ -53,10 +67,7 @@ async function seedKeyedTable(client, table, rows, guidMaps) {
 async function seedPlainTable(client, table, rows, guidMaps, firstRun) {
     let inserted = 0;
     for (const row of rows) {
-        const values = { ...row };
-        for (const [column, source] of Object.entries(table.remap || {})) {
-            if (values[column]) values[column] = guidMaps[source].get(values[column]) || values[column];
-        }
+        const values = remapValues(table, row, guidMaps);
         const columns = Object.keys(values);
         const result = await client.query(insertQuery(table.name, columns, firstRun ? table.upsert : null), columns.map(column => toDbValue(values[column])));
         inserted += result.rowCount;

@@ -158,8 +158,8 @@ test('facility create and update save resolved coordinates and expose lookup fai
             sendStatus(status) { result = status; }
         };
         await handler({ body }, res);
-        assert.equal(result, path.endsWith('/update') ? '/admin/facilities'
-            : `/admin/facilities?created=${guid}#facility-${guid}`);
+        assert.equal(result, path.endsWith('/update') ? `/admin/facilities?admin_saved=facility-updated&admin_saved_target=facility-${guid}#facility-${guid}`
+            : '/admin/facilities?admin_saved=facility-created');
         const saved = path.endsWith('/update') ? update.mock.calls[0].arguments[1] : create.mock.calls[0].arguments[0];
         assert.equal(saved.latitude, 51.5074);
         assert.equal(saved.longitude, -0.1278);

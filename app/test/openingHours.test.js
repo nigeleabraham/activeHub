@@ -151,15 +151,43 @@ test('administrator template forms save independent daylight switches and render
         body[`day_${day}_opens_at`] = '08:00';
         body[`day_${day}_closes_at`] = '18:00';
     }
-    await handler({ body }, { redirect(url) { assert.equal(url, '/admin/opening-hours'); } });
+    await handler({ body }, { redirect(url) { assert.equal(url, '/admin/opening-hours?admin_saved=template-created'); } });
     assert.equal(create.mock.calls[0].arguments[0].dawn_override, true);
     assert.equal(create.mock.calls[0].arguments[0].dusk_override, false);
+    const guid = '123e4567-e89b-42d3-a456-426614174000';
+    const update = t.mock.method(Hours, 'update', async () => ({ guid }));
+    const updateHandler = admin.stack.findLast(layer => layer.route?.path === '/opening-hours/update').route.stack[0].handle;
+    let location;
+    let status;
+    const response = { redirect(url) { location = url; }, sendStatus(value) { status = value; } };
+    await updateHandler({ body: { ...body, guid } }, response);
+    assert.equal(location, `/admin/opening-hours?admin_saved=template-updated&admin_saved_target=template-${guid}#template-${guid}`);
+    update.mock.mockImplementation(async () => null);
+    location = undefined;
+    await updateHandler({ body: { ...body, guid } }, response);
+    assert.equal(status, 404);
+    assert.equal(location, undefined);
     const html = await ejs.renderFile(path.join(__dirname, '../views/opening-hours.ejs'), {
         templates: [{ guid: 'test', ...create.mock.calls[0].arguments[0] }],
         weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
         activePage: 'opening-hours', currentProfile: null, isAdmin: true, canSwitchRole: false, area: 'admin'
     });
     assert.ok(html.includes('name="dawn_override" checked'));
+    assert.match(html, /class="d-flex align-items-center mt-3" data-template-actions/);
+    assert.match(html, /id="template-test"/);
+    assert.match(html, /data-template-edit-feedback/);
+    assert.match(html, /<h3 class="h5 mb-0 mr-3 text-break">Test daylight<\/h3>/);
+    assert.match(html, /<p class="text-muted mb-2">/);
+    assert.match(html, /<form class="mt-3" method="POST" action="\/admin\/opening-hours\/update"/);
+    assert.match(html, /class="btn btn-primary" type="submit">Save changes/);
+    assert.match(html, /data-templates-directory/);
+    assert.match(html, /data-template-list/);
+    assert.match(html, /data-template-count/);
+    assert.match(html, /data-template-guid="test"/);
+    assert.match(html, /data-template-name="Test daylight"/);
+    assert.match(html, /data-template-error role="alert" tabindex="-1" hidden/);
+    assert.match(html, /data-template-feedback role="status" aria-live="polite"/);
+    assert.doesNotMatch(html, /justify-content-between align-items-center" style="row-gap/);
     assert.ok(!html.includes('name="dusk_override" checked'));
     assert.equal((html.match(/name="dawn_override"/g) || []).length, 2);
     assert.equal((html.match(/name="dusk_override"/g) || []).length, 2);

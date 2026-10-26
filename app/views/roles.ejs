@@ -11,6 +11,7 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
@@ -18,18 +19,20 @@
                 <h1 class="h2 mb-1">Roles</h1>
                 <p class="text-muted mb-0">Create roles and choose what each role is responsible for</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <p class="alert alert-info small" role="note">
-            The admin area is currently open to Administrators only, so responsibilities don't yet change what a role can reach.
-            They are saved now and will apply to features outside the admin area as they are added.
+            Every role inherits Resident's base responsibilities. Configure only the additional responsibilities for other roles.
+            Login starts with Administrator when assigned; otherwise it uses the assigned role with the most additional responsibilities, with alphabetical ties.
+            Responsibilities control access to the matching administration pages and actions.
+            Settings and financial reviews remain Administrator-only.
         </p>
 
         <% const messages = {
             'invalid-role': 'Enter a role name (up to 60 characters) and choose only listed responsibilities.',
             'duplicate-role': 'A role with that name already exists.',
             'system-role': 'The Administrator role has every responsibility and cannot be edited or deleted.',
+            'resident-role': 'Resident is the base role and cannot be renamed or deleted. Its responsibilities can be edited.',
             'role-in-use': 'This role is assigned to profiles. Move those profiles to another role before deleting it.'
         }; %>
         <% if (error && messages[error]) { %>
@@ -104,7 +107,7 @@
                                     <% if (!role.is_system) { %>
                                     <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-role-<%= role.guid %>" aria-label="Edit <%= role.name %>">Edit</button>
                                     <% } %>
-                                    <% if (!role.is_system) { %>
+                                    <% if (!role.is_system && role.name !== 'Resident') { %>
                                     <form method="POST" action="/admin/roles/destroy">
                                         <input type="hidden" name="guid" value="<%= role.guid %>">
                                         <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= role.name %>">Delete</button>
@@ -118,7 +121,7 @@
                                     <input type="hidden" name="guid" value="<%= role.guid %>">
                                     <div class="form-group">
                                         <label for="edit-role-name-<%= role.guid %>">Name</label>
-                                        <input class="form-control" id="edit-role-name-<%= role.guid %>" name="name" type="text" maxlength="60" value="<%= role.name %>" required<%= locked ? ' readonly' : '' %>>
+                                        <input class="form-control" id="edit-role-name-<%= role.guid %>" name="name" type="text" maxlength="60" value="<%= role.name %>" required<%= locked || role.name === 'Resident' ? ' readonly' : '' %>>
                                     </div>
                                     <div class="form-group">
                                         <label for="edit-role-description-<%= role.guid %>">Description</label>

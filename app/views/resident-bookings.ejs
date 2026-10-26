@@ -24,6 +24,7 @@
         .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
         .text-muted { color: #505a5f !important; }
     </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 
 <body>
@@ -37,6 +38,7 @@
 
     <header class="page-head">
         <div class="container">
+            <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
             <h1 class="mb-2">Bookings</h1>
             <p class="lead mb-0">See your upcoming bookings and book a court or space.</p>

@@ -25,4 +25,11 @@ function parseBookingMonths(value) {
     return [...new Set(values.map(Number))].sort((a, b) => a - b);
 }
 
-module.exports = { isValidEmail, parseDeclineComment, parseBookingMonths };
+function isValidCourseDates(startDate, endDate) {
+    const validDate = value => typeof value === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) &&
+        !value.startsWith('0000') && Number.isFinite(Date.parse(value)) &&
+        new Date(value).toISOString().slice(0, 10) === value;
+    return validDate(startDate) && validDate(endDate) && endDate >= startDate;
+}
+
+module.exports = { isValidEmail, parseDeclineComment, parseBookingMonths, isValidCourseDates };

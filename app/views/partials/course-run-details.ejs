@@ -1,0 +1,65 @@
+<% const spaces = run.spaces_remaining ?? run.capacity;
+const schedules = [...new Set(run.sessions.map(session => {
+    const day = new Date(session.starts_local.slice(0, 10) + 'T12:00:00Z')
+        .toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
+    return `${day}, ${session.starts_local.slice(11)}–${session.ends_local.slice(11)}`;
+}))]; %>
+<h4 class="h5"><%= schedules.length === 1 ? schedules[0] : run.name %></h4>
+<% if (schedules.length === 1) { %><p class="small mb-1"><%= run.name %></p><% } %>
+<p class="mb-2"><%= run.facility_name %></p>
+<% if (run.sessions.length) {
+    const lengths = run.sessions.map(session =>
+        (Date.parse(session.ends_local.replace(' ', 'T') + ':00Z') -
+            Date.parse(session.starts_local.replace(' ', 'T') + ':00Z')) / 60000);
+    const shortest = Math.min(...lengths);
+    const longest = Math.max(...lengths);
+%>
+    <p class="mb-1">Session length: <%= shortest === longest ? shortest : `${shortest}–${longest}` %> <%= longest === 1 ? 'minute' : 'minutes' %>.</p>
+<% } %>
+<p class="mb-2"><strong class="h4">&pound;<%= (run.current_price_pence / 100).toFixed(2) %></strong> for <%= run.remaining_sessions %> remaining sessions</p>
+<% if (spaces <= 0) { %>
+    <p class="font-weight-bold text-danger" role="status"><span class="bg-danger text-white px-2 rounded">Sold out</span></p>
+<% } else { %>
+    <p class="small mb-2">Spaces remaining: <%= spaces %>.</p>
+<% } %>
+<details class="mb-3">
+    <summary>Dates and price details</summary>
+    <p class="mt-2 mb-1">Full course: &pound;<%= (run.full_price_pence / 100).toFixed(2) %> for <%= run.total_sessions %> sessions.</p>
+    <p class="small">Session dates and times (UK time)</p>
+    <div class="table-responsive mt-2">
+        <table class="table table-sm">
+            <caption class="sr-only">Sessions for <%= run.name %> at <%= run.facility_name %>. Times are UK local time.</caption>
+            <thead>
+                <tr><th scope="col">Date</th><th scope="col">Time</th><th scope="col">Location</th></tr>
+            </thead>
+            <tbody>
+                <% run.sessions.forEach(session => {
+                    const date = session.starts_local.slice(0, 10);
+                    const day = new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
+                %>
+                    <tr>
+                        <td><%= day %>, <%= date.split('-').reverse().join('/') %></td>
+                        <td class="text-nowrap"><%= session.starts_local.slice(11) %>–<%= session.ends_local.slice(11) %></td>
+                        <td><%= run.facility_name %></td>
+                    </tr>
+                <% }); %>
+            </tbody>
+        </table>
+    </div>
+</details>
+<% if (run.guid && locals.currentProfile && spaces > 0) { %>
+    <form class="border-top pt-3" method="POST" action="/basket/add">
+        <input type="hidden" name="run_guid" value="<%= run.guid %>">
+        <input type="hidden" name="return_to" value="<%= locals.returnTo || '/courses' %>">
+        <label class="font-weight-bold" for="attendee-<%= run.guid %>">Who is attending?</label>
+        <select class="form-control mb-2" id="attendee-<%= run.guid %>" name="member_guid">
+            <option value="self"><%= currentProfile.name %> (myself)</option>
+            <% (locals.familyMembers || []).forEach(member => { %>
+                <option value="<%= member.guid %>"><%= member.name %></option>
+            <% }); %>
+        </select>
+        <button class="btn btn-primary btn-block" type="submit">Add to basket &mdash; &pound;<%= (run.current_price_pence / 100).toFixed(2) %></button>
+        <button class="btn btn-outline-primary btn-block" type="submit" name="checkout" value="1"><%= locals.basketItemCount > 0 ? 'Add to basket and checkout' : 'Checkout' %></button>
+        <a class="small d-inline-block mt-2" href="/profile#my-children">Manage my children</a>
+    </form>
+<% } %>

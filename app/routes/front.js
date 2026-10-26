@@ -2,11 +2,13 @@ const crypto = require('crypto');
 const express = require('express');
 const Facilities = require('./../models/Facilities');
 const Courses = require('./../models/Courses');
+const CourseOrders = require('../models/CourseOrders');
 const Sports = require('./../models/Sports');
 const Bookings = require('./../models/Bookings');
 const Credits = require('./../models/Credits');
 const OpeningHours = require('./../models/OpeningHours');
 const Profiles = require('./../models/Profiles');
+const ProfileSections = require('../models/ProfileSections');
 const Roles = require('./../models/Roles');
 const Settings = require('./../models/Settings');
 const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
@@ -14,19 +16,39 @@ const AuditLog = require('./../models/AuditLog');
 const auth = require('./../middleware/auth');
 const { parseFacilityInput, resolveFacilityCoordinates } = require('./../facilityUtils');
 const { isValidEmail, parseDeclineComment, parseBookingMonths } = require('./../validation');
+const { parseRunInput } = require('../courseRuns');
 
 const router = express.Router();
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function parseCourseInput(body, { requireFacility = true } = {}) {
+function parseCourseInput(body) {
     const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const ids = value => value === undefined ? [] : Array.isArray(value) ? value : [value];
+    const sportGuids = ids(body.sport_guids);
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 160 ||
-        (requireFacility && (typeof body.facility_guid !== 'string' || !GUID_PATTERN.test(body.facility_guid))) ||
+        !sportGuids.length || sportGuids.length > 100 ||
+        sportGuids.some(guid => typeof guid !== 'string' || !GUID_PATTERN.test(guid)) ||
         description.length > 10000) {
         return null;
     }
-    return { name: body.name.trim(), ...(requireFacility ? { facility_guid: body.facility_guid } : {}), description: description || null };
+    let config = {};
+    if (body.description_sections !== undefined) {
+        try {
+            config = require('../courseDescriptions').descriptionConfig(
+                body.description_sport_guid || null, JSON.parse(body.description_overrides || '{}'),
+                JSON.parse(body.description_sections), sportGuids);
+        } catch (error) {
+            console.warn('Invalid course description sections:', error.message);
+            return null;
+        }
+    }
+    return { name: body.name.trim(), sport_guids: [...new Set(sportGuids)], description: description || null, ...config };
+}
+
+function parseSportSections(body) {
+    if (body.course_description_sections === undefined) return undefined;
+    return require('../courseDescriptions').sections(JSON.parse(body.course_description_sections));
 }
 
 function parseOpeningHoursInput(body) {
@@ -110,19 +132,20 @@ async function parseFacilityForm(body) {
 async function recordAudit(profile, entry) {
     try {
         // While an administrator is viewing as another role, the audit trail still names them as the administrator.
-        await AuditLog.record(profile.actualRole ? { ...profile, role: profile.actualRole } : profile, entry);
+        await AuditLog.record(profile, entry);
     } catch (error) {
         console.error('Unable to write audit log:', error);
     }
 }
 
-// Everything under /admin is administrator-only. Residents and coaches never reach these routes.
+// Management areas use active-role permissions; settings and financial reviews are Administrator-only.
 const ADMIN_LINKS = [
     { href: '/admin/facilities', title: 'Facilities', text: 'Venues, descriptions and opening hours templates' },
     { href: '/admin/courses', title: 'Courses', text: 'Courses offered at each facility' },
     { href: '/admin/sports', title: 'Sports', text: 'The sports facilities can offer' },
     { href: '/admin/opening-hours', title: 'Opening hours', text: 'Weekly schedules and exceptions' },
-    { href: '/admin/bookings', title: 'Bookings', text: 'Book and manage slots for any profile' },
+    { href: '/admin/bookings', title: 'Bookings management', text: 'Book and manage slots for any profile' },
+    { href: '/admin/court-configuration', title: 'Court configuration', text: 'Configure courts, shared resources and seasonal booking months' },
     { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
     { href: '/admin/credit-refunds', title: 'Credit refunds', text: 'Review requests to transfer booking credit to a bank account' },
     { href: '/admin/refunds', title: 'Refunds', text: 'Find a booking and refund it as account credit' },
@@ -132,8 +155,12 @@ const ADMIN_LINKS = [
     { href: '/admin/audit', title: 'Audit', text: 'A record of who changed what, and when' }
 ];
 const admin = express.Router();
-admin.use(auth.requireAdministrator, (req, res, next) => {
+admin.use(auth.requireAdminAccess, async (req, res, next) => {
     res.locals.area = 'admin';
+    if (req.method === 'GET') {
+        const [settings, logo] = await Promise.all([Settings.getAll(), Settings.getLogo()]);
+        res.locals.adminBrand = { title: settings.site_title, hasLogo: Boolean(logo) };
+    }
     next();
 });
 
@@ -151,6 +178,7 @@ const MANAGEMENT_ACTIONS = {
     '/facilities/courses/destroy': { action: 'course.delete', entity: 'course', label: b => findLabel(Courses.findAll(), b.guid) },
     '/sports': { action: 'sport.create', entity: 'sport', label: labelFrom },
     '/sports/update': { action: 'sport.update', entity: 'sport', label: labelFrom },
+    '/sports/course-defaults': { action: 'sport.update', entity: 'sport', label: b => findLabel(Sports.findAll(), b.guid) },
     '/sports/destroy': { action: 'sport.delete', entity: 'sport', label: b => findLabel(Sports.findAll(), b.guid) },
     '/opening-hours': { action: 'opening_hours.create', entity: 'opening_hours', label: labelFrom },
     '/opening-hours/update': { action: 'opening_hours.update', entity: 'opening_hours', label: labelFrom },
@@ -204,8 +232,10 @@ router.post('/login', async (req, res) => {
     try {
         const profile = await Profiles.findByGuid(guid);
         if (!profile) return res.sendStatus(404);
+        profile.role = await Roles.highestFor(profile.roles || [profile.role]);
         profile.permissions = await Roles.permissionsFor(profile.role);
         auth.setSession(res, profile.guid);
+        auth.setViewAs(res, profile.guid, profile.role);
         await recordAudit(profile, { action: 'auth.login', entityType: 'profile', entityGuid: profile.guid, entityLabel: profile.name });
         return res.redirect('/');
     } catch (error) {
@@ -223,17 +253,18 @@ router.post('/logout', async (req, res) => {
 });
 
 router.post('/view-as', auth.requireLogin, async (req, res) => {
-    if (!req.realProfile || req.realProfile.role !== auth.ADMINISTRATOR) return res.sendStatus(403);
+    if (!req.realProfile) return res.sendStatus(403);
     const role = typeof req.body.role === 'string' ? req.body.role : '';
     try {
-        if (!role || role === auth.ADMINISTRATOR) {
+        const assigned = await auth.switchableRoles(req.realProfile);
+        if (!role || role === req.realProfile.role) {
             auth.clearViewAs(res);
-            await recordAudit(req.realProfile, { action: 'auth.view_as', entityType: 'role', entityLabel: auth.ADMINISTRATOR, details: { view_as: auth.ADMINISTRATOR } });
+            await recordAudit(req.profile, { action: 'auth.view_as', entityType: 'role', entityLabel: req.realProfile.role, details: { view_as: req.realProfile.role } });
             return res.redirect('/');
         }
-        if (!(await Roles.names()).includes(role)) return res.sendStatus(400);
+        if (!assigned.includes(role)) return res.sendStatus(403);
         auth.setViewAs(res, req.realProfile.guid, role);
-        await recordAudit(req.realProfile, { action: 'auth.view_as', entityType: 'role', entityLabel: role, details: { view_as: role } });
+        await recordAudit(req.profile, { action: 'auth.view_as', entityType: 'role', entityLabel: role, details: { view_as: role } });
         return res.redirect('/');
     } catch (error) {
         return res.sendStatus(500);
@@ -562,6 +593,7 @@ const externalRefundPence = booking => booking.amount_paid_pence - (booking.cred
 const isExternallyRefundable = booking => externalRefundPence(booking) > 0 && !booking.credited_at;
 
 const cancelBookingHandler = async (req, res) => {
+    if (req.body.credit === '1' && !auth.isAdministrator(req.profile)) return res.sendStatus(403);
     const { facility_guid, booking_guid } = req.body;
     if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(booking_guid || '')) {
         return res.sendStatus(400);
@@ -580,7 +612,7 @@ const cancelBookingHandler = async (req, res) => {
             action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
             details: {
                 reference: booking.booking_ref, option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_for: booking.profile_name,
-                ...(creditPence ? { credited: formatPounds(creditPence), refundable: req.body.refundable === '1' } : {})
+                ...(creditPence ? { credited: formatPounds(creditPence), card_portion_refundable: req.body.refundable === '1' } : {})
             }
         });
         // In-page cancels update the list without a reload.
@@ -657,7 +689,7 @@ admin.post('/refunds/refund', async (req, res) => {
         if (!credited) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
         await recordAudit(req.profile, {
             action: 'booking.credit', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
-            details: { ...details, credited: formatPounds(credited), refundable: req.body.refundable === '1' }
+            details: { ...details, credited: formatPounds(credited), card_portion_refundable: req.body.refundable === '1' }
         });
         return res.redirect('/admin/refunds?' + withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
     } catch (error) {
@@ -715,7 +747,7 @@ admin.post('/credit-requests/decide', async (req, res) => {
         await recordAudit(req.profile, {
             action: approve ? 'credit-request.approve' : 'credit-request.decline', entityType: 'booking', entityGuid: result.booking_guid,
             entityLabel: 'Booking credit request',
-            details: { reference: result.booking_ref, reason: result.reason, note: result.note, ...(approve ? { credited: formatPounds(result.credited), refundable: result.refundable, slot_approved: result.slot_approved || false, auto_approved_count: result.auto_approved_count || 0, starts_at: result.starts_at, ends_at: result.ends_at } : { decline_comment: declineComment }) }
+            details: { reference: result.booking_ref, reason: result.reason, note: result.note, ...(approve ? { credited: formatPounds(result.credited), card_portion_refundable: result.refundable, refundable_credit: formatPounds(result.refundable_pence || 0), non_refundable_credit: formatPounds(result.non_refundable_pence || 0), slot_approved: result.slot_approved || false, auto_approved_count: result.auto_approved_count || 0, starts_at: result.starts_at, ends_at: result.ends_at } : { decline_comment: declineComment }) }
         });
         return res.redirect(`/admin/credit-requests?${new URLSearchParams({ decision: approve ? 'approved' : 'declined', ref: result.booking_ref })}`);
     } catch (error) {
@@ -802,12 +834,18 @@ router.post('/bookings/checkout', residentCheckoutHandler);
 router.post('/bookings/pay', residentPayHandler);
 router.get('/profile', async (req, res) => {
     try {
-        const [settings, logo, profile] = await Promise.all([
-            Settings.getAll(), Settings.getLogo(), Profiles.findByGuid(req.profile.guid)
+        const [settings, logo, profile, sports, familyMembers] = await Promise.all([
+            Settings.getAll(), Settings.getLogo(), Profiles.findByGuid(req.profile.guid), Sports.findAll(),
+            CourseOrders.familyMembers(req.profile.guid)
         ]);
         if (!profile) return res.sendStatus(404);
         return res.render('resident-profile', {
-            activePage: 'profile', siteTitle: settings.site_title, hasLogo: Boolean(logo), profile,
+            activePage: 'profile', siteTitle: settings.site_title, hasLogo: Boolean(logo), profile, sports,
+            membershipScheme: settings.membership_scheme,
+            familyMembers,
+            familySaved: req.query.family_saved === '1',
+            childSaved: req.query.child_saved === '1',
+            familyError: req.query.family_error === '1',
             saved: req.query.saved === '1',
             error: ['invalid', 'duplicate-email'].includes(req.query.error) ? req.query.error : ''
         });
@@ -867,22 +905,88 @@ router.post(['/credits-and-refunds/credit-refunds', '/profile/credit-refunds'], 
 });
 
 router.post('/profile', async (req, res) => {
+    const section = req.body.section;
+    const invalid = () => section === undefined ? res.redirect('/profile?error=invalid')
+        : res.status(422).json({ error: 'Check the entered values and answer all questions in this section.' });
+    if (section !== undefined) {
+        if (!ProfileSections.fields(section)) return invalid();
+        req.body = ProfileSections.input(req.body, section);
+    }
+    const submittedInterests = req.body.interest_sport_guids;
+    const interests = submittedInterests === undefined ? [] :
+        (Array.isArray(submittedInterests) ? submittedInterests : [submittedInterests]);
+    if (interests.some(value => typeof value !== 'string' || !GUID_PATTERN.test(value))) {
+        return invalid();
+    }
+    const interestSportGuids = [...new Set(interests.map(value => value.toLowerCase()))];
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
-    if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email)) {
-        return res.redirect('/profile?error=invalid');
+    const medicalConcern = req.body.medical_concern;
+    const activityLimitation = req.body.activity_limitation;
+    if (!['yes', 'no'].includes(medicalConcern) ||
+        !['limited_a_lot', 'limited_a_little', 'no'].includes(activityLimitation)) {
+        return invalid();
+    }
+    let conditions = [];
+    let other = null;
+    if (medicalConcern === 'yes') {
+        const submitted = req.body.medical_conditions;
+        conditions = Array.isArray(submitted) ? submitted : [submitted];
+        if (!conditions.length || conditions.some(value => !['asthma', 'epilepsy', 'epipen', 'other'].includes(value))) {
+            return invalid();
+        }
+        conditions = [...new Set(conditions)];
+        if (conditions.includes('other')) {
+            if (typeof req.body.medical_other !== 'string') return invalid();
+            other = req.body.medical_other.trim();
+            if (!other || other.length > 1000) return invalid();
+        }
+    }
+    const contact = {};
+    for (const field of ['telephone', 'emergency_contact_name', 'emergency_contact_telephone',
+        'address_line_1', 'address_line_2', 'town_city', 'county', 'postcode', 'membership_number']) {
+        const value = req.body[field];
+        if (value !== undefined && typeof value !== 'string') return invalid();
+        contact[field] = value?.trim() || null;
+    }
+    const validTelephone = value => value === null || (value.length <= 40 && /^[+0-9().\s-]+$/.test(value) && /[0-9]/.test(value));
+    if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email) ||
+        !validTelephone(contact.telephone) || !validTelephone(contact.emergency_contact_telephone) ||
+        (contact.emergency_contact_name?.length || 0) > 120 ||
+        ['address_line_1', 'address_line_2'].some(field => (contact[field]?.length || 0) > 160) ||
+        ['town_city', 'county'].some(field => (contact[field]?.length || 0) > 120) ||
+        (contact.postcode?.length || 0) > 20 || (contact.membership_number?.length || 0) > 120) {
+        return invalid();
     }
     try {
+        if (interestSportGuids.length) {
+            const sports = await Sports.findAll();
+            if (interestSportGuids.some(guid => !sports.some(sport => sport.guid === guid))) {
+                return invalid();
+            }
+        }
         const existing = await Profiles.findByGuid(req.profile.guid);
         if (!existing) return res.sendStatus(404);
-        const updated = await Profiles.updateDetails(req.profile.guid, { name, email });
+        const details = { name, email, ...contact,
+            medical_concern: medicalConcern === 'yes', medical_conditions: conditions,
+            medical_other: other, activity_limitation: activityLimitation, interest_sport_guids: interestSportGuids };
+        const updated = section === undefined ? await Profiles.updateDetails(req.profile.guid, details)
+            : await Profiles.updateDetails(req.profile.guid, details, section);
+        if (!updated) return res.sendStatus(404);
         await recordAudit(req.profile, {
             action: 'profile.update', entityType: 'profile', entityGuid: updated.guid, entityLabel: updated.name,
-            details: { from: { name: existing.name, email: existing.email }, to: { name, email }, self_service: true }
+            details: section === undefined
+                ? { from: { name: existing.name, email: existing.email }, to: { name, email }, self_service: true }
+                : { section, self_service: true }
         });
-        return res.redirect('/profile?saved=1');
+        return section === undefined ? res.redirect('/profile?saved=1') : res.json({
+            saved: true, values: Object.fromEntries(ProfileSections.fields(section).map(field => [field, details[field]]))
+        });
     } catch (error) {
-        return error.code === '23505' ? res.redirect('/profile?error=duplicate-email') : res.sendStatus(500);
+        console.error('Unable to update customer profile:', error);
+        if (error.code === '23505') return section === undefined ? res.redirect('/profile?error=duplicate-email')
+            : res.status(422).json({ error: 'That email address is already used by another profile.' });
+        return res.sendStatus(500);
     }
 });
 
@@ -956,11 +1060,14 @@ router.get('/', async (req, res) => {
 });
 router.get('/facilities', async (req, res) => {
     try {
-        const [settings, hasLogo, facilityRows, sports] = await Promise.all([
+        const [settings, hasLogo, facilityRows, sports, courseRows, faqs, familyMembers] = await Promise.all([
             Settings.getAll(),
             Settings.getLogo().then(Boolean),
             Facilities.findAll(),
-            Sports.findAll()
+            Sports.findAll(),
+            Courses.findAll({ availableOnly: true }),
+            Courses.findFaqs(),
+            CourseOrders.familyMembers(req.profile.guid)
         ]);
         const facilities = await Promise.all(facilityRows.map(async facility => {
             const week = await OpeningHours.getSchedules(facility.opening_hours_template_guid, new Date(), 7, facility);
@@ -977,7 +1084,13 @@ router.get('/facilities', async (req, res) => {
                 external_booking_url: isWebUrl ? facility.external_booking_url : null,
                 booking_mode: facility.booking_mode,
                 sports: facility.sports,
-                courses: facility.courses,
+                courses: courseRows.filter(course => course.facility_guids.includes(facility.guid)).map(course => ({
+                    ...course,
+                    runs: (course.runs || []).filter(run => run.facility_guid === facility.guid),
+                    sports: sports.filter(sport => course.sport_guids.includes(sport.guid)).map(sport => ({
+                        ...sport, faqs: faqs.filter(faq => faq.sport_guid === sport.guid)
+                    }))
+                })),
                 today: week ? week[0] : null,
                 week
             };
@@ -988,13 +1101,35 @@ router.get('/facilities', async (req, res) => {
             siteTitle: settings.site_title,
             hasLogo,
             facilities,
+            familyMembers,
             sports: sports.filter(sport => offeredSportGuids.has(sport.guid))
         });
     } catch (error) {
         res.sendStatus(500);
     }
 });
-router.get('/courses', (req, res) => res.redirect('/admin/courses'));
+router.get('/courses', async (req, res) => {
+    try {
+        const [settings, logo, courses, facilities, sports, faqs, familyMembers] = await Promise.all([
+            Settings.getAll(), Settings.getLogo(), Courses.findAll({ availableOnly: true }), Facilities.findAll(), Sports.findAll(), Courses.findFaqs(),
+            CourseOrders.familyMembers(req.profile.guid)
+        ]);
+        const courseGroups = sports.map(sport => ({
+            guid: sport.guid, name: sport.name,
+            courses: courses.filter(course => course.sport_guids.includes(sport.guid)),
+            faqs: faqs.filter(faq => faq.sport_guid === sport.guid)
+        })).filter(group => group.courses.length);
+        const unassigned = courses.filter(course => !sports.some(sport => course.sport_guids.includes(sport.guid)));
+        if (unassigned.length) courseGroups.push({ guid: 'unassigned', name: 'Sport to be confirmed', courses: unassigned, faqs: [] });
+        res.render('resident-courses', {
+            activePage: 'courses', siteTitle: settings.site_title, hasLogo: Boolean(logo),
+            courses, facilities, courseGroups, familyMembers
+        });
+    } catch (error) {
+        console.error('Unable to load customer courses:', error);
+        res.sendStatus(500);
+    }
+});
 router.get('/book', (req, res) => res.redirect('/admin/bookings'));
 // Old admin bookmarks.
 for (const path of ['/sports', '/opening-hours', '/profiles', '/roles', '/audit']) {
@@ -1023,11 +1158,12 @@ admin.get('/profiles', async (req, res) => {
 function parseProfileInput(body, roleNames) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const submitted = body.roles === undefined ? [] : Array.isArray(body.roles) ? body.roles : [body.roles];
     if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email) ||
-        !roleNames.includes(body.role)) {
+        submitted.some(role => !roleNames.includes(role))) {
         return null;
     }
-    return { name, email, role: body.role };
+    return { name, email, roles: [...new Set(['Resident', ...submitted])] };
 }
 
 function parseRoleInput(body) {
@@ -1070,6 +1206,7 @@ admin.post('/roles/update', async (req, res) => {
         if (!existing) return res.sendStatus(404);
         // The Administrator role has every permission by definition and cannot be edited.
         if (existing.is_system) return res.redirect('/admin/roles?error=system-role');
+        if (existing.name === 'Resident' && role.name !== 'Resident') return res.redirect('/admin/roles?error=resident-role');
         await Roles.update(guid, role);
         await recordAudit(req.profile, {
             action: 'role.update', entityType: 'role', entityGuid: guid, entityLabel: role.name,
@@ -1088,6 +1225,7 @@ admin.post('/roles/destroy', async (req, res) => {
         const existing = await Roles.findByGuid(guid);
         if (!existing) return res.sendStatus(404);
         if (existing.is_system) return res.redirect('/admin/roles?error=system-role');
+        if (existing.name === 'Resident') return res.redirect('/admin/roles?error=resident-role');
         if (existing.member_count > 0) return res.redirect('/admin/roles?error=role-in-use');
         await Roles.remove(guid);
         await recordAudit(req.profile, { action: 'role.delete', entityType: 'role', entityGuid: guid, entityLabel: existing.name });
@@ -1102,10 +1240,11 @@ admin.post('/profiles', async (req, res) => {
     if (!profile) return res.redirect('/admin/profiles?error=invalid-profile');
     try {
         const created = await Profiles.create(profile);
-        await recordAudit(req.profile, { action: 'profile.create', entityType: 'profile', entityGuid: created.guid, entityLabel: created.name, details: { email: created.email, role: created.role } });
-        return res.redirect('/admin/profiles');
+        await recordAudit(req.profile, { action: 'profile.create', entityType: 'profile', entityGuid: created.guid, entityLabel: created.name, details: { email: created.email, roles: created.roles } });
+        return res.redirect('/admin/profiles?admin_saved=profile-created');
     } catch (error) {
-        return res.redirect('/admin/profiles?error=duplicate-email');
+        console.error('Unable to create profile:', error);
+        return res.redirect(`/admin/profiles?error=${error.code === '23505' ? 'duplicate-email' : error.code === '23503' ? 'invalid-profile' : 'save-failed'}`);
     }
 });
 
@@ -1116,18 +1255,25 @@ admin.post('/profiles/update', async (req, res) => {
     try {
         const existing = await Profiles.findByGuid(guid);
         if (!existing) return res.sendStatus(404);
-        if (existing.role === auth.ADMINISTRATOR && profile.role !== auth.ADMINISTRATOR &&
+        if ((existing.roles || [existing.role]).includes(auth.ADMINISTRATOR) && !profile.roles.includes(auth.ADMINISTRATOR) &&
             await Profiles.countAdministrators() <= 1) {
             return res.redirect('/admin/profiles?error=last-administrator');
         }
         const updated = await Profiles.update(guid, profile);
+        if (!updated) return res.sendStatus(404);
         await recordAudit(req.profile, {
             action: 'profile.update', entityType: 'profile', entityGuid: guid, entityLabel: updated.name,
-            details: { from: { name: existing.name, email: existing.email, role: existing.role }, to: profile }
+            details: { from: { name: existing.name, email: existing.email, roles: existing.roles || [existing.role] }, to: profile }
         });
-        return res.redirect('/admin/profiles');
+        if (guid === req.profile.guid && !profile.roles.includes(req.profile.role)) {
+            auth.clearViewAs(res);
+            return res.redirect('/profile?saved=1');
+        }
+        return res.redirect(`/admin/profiles?admin_saved=profile-updated&admin_saved_target=profile-${guid}#profile-${guid}`);
     } catch (error) {
-        return res.redirect('/admin/profiles?error=duplicate-email');
+        if (error.code === 'LAST_ADMINISTRATOR') return res.redirect('/admin/profiles?error=last-administrator');
+        console.error('Unable to update profile:', error);
+        return res.redirect(`/admin/profiles?error=${error.code === '23505' ? 'duplicate-email' : error.code === '23503' ? 'invalid-profile' : 'save-failed'}`);
     }
 });
 
@@ -1138,13 +1284,15 @@ admin.post('/profiles/destroy', async (req, res) => {
         const existing = await Profiles.findByGuid(guid);
         if (!existing) return res.sendStatus(404);
         if (guid === req.profile.guid) return res.redirect('/admin/profiles?error=delete-self');
-        if (existing.role === auth.ADMINISTRATOR && await Profiles.countAdministrators() <= 1) {
+        if ((existing.roles || [existing.role]).includes(auth.ADMINISTRATOR) && await Profiles.countAdministrators() <= 1) {
             return res.redirect('/admin/profiles?error=last-administrator');
         }
-        await Profiles.remove(guid);
-        await recordAudit(req.profile, { action: 'profile.delete', entityType: 'profile', entityGuid: guid, entityLabel: existing.name, details: { email: existing.email, role: existing.role } });
+        if (!await Profiles.remove(guid, req.profile.name)) return res.sendStatus(404);
+        await recordAudit(req.profile, { action: 'profile.delete', entityType: 'profile', entityGuid: guid, entityLabel: existing.name, details: { email: existing.email, roles: existing.roles || [existing.role] } });
         return res.redirect('/admin/profiles');
     } catch (error) {
+        if (error.code === 'LAST_ADMINISTRATOR') return res.redirect('/admin/profiles?error=last-administrator');
+        console.error('Unable to delete profile and cancel associated activity:', error);
         return res.sendStatus(500);
     }
 });
@@ -1168,6 +1316,8 @@ admin.get('/settings', async (req, res) => {
             maxLength: Settings.SITE_TITLE_MAX_LENGTH,
             organisationName: settings.organisation_name,
             organisationError: req.query.error === 'organisation',
+            membershipScheme: settings.membership_scheme,
+            membershipError: req.query.error === 'membership',
             creditRequestDays: await Settings.getCreditRequestDays(),
             autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
             creditLifetimeDays: settings.credit_lifetime_days,
@@ -1206,6 +1356,23 @@ admin.post('/settings/logo/remove', async (req, res) => {
         await recordAudit(req.profile, { action: 'settings.logo_remove', entityType: 'setting', entityLabel: 'site_logo' });
         return res.redirect('/admin/settings?saved=1');
     } catch (error) {
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/membership-scheme', async (req, res) => {
+    const name = typeof req.body.membership_scheme === 'string' ? req.body.membership_scheme.trim().replace(/\s+/g, ' ') : '';
+    if (!name || name.length > Settings.SITE_TITLE_MAX_LENGTH) return res.redirect('/admin/settings?error=membership');
+    try {
+        const previous = (await Settings.getAll()).membership_scheme;
+        await Settings.set('membership_scheme', name);
+        await recordAudit(req.profile, {
+            action: 'settings.update', entityType: 'setting', entityLabel: 'membership_scheme',
+            details: { from: previous, to: name }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save membership scheme:', error);
         return res.sendStatus(500);
     }
 });
@@ -1261,7 +1428,10 @@ admin.get('/audit', async (req, res) => {
     }
 });
 
-admin.get('/', (req, res) => res.render('admin-home', { activePage: 'admin-home', links: ADMIN_LINKS }));
+admin.get('/', (req, res) => res.render('admin-home', {
+    activePage: 'admin-home',
+    links: ADMIN_LINKS.filter(link => auth.canAccessAdmin(req.profile, link.href.slice('/admin'.length)))
+}));
 
 admin.get('/facilities', async (req, res) => {
     try {
@@ -1284,8 +1454,8 @@ admin.post('/facilities', async (req, res) => {
     try {
         const facility = await parseFacilityForm(req.body);
         if (!facility) return res.sendStatus(400);
-        const created = await Facilities.create(facility);
-        res.redirect(`/admin/facilities?created=${encodeURIComponent(created.guid)}#facility-${encodeURIComponent(created.guid)}`);
+        await Facilities.create(facility);
+        res.redirect('/admin/facilities?admin_saved=facility-created');
     } catch (error) {
         console.error('Unable to create facility:', error);
         if (error.code === 'POSTCODE_LOOKUP_FAILED') return res.status(422).json({ error: error.message });
@@ -1306,7 +1476,7 @@ admin.post('/facilities/update', async (req, res) => {
         if (!updatedFacility) {
             return res.sendStatus(404);
         }
-        res.redirect('/admin/facilities');
+        res.redirect(`/admin/facilities?admin_saved=facility-updated&admin_saved_target=facility-${guid}#facility-${guid}`);
     } catch (error) {
         console.error('Unable to update facility:', error);
         if (error.code === 'POSTCODE_LOOKUP_FAILED') return res.status(422).json({ error: error.message });
@@ -1330,27 +1500,18 @@ admin.post('/facilities/destroy', async (req, res) => {
 
 admin.get('/courses', async (req, res) => {
     try {
-        const [courses, facilities] = await Promise.all([
+        const [courses, facilities, sports, faqs] = await Promise.all([
             Courses.findAll(),
-            Facilities.findAll()
+            Facilities.findAll(),
+            Sports.findAll(),
+            Courses.findFaqs()
         ]);
-        const coursesByFacility = new Map();
-        for (const course of courses) {
-            const facilityCourses = coursesByFacility.get(course.facility_guid) || [];
-            facilityCourses.push(course);
-            coursesByFacility.set(course.facility_guid, facilityCourses);
-        }
-        const courseGroups = facilities.map(facility => ({
-            ...facility,
-            courses: coursesByFacility.get(facility.guid) || []
-        }));
         res.render('courses', {
-            courseGroups,
-            facilities,
-            totalCourses: courses.length,
+            courses, facilities, sports, faqs, error: req.query.error,
             activePage: 'courses'
         });
     } catch (error) {
+        console.error('Unable to load courses:', error);
         res.sendStatus(500);
     }
 });
@@ -1363,8 +1524,10 @@ admin.post('/courses', async (req, res) => {
 
     try {
         await Courses.create(course);
-        res.redirect(`/admin/courses?admin_saved=course-created&admin_saved_target=add-course-${course.facility_guid}#add-course-${course.facility_guid}`);
+        res.redirect('/admin/courses?admin_saved=course-created');
     } catch (error) {
+        console.error('Unable to create course:', error);
+        if (error.code === '23503') return res.status(422).json({ error: 'Choose existing sports and a facility. Reload the page and try again.' });
         res.sendStatus(500);
     }
 });
@@ -1373,7 +1536,7 @@ admin.post('/courses/update', async (req, res) => {
     if (typeof req.body.guid !== 'string' || !GUID_PATTERN.test(req.body.guid)) {
         return res.sendStatus(400);
     }
-    const course = parseCourseInput(req.body, { requireFacility: false });
+    const course = parseCourseInput(req.body);
     if (!course) {
         return res.sendStatus(400);
     }
@@ -1383,8 +1546,10 @@ admin.post('/courses/update', async (req, res) => {
         if (!updatedCourse) {
             return res.sendStatus(404);
         }
-        res.redirect(`/admin/courses?admin_saved=course-updated&admin_saved_target=facility-${updatedCourse.facility_guid}#facility-${updatedCourse.facility_guid}`);
+        res.redirect(`/admin/courses?admin_saved=course-updated&admin_saved_target=course-${req.body.guid}#course-${req.body.guid}`);
     } catch (error) {
+        console.error('Unable to update course:', error);
+        if (error.code === '23503') return res.status(422).json({ error: 'Choose existing sports and a facility. Reload the page and try again.' });
         res.sendStatus(500);
     }
 });
@@ -1396,9 +1561,54 @@ admin.post('/courses/destroy', async (req, res) => {
     try {
         const removedCourse = await Courses.remove(req.body.guid);
         if (!removedCourse) return res.sendStatus(404);
-        res.redirect(`/admin/courses?admin_saved=course-deleted&admin_saved_target=facility-${removedCourse.facility_guid}#facility-${removedCourse.facility_guid}`);
+        res.redirect('/admin/courses?admin_saved=course-deleted');
     } catch (error) {
+        console.error('Unable to remove course:', error);
+        if (error.constraint === 'course_enrolments_run_guid_fkey') {
+            return res.status(409).json({ error: 'Courses with confirmed enrolments cannot be deleted.' });
+        }
         res.sendStatus(500);
+    }
+});
+
+for (const [path, updating] of [['/courses/runs', false], ['/courses/runs/update', true]]) {
+    admin.post(path, async (req, res) => {
+        if (typeof req.body.course_guid !== 'string' || !GUID_PATTERN.test(req.body.course_guid) ||
+            typeof req.body.facility_guid !== 'string' || !GUID_PATTERN.test(req.body.facility_guid) ||
+            (updating && (typeof req.body.guid !== 'string' || !GUID_PATTERN.test(req.body.guid)))) return res.sendStatus(400);
+        const details = parseRunInput(req.body);
+        if (!details) return res.status(422).json({ error: 'Enter a run name, location, non-negative price, capacity (1–99999) and a valid schedule. Sessions must not overlap; use at most 366 sessions within a two-year weekly schedule. Individual lines must be YYYY-MM-DD HH:mm HH:mm, with the end after the start on the same day. All times are UK local time.' });
+        try {
+            const run = await Courses.saveRun(updating ? req.body.guid : null, req.body.course_guid,
+                { ...details, facility_guid: req.body.facility_guid });
+            if (!run) return res.sendStatus(404);
+            await recordAudit(req.profile, { action: updating ? 'course-run.update' : 'course-run.create',
+                entityType: 'course-run', entityGuid: run.guid, entityLabel: details.name,
+                details: { course_guid: req.body.course_guid, facility_guid: req.body.facility_guid } });
+            return res.redirect(`/admin/courses?admin_saved=${updating ? 'course-updated' : 'course-created'}&admin_saved_target=course-${req.body.course_guid}#course-${req.body.course_guid}`);
+        } catch (error) {
+            console.error('Unable to save course run:', error);
+            if (error.code === '23503') return res.status(422).json({ error: 'Choose an existing course and location. Reload the page and try again.' });
+            if (error.code === 'INVALID_SESSION_TIME') return res.status(422).json({ error: error.message });
+            if (error.code === 'COURSE_CAPACITY') return res.status(409).json({ error: error.message });
+            return res.sendStatus(500);
+        }
+    });
+}
+
+admin.post('/courses/runs/destroy', async (req, res) => {
+    if (typeof req.body.guid !== 'string' || !GUID_PATTERN.test(req.body.guid) ||
+        typeof req.body.course_guid !== 'string' || !GUID_PATTERN.test(req.body.course_guid)) return res.sendStatus(400);
+    try {
+        if (!await Courses.removeRun(req.body.guid, req.body.course_guid)) return res.sendStatus(404);
+        await recordAudit(req.profile, { action: 'course-run.delete', entityType: 'course-run', entityGuid: req.body.guid });
+        return res.redirect(`/admin/courses?admin_saved=1#course-${req.body.course_guid}`);
+    } catch (error) {
+        console.error('Unable to remove course run:', error);
+        if (error.constraint === 'course_enrolments_run_guid_fkey') {
+            return res.status(409).json({ error: 'Runs with confirmed enrolments cannot be deleted.' });
+        }
+        return res.sendStatus(500);
     }
 });
 
@@ -1408,9 +1618,44 @@ admin.post('/facilities/courses/destroy', async (req, res) => {
     }
     try {
         await Courses.remove(req.body.guid);
-        res.redirect('/admin/facilities');
+        res.redirect(auth.canAccessAdmin(req.profile, '/facilities') ? '/admin/facilities' : '/admin/courses');
     } catch (error) {
         res.sendStatus(500);
+    }
+});
+
+for (const [path, updating] of [['/courses/faqs', false], ['/courses/faqs/update', true]]) {
+    admin.post(path, async (req, res) => {
+        const { guid, sport_guid } = req.body;
+        const question = typeof req.body.question === 'string' ? req.body.question.trim() : '';
+        const answer = typeof req.body.answer === 'string' ? req.body.answer.trim() : '';
+        if ((updating && !GUID_PATTERN.test(guid || '')) || !GUID_PATTERN.test(sport_guid || '') ||
+            !question || question.length > 300 || !answer || answer.length > 10000) {
+            return res.redirect('/admin/courses?error=invalid-faq#sport-faq-heading');
+        }
+        try {
+            const faq = await Courses.saveFaq(updating ? guid : null, { sport_guid, question, answer });
+            if (!faq) return res.sendStatus(404);
+            await recordAudit(req.profile, { action: updating ? 'sport-faq.update' : 'sport-faq.create',
+                entityType: 'sport-faq', entityGuid: faq.guid, entityLabel: question, details: { sport_guid } });
+            return res.redirect('/admin/courses?admin_saved=1#sport-faq-heading');
+        } catch (error) {
+            console.error('Unable to save sport course FAQ:', error);
+            if (error.code === '23503') return res.redirect('/admin/courses?error=invalid-faq#sport-faq-heading');
+            return res.sendStatus(500);
+        }
+    });
+}
+
+admin.post('/courses/faqs/destroy', async (req, res) => {
+    if (!GUID_PATTERN.test(req.body.guid || '')) return res.sendStatus(400);
+    try {
+        if (!await Courses.removeFaq(req.body.guid)) return res.sendStatus(404);
+        await recordAudit(req.profile, { action: 'sport-faq.delete', entityType: 'sport-faq', entityGuid: req.body.guid });
+        return res.redirect('/admin/courses?admin_saved=1#sport-faq-heading');
+    } catch (error) {
+        console.error('Unable to delete sport course FAQ:', error);
+        return res.sendStatus(500);
     }
 });
 
@@ -1429,7 +1674,7 @@ admin.post('/sports', async (req, res) => {
         return res.sendStatus(400);
     }
     try {
-        await Sports.create(name);
+        await Sports.create(name, parseSportSections(req.body));
         res.redirect('/admin/sports');
     } catch (error) {
         res.sendStatus(400);
@@ -1443,13 +1688,35 @@ admin.post('/sports/update', async (req, res) => {
         return res.sendStatus(400);
     }
     try {
-        const updatedSport = await Sports.update(guid, name);
+        const updatedSport = req.body.course_description_sections === undefined
+            ? await Sports.update(guid, name)
+            : await Sports.update(guid, name, parseSportSections(req.body));
         if (!updatedSport) {
             return res.sendStatus(404);
         }
-        res.redirect('/admin/sports');
+        res.redirect(`/admin/sports?admin_saved=sport-updated&admin_saved_target=sport-${guid}#sport-${guid}`);
     } catch (error) {
         res.sendStatus(400);
+    }
+});
+
+admin.post('/sports/course-defaults', async (req, res) => {
+    const guid = req.body.guid;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid) ||
+        typeof req.body.course_description_sections !== 'string') return res.sendStatus(400);
+    let sections;
+    try {
+        sections = parseSportSections(req.body);
+    } catch (error) {
+        console.warn('Invalid sport course defaults:', error.message);
+        return res.sendStatus(400);
+    }
+    try {
+        if (!await Sports.updateCourseDefaults(guid, sections)) return res.sendStatus(404);
+        res.redirect(`/admin/sports?admin_saved=sport-updated&admin_saved_target=sport-${guid}#sport-${guid}`);
+    } catch (error) {
+        console.error('Unable to update sport course defaults:', error);
+        res.sendStatus(500);
     }
 });
 
@@ -1480,7 +1747,7 @@ admin.post('/opening-hours', async (req, res) => {
     if (!template) return res.sendStatus(400);
     try {
         await OpeningHours.create(template);
-        res.redirect('/admin/opening-hours');
+        res.redirect('/admin/opening-hours?admin_saved=template-created');
     } catch (error) {
         res.sendStatus(400);
     }
@@ -1494,7 +1761,7 @@ admin.post('/opening-hours/update', async (req, res) => {
     }
     try {
         const updated = await OpeningHours.update(guid, template);
-        return updated ? res.redirect('/admin/opening-hours') : res.sendStatus(404);
+        return updated ? res.redirect(`/admin/opening-hours?admin_saved=template-updated&admin_saved_target=template-${guid}#template-${guid}`) : res.sendStatus(404);
     } catch (error) {
         return res.sendStatus(400);
     }
@@ -1513,37 +1780,47 @@ admin.post('/opening-hours/destroy', async (req, res) => {
     }
 });
 
-admin.get('/bookings', async (req, res) => {
+async function adminBookingsPage(req, res) {
+    const configuring = req.path === '/court-configuration';
     try {
         const facilityRows = await Bookings.findInAppFacilities();
         const facilities = await Promise.all(facilityRows.map(async facility => {
-            const [sports, resources, options, bookings] = await Promise.all([
-                Bookings.findFacilitySports(facility.guid),
-                Bookings.findResources(facility.guid),
-                Bookings.findOptions(facility.guid),
-                Bookings.findBookings(facility.guid)
+            if (configuring) {
+                const [sports, resources, options] = await Promise.all([
+                    Bookings.findFacilitySports(facility.guid),
+                    Bookings.findResources(facility.guid),
+                    Bookings.findOptions(facility.guid)
+                ]);
+                return { ...facility, sports, resources, options };
+            }
+            const [options, bookings] = await Promise.all([
+                Bookings.findOptions(facility.guid), Bookings.findBookings(facility.guid)
             ]);
-            return { ...facility, sports, resources, options, bookings };
+            return { ...facility, options, bookings };
         }));
         res.render('bookings', {
             facilities,
             error: req.query.error,
             created: Number.parseInt(req.query.created, 10) || 0,
-            activePage: 'bookings'
+            activePage: configuring ? 'court-configuration' : 'bookings'
         });
     } catch (error) {
+        console.error('Unable to load admin booking page:', error);
         res.sendStatus(500);
     }
-});
+}
+
+admin.get('/bookings', adminBookingsPage);
+admin.get('/court-configuration', adminBookingsPage);
 
 admin.post('/bookings/resources', async (req, res) => {
     const resource = parseResourceInput(req.body);
     if (!resource) return res.sendStatus(400);
     try {
         const created = await Bookings.createResource(resource.facility_guid, resource.name);
-        return created ? res.redirect('/admin/bookings') : res.sendStatus(404);
+        return created ? res.redirect('/admin/court-configuration') : res.sendStatus(404);
     } catch (error) {
-        return res.redirect('/admin/bookings?error=duplicate-resource');
+        return res.redirect('/admin/court-configuration?error=duplicate-resource');
     }
 });
 
@@ -1552,9 +1829,9 @@ admin.post('/bookings/resources/update', async (req, res) => {
     if (!resource?.guid) return res.sendStatus(400);
     try {
         const updated = await Bookings.updateResource(resource.facility_guid, resource.guid, resource.name);
-        return updated ? res.redirect('/admin/bookings') : res.sendStatus(404);
+        return updated ? res.redirect('/admin/court-configuration') : res.sendStatus(404);
     } catch (error) {
-        return res.redirect('/admin/bookings?error=duplicate-resource');
+        return res.redirect('/admin/court-configuration?error=duplicate-resource');
     }
 });
 
@@ -1565,9 +1842,9 @@ admin.post('/bookings/resources/destroy', async (req, res) => {
     }
     try {
         const removed = await Bookings.removeResource(facility_guid, resource_guid);
-        return removed ? res.redirect('/admin/bookings') : res.sendStatus(404);
+        return removed ? res.redirect('/admin/court-configuration') : res.sendStatus(404);
     } catch (error) {
-        return res.redirect('/admin/bookings?error=resource-in-use');
+        return res.redirect('/admin/court-configuration?error=resource-in-use');
     }
 });
 
@@ -1576,14 +1853,14 @@ admin.post('/bookings/options', async (req, res) => {
     if (!option) return res.sendStatus(400);
     try {
         await Bookings.createOption(option);
-        return res.redirect('/admin/bookings');
+        return res.redirect('/admin/court-configuration');
     } catch (error) {
-        return res.redirect('/admin/bookings?error=invalid-option');
+        return res.redirect('/admin/court-configuration?error=invalid-option');
     }
 });
 
 admin.post('/bookings/options/months', (req, res) => {
-    return res.redirect('/admin/bookings?error=sport-months-moved');
+    return res.redirect('/admin/court-configuration?error=sport-months-moved');
 });
 
 admin.post('/bookings/sports/months', async (req, res) => {
@@ -1599,7 +1876,7 @@ admin.post('/bookings/sports/months', async (req, res) => {
             action: 'facility-sport.months', entityType: 'sport', entityGuid: sport_guid,
             entityLabel: 'Allowed booking months', details: { facility_guid, allowed_months: months }
         });
-        return res.redirect('/admin/bookings');
+        return res.redirect('/admin/court-configuration');
     } catch (error) {
         console.error('Unable to save allowed booking months:', error);
         return res.sendStatus(500);
@@ -1611,11 +1888,11 @@ admin.post('/bookings/options/update', async (req, res) => {
     if (!option?.guid) return res.sendStatus(400);
     try {
         const updated = await Bookings.updateOption(option);
-        return updated ? res.redirect('/admin/bookings') : res.sendStatus(404);
+        return updated ? res.redirect('/admin/court-configuration') : res.sendStatus(404);
     } catch (error) {
-        if (error.code === '23P01') return res.redirect('/admin/bookings?error=booking-conflict');
-        if (error.message.includes('current or future bookings')) return res.redirect('/admin/bookings?error=option-booked');
-        return res.redirect('/admin/bookings?error=invalid-option');
+        if (error.code === '23P01') return res.redirect('/admin/court-configuration?error=booking-conflict');
+        if (error.message.includes('current or future bookings')) return res.redirect('/admin/court-configuration?error=option-booked');
+        return res.redirect('/admin/court-configuration?error=invalid-option');
     }
 });
 
@@ -1626,9 +1903,9 @@ admin.post('/bookings/options/destroy', async (req, res) => {
     }
     try {
         const removed = await Bookings.removeOption(facility_guid, option_guid);
-        return removed ? res.redirect('/admin/bookings') : res.sendStatus(404);
+        return removed ? res.redirect('/admin/court-configuration') : res.sendStatus(404);
     } catch (error) {
-        return res.redirect('/admin/bookings?error=option-booked');
+        return res.redirect('/admin/court-configuration?error=option-booked');
     }
 });
 
@@ -1672,5 +1949,7 @@ admin.post('/bookings/create', async (req, res) => {
 });
 
 router.use('/admin', admin);
+router.use(require('./courseBasket')({ simulateCardPayment }));
+router.use(require('./children'));
 
 module.exports = router;

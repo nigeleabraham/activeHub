@@ -24,7 +24,7 @@ RUN --mount=type=bind,source=package.json,target=package.json \
     npm ci --include=dev --ignore-scripts
 
 # Copy only the application files explicitly so stray local files (env files, keys, tests) never enter the image.
-COPY package.json package-lock.json .npmrc server.js facilityUtils.js permissions.js validation.js ./
+COPY package.json package-lock.json .npmrc server.js facilityUtils.js permissions.js validation.js courseRuns.js courseDescriptions.js ./
 COPY middleware ./middleware
 COPY models ./models
 COPY routes ./routes

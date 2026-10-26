@@ -1,0 +1,59 @@
+<div class="form-group">
+    <label for="<%= prefix %>-name">Course name</label>
+    <input class="form-control" id="<%= prefix %>-name" name="name" maxlength="160" value="<%= course?.name || '' %>" required>
+</div>
+<div class="form-group">
+    <label for="<%= prefix %>-source">Description defaults</label>
+    <select class="form-control" id="<%= prefix %>-source" name="description_sport_guid" data-description-source>
+        <option value="">Use unique description only</option>
+        <% sports.forEach(sport => { %><option value="<%= sport.guid %>" <%= course?.description_sport_guid === sport.guid ? 'selected' : '' %>><%= sport.name %> default sections</option><% }); %>
+    </select>
+    <p class="small text-muted">Choose one assigned sport. Default sections update automatically; override individual sections below. Unique text is retained but hidden while inheriting.</p>
+</div>
+<input type="hidden" name="description_overrides" value="<%= JSON.stringify(course?.description_overrides || {}) %>" data-description-overrides>
+<% sports.forEach(sport => { %>
+    <fieldset data-description-defaults="<%= sport.guid %>" hidden disabled>
+        <legend class="h6"><%= sport.name %> default sections</legend>
+        <% if (!sport.course_description_sections?.length) { %><p>No default sections. Add them on the Sports page.</p><% } %>
+        <% (sport.course_description_sections || []).forEach(section => {
+            const override = course?.description_sport_guid === sport.guid ? course?.description_overrides?.[section.id] : null;
+        %>
+        <div class="border rounded p-3 mb-3" data-description-override="<%= section.id %>">
+            <label for="<%= prefix %>-mode-<%= section.id %>"><%= section.heading || 'Introduction' %></label>
+            <select class="form-control mb-2" id="<%= prefix %>-mode-<%= section.id %>" data-override-mode>
+                <option value="inherit">Inherit sport default</option>
+                <option value="override" <%= override ? 'selected' : '' %>>Unique override</option>
+            </select>
+            <div class="mb-2" data-default-preview><% if (section.heading) { %><h4 class="h6"><%= section.heading %></h4><% } %><div style="white-space: pre-wrap;"><%- include('faq-answer', { answer: section.text, boldText: true }) %></div></div>
+            <label>Unique heading<input class="form-control mb-2" data-override-heading maxlength="160" value="<%= (override || section).heading %>"></label>
+            <label class="d-block">Unique section text<textarea class="form-control" data-override-text rows="4" maxlength="10000"><%= (override || section).text %></textarea></label>
+        </div>
+        <% }); %>
+    </fieldset>
+<% }); %>
+<div class="form-group">
+    <label for="<%= prefix %>-description">Unique description (used when no sport default is selected)</label>
+    <textarea class="form-control" id="<%= prefix %>-description" name="description" rows="3" maxlength="10000" aria-describedby="<%= prefix %>-description-help"><%= course?.description || '' %></textarea>
+    <p class="small text-muted" id="<%= prefix %>-description-help">Formatting: &lt;bold&gt;text&lt;/bold&gt; for bold, &lt;ul&gt;text&lt;/ul&gt; for underline, &lt;bullet&gt;text&lt;/bullet&gt; for each bullet point, and &lt;email&gt;name@example.com&lt;/email&gt; for a clickable email address. Other HTML is displayed as text.</p>
+</div>
+<h4 class="h6">Extra sections (appended at the end)</h4>
+<%- include('description-sections-editor', { field: 'description_sections', sections: course?.description_sections || [] }) %>
+<p class="small text-muted">These details are shared by all facility runs. Add locations, sessions, prices and capacities after saving the course.</p>
+<% for (const [label, field, items, selected] of [
+    ['Sport', 'sport_guids', sports, course?.sport_guids || []]
+]) { %>
+    <fieldset class="form-group">
+        <legend class="h6"><%= label %> (select at least one)</legend>
+        <% if (!items.length) { %><p class="text-warning">No sports are available. An administrator must add one before this course can be saved.</p><% } %>
+        <div class="row">
+        <% items.forEach(item => { %>
+            <div class="col-6 mb-1">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="<%= prefix %>-<%= field %>-<%= item.guid %>" name="<%= field %>" value="<%= item.guid %>"<%= selected.includes(item.guid) ? ' checked' : '' %>>
+                <label class="form-check-label" for="<%= prefix %>-<%= field %>-<%= item.guid %>"><%= item.name %></label>
+            </div>
+            </div>
+        <% }); %>
+        </div>
+    </fieldset>
+<% } %>

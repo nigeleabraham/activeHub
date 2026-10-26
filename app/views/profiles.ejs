@@ -11,19 +11,20 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Profiles</h1>
-                <p class="text-muted mb-0">Manage who can sign in and their role</p>
+                <p class="text-muted mb-0">Manage who can sign in and their assigned roles</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <% const messages = {
-            'invalid-profile': 'Enter a name, a valid email address and a role.',
+            'invalid-profile': 'Enter a name, a valid email address and choose only listed roles.',
             'duplicate-email': 'A profile with that email address already exists.',
+            'save-failed': 'The profile could not be saved. Please try again.',
             'last-administrator': 'There must always be at least one Administrator.',
             'delete-self': 'You cannot delete the profile you are signed in with.'
         }; %>
@@ -31,10 +32,14 @@
             <div class="alert alert-danger" role="alert"><%= messages[error] %></div>
         <% } %>
 
+        <div class="admin-save-feedback mb-4">
+            <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit profiles here. Assigning Administrator automatically allows switching to every role, including roles added later; other role boxes need not be selected. Deleting a profile removes future bookings, cancels pending credit and refund requests, and voids unused credit. History is retained.</p>
+        </div>
+
         <section class="mb-3" aria-labelledby="add-profile-heading">
             <div class="bg-white border rounded shadow-sm p-3">
                 <h2 id="add-profile-heading" class="h5 mb-2">Add profile</h2>
-                <form class="form-row align-items-end" method="POST" action="/admin/profiles">
+                <form class="form-row align-items-end" method="POST" action="/admin/profiles" data-editor-label="Add profile">
                     <div class="form-group col-md">
                         <label for="profile-name">Name</label>
                         <input class="form-control" id="profile-name" name="name" type="text" maxlength="120" required>
@@ -43,12 +48,16 @@
                         <label for="profile-email">Email address</label>
                         <input class="form-control" id="profile-email" name="email" type="email" maxlength="254" required>
                     </div>
-                    <div class="form-group col-md-3">
-                        <label for="profile-role">Role</label>
-                        <select class="form-control" id="profile-role" name="role" required>
-                            <% roles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }); %>
-                        </select>
-                    </div>
+                    <fieldset class="form-group col-md-3">
+                        <legend class="h6">Roles</legend>
+                        <p class="small text-muted">Resident is always assigned. Select any additional roles.</p>
+                        <% roles.forEach((role, index) => { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="profile-role-<%= index %>" name="roles" value="<%= role %>"<%= role === 'Resident' ? ' checked disabled' : '' %>>
+                                <label class="form-check-label" for="profile-role-<%= index %>"><%= role %></label>
+                            </div>
+                        <% }); %>
+                    </fieldset>
                     <div class="form-group col-md-auto">
                         <button class="btn btn-primary" type="submit">Add profile</button>
                     </div>
@@ -56,19 +65,26 @@
             </div>
         </section>
 
-        <section aria-labelledby="profiles-list-heading">
+        <section aria-labelledby="profiles-list-heading" data-profiles-directory>
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <h2 id="profiles-list-heading" class="h5 mb-0">Directory</h2>
-                <span class="badge badge-secondary"><%= profiles.length %></span>
+                <span class="badge badge-secondary" data-profile-count><%= profiles.length %></span>
             </div>
+            <div class="sr-only" data-profile-feedback role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="alert alert-danger" data-profile-error role="alert" tabindex="-1" hidden></div>
+            <div data-profile-list>
+            <% if (profiles.length) { %>
             <article class="bg-white border rounded shadow-sm p-4 mb-3">
                 <ul class="list-group list-group-flush">
                     <% profiles.forEach(profile => { %>
-                        <li class="list-group-item px-0">
+                        <li id="profile-<%= profile.guid %>" class="list-group-item px-0" data-profile-guid="<%= profile.guid %>" data-profile-name="<%= profile.name %>">
                             <div class="d-flex flex-wrap justify-content-between align-items-center" style="row-gap: 1rem;">
-                                <div class="mr-3">
-                                    <span class="text-break"><%= profile.name %></span>
-                                    <span class="badge badge-secondary ml-1"><%= profile.role %></span>
+                                <div class="mr-3 flex-grow-1" style="min-width: 0;">
+                                    <div class="d-flex align-items-center" style="min-width: 0;">
+                                    <span class="text-break mr-3"><%= profile.name %></span>
+                                    <div data-profile-edit-feedback class="d-flex align-items-center flex-grow-1" style="height: 4.5rem; min-width: 0; overflow: auto;"></div>
+                                    </div>
+                                    <% (profile.roles || [profile.role]).forEach(role => { %><span class="badge badge-secondary ml-1"><%= role %></span><% }); %>
                                     <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
                                     <p class="small mb-0">Booking credit: £<%= (profile.credit_pence / 100).toFixed(2) %></p>
                                 </div>
@@ -93,12 +109,16 @@
                                         <label for="edit-profile-email-<%= profile.guid %>">Email address</label>
                                         <input class="form-control" id="edit-profile-email-<%= profile.guid %>" name="email" type="email" maxlength="254" value="<%= profile.email %>" required>
                                     </div>
-                                    <div class="form-group">
-                                        <label for="edit-profile-role-<%= profile.guid %>">Role</label>
-                                        <select class="form-control" id="edit-profile-role-<%= profile.guid %>" name="role" required>
-                                            <% roles.forEach(role => { %><option value="<%= role %>"<%= role === profile.role ? ' selected' : '' %>><%= role %></option><% }); %>
-                                        </select>
-                                    </div>
+                                    <fieldset class="form-group">
+                                        <legend class="h6">Roles</legend>
+                                        <p class="small text-muted">Resident is always assigned. Select any additional roles.</p>
+                                        <% roles.forEach((role, index) => { %>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="edit-profile-role-<%= profile.guid %>-<%= index %>" name="roles" value="<%= role %>"<%= role === 'Resident' ? ' checked disabled' : (profile.roles || [profile.role]).includes(role) ? ' checked' : '' %>>
+                                                <label class="form-check-label" for="edit-profile-role-<%= profile.guid %>-<%= index %>"><%= role %></label>
+                                            </div>
+                                        <% }); %>
+                                    </fieldset>
                                     <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
                                     <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                 </form>
@@ -107,6 +127,10 @@
                     <% }); %>
                 </ul>
             </article>
+            <% } else { %>
+                <div class="alert alert-info mb-0">No profiles have been added yet.</div>
+            <% } %>
+            </div>
         </section>
     </main>
 </body>

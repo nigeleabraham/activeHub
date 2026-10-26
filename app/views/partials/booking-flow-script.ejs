@@ -97,9 +97,10 @@
                 radio.checked = currentProfile.guid === radio.value;
                 const text = document.createElement('span');
                 text.className = 'flex-grow-1';
+                const roleLabel = (profile.roles || [profile.role]).filter(Boolean).join(', ');
                 text.textContent = profile.email
-                    ? `${profile.name} (${profile.role}) · ${profile.email}`
-                    : profile.role ? `${profile.name} (${profile.role})` : profile.name;
+                    ? `${profile.name} (${roleLabel}) · ${profile.email}`
+                    : roleLabel ? `${profile.name} (${roleLabel})` : profile.name;
                 label.append(radio, text);
                 if (profile.guid === bestMatchGuid) {
                     const badge = document.createElement('span');
@@ -109,7 +110,7 @@
                 }
                 if (radio.checked) label.classList.add('is-selected');
                 radio.addEventListener('change', () => {
-                    currentProfile = { guid: profile.guid, name: profile.name, role: profile.role, email: profile.email };
+                    currentProfile = { guid: profile.guid, name: profile.name, role: profile.role, roles: profile.roles, email: profile.email };
                     for (const choice of choices.querySelectorAll('.profile-choice')) {
                         choice.classList.toggle('is-selected', choice.contains(radio));
                     }
@@ -195,23 +196,32 @@
         return result;
     }
 
+<%- include('deletion-animation') %>
+
     document.querySelectorAll('form[data-cancel-booking]').forEach(form => {
         form.addEventListener('submit', async event => {
+            if (event.defaultPrevented) return;
             event.preventDefault();
+            if (form.getAttribute('aria-busy') === 'true') return;
             const buttons = form.querySelectorAll('button');
             const button = { set disabled(value) { buttons.forEach(item => { item.disabled = value; }); } };
             const submitter = event.submitter;
             const body = new URLSearchParams(new FormData(form, submitter));
             button.disabled = true;
+            form.setAttribute('aria-busy', 'true');
             try {
                 const response = await fetch(form.action, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'fetch' },
                     body
                 });
-                if (!response.ok && response.status !== 404) throw new Error('Cancel failed');
+                if (response.status !== 204 && response.status !== 404) throw new Error('The booking cancellation could not be confirmed.');
                 const details = form.closest('details');
-                form.closest('tr').remove();
+                const row = form.closest('tr');
+                const rows = Array.from(details.querySelectorAll('[data-bookings-table] tbody tr'));
+                const index = rows.indexOf(row);
+                await animateDeletion(row);
+                row.remove();
                 const remaining = details.querySelectorAll('[data-bookings-table] tbody tr').length;
                 details.querySelector('[data-booking-count]').textContent = String(remaining);
                 if (!remaining) {
@@ -220,9 +230,16 @@
                 }
                 // Free the cancelled slot on the calendar without reloading.
                 details.querySelector('[data-booking-calendar]')?.dispatchEvent(new CustomEvent('refresh-availability'));
+                const remainingRows = details.querySelectorAll('[data-bookings-table] tbody tr');
+                const focusTarget = remainingRows[Math.min(index, remainingRows.length - 1)]?.querySelector('[data-cancel-booking] button')
+                    || details.querySelector('summary');
+                focusTarget.focus({ preventScroll: true });
             } catch (error) {
-                button.disabled = false;
+                console.error('Unable to cancel booking', error);
                 alert('The booking could not be cancelled. Please try again.');
+            } finally {
+                button.disabled = false;
+                form.removeAttribute('aria-busy');
             }
         });
     });
@@ -332,10 +349,27 @@
                 remove.className = 'btn btn-outline-danger btn-sm';
                 remove.textContent = 'Remove';
                 remove.setAttribute('aria-label', `Remove ${label.textContent}`);
-                remove.addEventListener('click', () => {
-                    pendingSlots = pendingSlots.filter(candidate => candidate !== slot);
-                    renderPending();
-                    buildCalendar();
+                remove.addEventListener('click', async () => {
+                    if (calendar.inert) return;
+                    calendar.inert = true;
+                    remove.disabled = true;
+                    try {
+                        await animateDeletion(item);
+                        pendingSlots = pendingSlots.filter(candidate => candidate !== slot);
+                        renderPending();
+                        buildCalendar();
+                        calendar.inert = false;
+                        const remaining = pendingList.querySelectorAll('button');
+                        const target = remaining[Math.min(index, remaining.length - 1)] || optionSelect;
+                        target.focus({ preventScroll: true });
+                    } catch (error) {
+                        console.error('Unable to remove selected booking slot', error);
+                        calendarError.textContent = 'The selected slot could not be removed. Please try again.';
+                        calendarError.hidden = false;
+                        remove.disabled = false;
+                    } finally {
+                        calendar.inert = false;
+                    }
                 });
                 const row = document.createElement('div');
                 row.className = 'd-flex justify-content-between align-items-center mb-2';

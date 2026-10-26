@@ -12,6 +12,7 @@ async function initialize() {
             created_at timestamptz NOT NULL DEFAULT now()
         )
     `);
+    await pool.query("ALTER TABLE sports ADD COLUMN IF NOT EXISTS course_description_sections jsonb NOT NULL DEFAULT '[]'");
     await pool.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS sports_name_lower_key ON sports (LOWER(name))
     `);
@@ -31,23 +32,25 @@ async function initialize() {
 
 async function findAll() {
     const { rows } = await pool.query(
-        'SELECT guid, name, created_at FROM sports ORDER BY LOWER(name)'
+        'SELECT guid, name, course_description_sections, created_at FROM sports ORDER BY LOWER(name)'
     );
     return rows;
 }
 
-async function create(name) {
+async function create(name, descriptionSections = []) {
+    const validated = require('../courseDescriptions').sections(descriptionSections);
     const { rows } = await pool.query(
-        'INSERT INTO sports (name) VALUES ($1) RETURNING guid, name, created_at',
-        [name]
+        'INSERT INTO sports (name,course_description_sections) VALUES ($1,$2) RETURNING *',
+        [name, JSON.stringify(validated)]
     );
     return rows[0];
 }
 
-async function update(guid, name) {
+async function update(guid, name, descriptionSections) {
+    const validated = descriptionSections === undefined ? null : require('../courseDescriptions').sections(descriptionSections);
     const { rows } = await pool.query(
-        'UPDATE sports SET name = $2 WHERE guid = $1 RETURNING guid, name, created_at',
-        [guid, name]
+        'UPDATE sports SET name = $2, course_description_sections=COALESCE($3::jsonb,course_description_sections) WHERE guid = $1 RETURNING *',
+        [guid, name, validated === null ? null : JSON.stringify(validated)]
     );
     return rows[0] || null;
 }
@@ -56,4 +59,11 @@ async function remove(guid) {
     await pool.query('DELETE FROM sports WHERE guid = $1', [guid]);
 }
 
-module.exports = { initialize, findAll, create, update, remove };
+async function updateCourseDefaults(guid, descriptionSections) {
+    const validated = require('../courseDescriptions').sections(descriptionSections);
+    const { rows } = await pool.query('UPDATE sports SET course_description_sections=$2 WHERE guid=$1 RETURNING guid',
+        [guid, JSON.stringify(validated)]);
+    return rows[0] || null;
+}
+
+module.exports = { initialize, findAll, create, update, remove, updateCourseDefaults };

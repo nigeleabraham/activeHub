@@ -1,0 +1,35 @@
+<%
+    const tokens = answer.split(/(<\/?(?:bold|ul|bullet|email)>)/);
+    const stack = [];
+    const tags = new Map();
+    const formatting = {
+        bold: typeof boldText !== 'undefined' && boldText
+            ? ['<strong>', '</strong>']
+            : ['<span style="color: #003e90; font-weight: 400;">', '</span>'],
+        ul: ['<u>', '</u>'],
+        bullet: ['<ul style="margin: 0; padding-left: 1.5rem;"><li>', '</li></ul>']
+    };
+    for (let index = 1; index < tokens.length; index += 2) {
+        const marker = tokens[index];
+        if (marker.startsWith('</')) {
+            const previous = stack[stack.length - 1];
+            if (previous && tokens[previous] === marker.replace('</', '<')) {
+                stack.pop();
+                const name = marker.slice(2, -1);
+                if (name === 'email') {
+                    const address = tokens[previous + 1].trim();
+                    if (index === previous + 2 && address.length <= 254 &&
+                        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(address)) {
+                        tags.set(previous, `<a href="mailto:${encodeURIComponent(address)}">`);
+                        tags.set(index, '</a>');
+                    }
+                } else {
+                    tags.set(previous, formatting[name][0]);
+                    tags.set(index, formatting[name][1]);
+                }
+            }
+        } else {
+            stack.push(index);
+        }
+    }
+%><% for (let index = 0; index < tokens.length; index++) { %><% if (tags.has(index)) { %><%- tags.get(index) %><% } else { %><%= tokens[index] %><% } %><% } %>

@@ -14,6 +14,7 @@
 <body class="bg-light">
     <a class="skip-link" href="#add-facility-section">Skip to add facility form</a>
     <a class="skip-link" href="#facility-directory">Skip to facility directory</a>
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="mb-4">
             <div class="d-flex flex-wrap justify-content-between align-items-end">
@@ -24,18 +25,20 @@
                     </div>
                     <p class="text-muted mb-0">Facility directory</p>
                 </div>
-                <%- include('partials/navigation') %>
             </div>
         </header>
 
-        <div class="mb-4">
-            <button class="btn btn-primary" type="button" data-edit-toggle data-hide-when-editing aria-expanded="false" aria-controls="add-facility-section">Add facility</button>
+        <div class="admin-save-feedback mb-4">
+            <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit facilities here. Assign sports and configure booking arrangements for each facility.</p>
         </div>
         <div class="row">
-            <section id="add-facility-section" tabindex="-1" class="col-12 mb-4" aria-labelledby="add-facility-heading" data-edit-panel hidden>
+            <section id="add-facility-section" tabindex="-1" class="col-12 mb-4" aria-labelledby="add-facility-heading">
                 <div class="bg-white border rounded shadow-sm p-4">
-                    <h2 id="add-facility-heading" class="h5 mb-2">New facility</h2>
-                    <%- include('partials/facility-form', { facility: {} }) %>
+                    <h2 id="add-facility-heading" class="h5 mb-2">Add facility</h2>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-facility-panel">Add facility</button>
+                    <div id="add-facility-panel" data-edit-panel hidden>
+                        <%- include('partials/facility-form', { facility: {} }) %>
+                    </div>
                 </div>
             </section>
 
@@ -49,7 +52,10 @@
                     <% facilities.forEach(facility => { %>
                         <article id="facility-<%= facility.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3 position-relative" tabindex="-1">
                             <div class="pr-5">
-                                <h3 class="h5 mb-1"><%= facility.name %></h3>
+                                <div class="d-flex align-items-center mb-1" style="min-width: 0;">
+                                    <h3 class="h5 mb-0 mr-3 text-break"><%= facility.name %></h3>
+                                    <div data-facility-edit-feedback class="d-flex align-items-center flex-grow-1" style="height: 4.5rem; min-width: 0; overflow: auto;"></div>
+                                </div>
                                 <p class="text-muted mb-2"><%= facility.address %>, <%= facility.postcode %></p>
                             </div>
                             <a href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">
@@ -75,16 +81,20 @@
                                     <% facility.courses.forEach(course => { %>
                                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                             <span><%= course.name %></span>
+                                            <% if (isAdmin || (locals.can && locals.can('courses.manage'))) { %>
                                             <form method="POST" action="/admin/facilities/courses/destroy">
                                                 <input type="hidden" name="guid" value="<%= course.guid %>">
                                                 <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">
                                                     <i class="fa fa-trash" aria-hidden="true"></i>
                                                 </button>
                                             </form>
+                                            <% } %>
                                         </li>
                                     <% }); %>
                                 </ul>
-                                <a class="btn btn-outline-secondary btn-sm mt-3" href="/admin/courses#facility-<%= facility.guid %>">View courses</a>
+                                <% if (isAdmin || (locals.can && locals.can('courses.manage'))) { %>
+                                <a class="btn btn-outline-secondary btn-sm mt-3" href="/admin/courses">Manage courses</a>
+                                <% } %>
                             </details>
                             <% } %>
                             <details class="mt-3">
@@ -139,20 +149,6 @@
             bookingModes.forEach(control => control.addEventListener('change', updateBookingFields));
             updateBookingFields();
         });
-        const created = new URLSearchParams(window.location.search).get('created');
-        if (created && /^[0-9a-f-]{36}$/i.test(created)) {
-            const card = document.getElementById('facility-' + created);
-            if (card) {
-                const confirmation = document.createElement('p');
-                confirmation.className = 'alert alert-success';
-                confirmation.setAttribute('role', 'status');
-                confirmation.textContent = 'Facility created.';
-                card.prepend(confirmation);
-                card.classList.add('border-success');
-                card.focus();
-                card.scrollIntoView({ block: 'center' });
-            }
-        }
     </script>
 </body>
 

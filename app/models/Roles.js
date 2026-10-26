@@ -10,7 +10,8 @@ const ADMINISTRATOR = 'Administrator';
 const SEED_ROLES = [
     { name: ADMINISTRATOR, description: 'Full access to every administration area. Always has every permission.', is_system: true },
     { name: 'Coach', description: 'Coaches use the coach experience and have no administration access by default.', is_system: false },
-    { name: 'Resident', description: 'Residents use the resident experience and have no administration access by default.', is_system: false }
+    { name: 'Resident', description: 'Residents use the resident experience and have no administration access by default.', is_system: false },
+    { name: 'Course leader', description: 'Manage courses and their sport and facility assignments.', is_system: false }
 ];
 
 async function initialize() {
@@ -32,10 +33,14 @@ async function initialize() {
         )
     `);
     for (const role of SEED_ROLES) {
-        await pool.query(
-            'INSERT INTO roles (name, description, is_system) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        const created = await pool.query(
+            'INSERT INTO roles (name, description, is_system) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING guid',
             [role.name, role.description, role.is_system]
         );
+        if (role.name === 'Course leader' && created.rows.length) {
+            await pool.query('INSERT INTO role_permissions (role_guid, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [created.rows[0].guid, 'courses.manage']);
+        }
     }
 }
 
@@ -43,7 +48,8 @@ async function findAll() {
     const { rows } = await pool.query(`
         SELECT r.guid, r.name, r.description, r.is_system,
                COALESCE((SELECT array_agg(rp.permission ORDER BY rp.permission) FROM role_permissions rp WHERE rp.role_guid = r.guid), '{}') AS permissions,
-               (SELECT COUNT(*)::int FROM profiles p WHERE p.role = r.name) AS member_count
+               (SELECT COUNT(*)::int FROM profiles p WHERE r.name = 'Resident' OR p.role = r.name OR EXISTS (
+                   SELECT 1 FROM profile_roles pr WHERE pr.profile_guid = p.guid AND pr.role = r.name)) AS member_count
         FROM roles r
         ORDER BY r.is_system DESC, LOWER(r.name)
     `);
@@ -66,10 +72,26 @@ async function names() {
 async function permissionsFor(roleName) {
     if (roleName === ADMINISTRATOR) return [...PERMISSION_KEYS];
     const { rows } = await pool.query(
-        `SELECT rp.permission FROM role_permissions rp JOIN roles r ON r.guid = rp.role_guid WHERE r.name = $1`,
+        `SELECT DISTINCT rp.permission FROM role_permissions rp JOIN roles r ON r.guid = rp.role_guid
+         WHERE r.name = $1 OR r.name = 'Resident' ORDER BY rp.permission`,
         [roleName]
     );
     return rows.map(row => row.permission);
+}
+
+async function highestFor(roleNames) {
+    if (roleNames.includes(ADMINISTRATOR)) return ADMINISTRATOR;
+    if (!roleNames.length) throw new Error('Profile has no assigned roles');
+    const { rows } = await pool.query(`
+        SELECT r.name FROM roles r LEFT JOIN role_permissions rp ON rp.role_guid = r.guid
+        WHERE r.name = ANY($1::text[])
+        GROUP BY r.guid, r.name
+        ORDER BY COUNT(rp.permission) FILTER (WHERE rp.permission NOT IN (
+            SELECT base.permission FROM role_permissions base JOIN roles resident ON resident.guid = base.role_guid
+            WHERE resident.name = 'Resident')) DESC, LOWER(r.name), r.name
+        LIMIT 1`, [roleNames]);
+    if (!rows.length) throw new Error('Profile has no existing assigned roles');
+    return rows[0].name;
 }
 
 async function setPermissions(client, roleGuid, permissions) {
@@ -98,7 +120,7 @@ async function create({ name, description, permissions }) {
     }
 }
 
-// Renaming cascades to profiles through the foreign key on profiles.role.
+// Renaming cascades to default roles and additional profile assignments.
 async function update(guid, { name, description, permissions }) {
     const client = await pool.connect();
     try {
@@ -134,6 +156,7 @@ module.exports = {
     findByGuid,
     names,
     permissionsFor,
+    highestFor,
     create,
     update,
     remove

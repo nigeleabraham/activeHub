@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,97 +8,148 @@
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
 </head>
-
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
-        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
-            <div>
-                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1">Courses</h1>
-                <p class="text-muted mb-0">Manage courses offered at facilities</p>
-            </div>
-            <%- include('partials/navigation') %>
+        <header class="mb-4">
+            <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+            <h1 class="h2 mb-1">Courses</h1>
+            <p class="text-muted mb-0">Manage shared course details and facility runs, sessions, prices and spaces</p>
         </header>
-
-        <section aria-labelledby="course-list-heading">
-                <div class="d-flex align-items-center justify-content-between mb-3">
-                    <h2 id="course-list-heading" class="h5 mb-0">Directory</h2>
-                    <span class="badge badge-secondary" data-course-count><%= totalCourses %></span>
-                </div>
-                <% if (courseGroups.length) { %>
-                    <% courseGroups.forEach(group => { %>
-                        <article id="facility-<%= group.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3" data-course-facility>
-                            <h3 class="h5 mb-1"><%= group.name %></h3>
-                            <p class="text-muted mb-3"><%= group.address %>, <%= group.postcode %></p>
-                            <div data-course-list>
-                            <% if (group.courses.length) { %>
-                                <div class="list-group list-group-flush">
-                                    <% group.courses.forEach(course => { %>
-                                        <div class="list-group-item px-0" data-course-guid="<%= course.guid %>" data-course-name="<%= course.name %>">
-                                            <div class="d-flex flex-wrap justify-content-between align-items-center">
-                                                <div class="mr-3">
-                                                    <span><%= course.name %></span>
-                                                    <% if (course.description) { %>
-                                                        <p class="text-muted small mb-0"><%= course.description %></p>
-                                                    <% } %>
-                                                </div>
-                                                <div class="d-flex align-items-center">
-                                                    <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-course-<%= course.guid %>" aria-label="Edit <%= course.name %>">Edit</button>
-                                                    <form method="POST" action="/admin/courses/destroy">
-                                                        <input type="hidden" name="guid" value="<%= course.guid %>">
-                                                        <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
-                                                    </form>
-                                                </div>
-                                            </div>
-                                            <div id="edit-course-<%= course.guid %>" data-edit-panel hidden>
-                                                        <form class="mt-3 p-3 border rounded" method="POST" action="/admin/courses/update" data-editor-label="Edit <%= course.name %>">
-                                                            <input type="hidden" name="guid" value="<%= course.guid %>">
-                                                            <div class="form-group">
-                                                                <label for="edit-course-name-<%= course.guid %>">Course name</label>
-                                                                <input class="form-control" id="edit-course-name-<%= course.guid %>" name="name" type="text" maxlength="160" value="<%= course.name %>" required>
-                                                            </div>
-                                                            <div class="form-group">
-                                                                <label for="edit-course-description-<%= course.guid %>">Description <small class="text-muted">Optional</small></label>
-                                                                <textarea class="form-control" id="edit-course-description-<%= course.guid %>" name="description" rows="3" maxlength="10000"><%= course.description || '' %></textarea>
-                                                            </div>
-                                                            <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
-                                                            <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
-                                                        </form>
-                                            </div>
-                                        </div>
-                                    <% }); %>
-                                </div>
-                            <% } else { %>
-                                <p class="text-muted mb-0">No courses are attached to this facility.</p>
-                            <% } %>
+        <% if (error) { %><div class="alert alert-danger" role="alert">The FAQ could not be saved. Enter a question (up to 300 characters), an answer (up to 10,000 characters) and choose an existing sport.</div><% } %>
+        <section id="course-directory" data-course-facility aria-labelledby="course-list-heading">
+            <div class="d-flex align-items-center mb-3" style="gap: 0.5rem;">
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-course-panel-directory">Add course</button>
+                <div data-course-add-feedback class="flex-grow-1 d-flex align-items-center" style="height: 4.5rem; min-width: 0;"></div>
+            </div>
+            <div id="add-course-panel-directory" data-edit-panel hidden>
+                <form id="add-course-directory" method="POST" action="/admin/courses" class="bg-white border rounded p-3 mb-4" data-editor-success-inline>
+                    <%- include('partials/course-form', { course: null, prefix: 'new-course', facilities, sports }) %>
+                    <button class="btn btn-primary btn-sm" type="submit">Add course</button>
+                </form>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 id="course-list-heading" class="h5 mb-0">Course directory</h2>
+                <span class="badge badge-secondary" data-course-count><%= courses.length %></span>
+            </div>
+            <div data-course-list>
+                <% if (!courses.length) { %><p class="text-muted">No courses have been added yet.</p><% } %>
+                <% courses.forEach(course => { %>
+                    <article id="course-<%= course.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3" data-course-guid="<%= course.guid %>" data-course-name="<%= course.name %>">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center">
+                            <div class="mr-3">
+                                <h3 class="h5"><%= course.name %></h3>
+                                <%- include('partials/course-description', { course }) %>
+                                <p class="small mb-1">Sport: <%= sports.filter(sport => course.sport_guids.includes(sport.guid)).map(sport => sport.name).join(', ') || 'None assigned' %></p>
+                                <% if (!course.sport_guids.length) { %><p class="text-warning mb-1">Sport assignment needed. Edit this course to assign a sport.</p><% } %>
                             </div>
-                            <div class="alert alert-success" data-course-feedback role="status" aria-live="polite" aria-atomic="true" hidden></div>
-                            <div class="alert alert-danger" data-course-error role="alert" tabindex="-1" hidden></div>
-                            <div class="d-flex align-items-center mt-3" style="gap: 0.5rem;">
-                                <button class="btn btn-outline-secondary btn-sm flex-shrink-0" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-course-panel-<%= group.guid %>">Add course</button>
-                                <div class="flex-grow-1 d-flex align-items-center" data-course-add-feedback style="height: 4.5rem; min-width: 0; overflow: auto;"></div>
-                            </div>
-                            <div id="add-course-panel-<%= group.guid %>" data-edit-panel hidden>
-                                <form id="add-course-<%= group.guid %>" method="POST" action="/admin/courses" data-editor-success-inline>
-                                    <input type="hidden" name="facility_guid" value="<%= group.guid %>">
-                                    <div class="form-group">
-                                        <label for="add-course-name-<%= group.guid %>">Course name</label>
-                                        <input class="form-control" id="add-course-name-<%= group.guid %>" name="name" type="text" maxlength="160" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="add-course-description-<%= group.guid %>">Description <small class="text-muted">Optional</small></label>
-                                        <textarea class="form-control" id="add-course-description-<%= group.guid %>" name="description" rows="3" maxlength="10000"></textarea>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" type="submit">Add course</button>
+                            <div class="d-flex align-items-center">
+                                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-course-<%= course.guid %>" aria-label="Edit <%= course.name %>">Edit</button>
+                                <form method="POST" action="/admin/courses/destroy">
+                                    <input type="hidden" name="guid" value="<%= course.guid %>">
+                                    <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
                                 </form>
                             </div>
-                        </article>
-                    <% }); %>
-                <% } else { %>
-                    <p class="text-muted border-top pt-3">Add a facility to start organizing courses.</p>
-                <% } %>
+                        </div>
+                        <div id="edit-course-<%= course.guid %>" data-edit-panel hidden>
+                            <form class="mt-3 p-3 border rounded" method="POST" action="/admin/courses/update" data-editor-label="Edit <%= course.name %>">
+                                <input type="hidden" name="guid" value="<%= course.guid %>">
+                                <%- include('partials/course-form', { course, prefix: 'course-' + course.guid, facilities, sports }) %>
+                                <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                            </form>
+                        </div>
+                        <section class="border-top mt-3 pt-3" aria-label="Facility runs for <%= course.name %>">
+                            <h4 class="h6">Facility runs</h4>
+                            <% if (!(course.runs || []).length) { %><p class="text-muted">No facility runs yet. Add one below.</p><% } %>
+                            <% (course.runs || []).forEach(run => { %>
+                                <div class="border rounded p-3 mb-3">
+                                    <h5 class="h6"><%= run.name %> — <%= run.facility_name %></h5>
+                                    <% if (!run.published) { %>
+                                        <p class="text-warning">Draft: complete the price, spaces and sessions before this run appears to customers.</p>
+                                        <% if (course.start_date || course.end_date) { %><p class="small">Previous course dates: <%= course.start_date || 'Not set' %> to <%= course.end_date || 'Not set' %>. Use these to complete the schedule.</p><% } %>
+                                    <% } else { %>
+                                        <p>Full price: &pound;<%= (run.full_price_pence / 100).toFixed(2) %>. Current price: &pound;<%= (run.current_price_pence / 100).toFixed(2) %>.
+                                            <%= run.remaining_sessions %> of <%= run.total_sessions %> sessions remaining. Maximum spaces: <%= run.capacity %>.</p>
+                                    <% } %>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-run-<%= run.guid %>">Edit run</button>
+                                    <form class="d-inline" method="POST" action="/admin/courses/runs/destroy">
+                                        <input type="hidden" name="guid" value="<%= run.guid %>">
+                                        <input type="hidden" name="course_guid" value="<%= course.guid %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete run</button>
+                                    </form>
+                                    <div id="edit-run-<%= run.guid %>" data-edit-panel hidden>
+                                        <form method="POST" action="/admin/courses/runs/update" class="mt-3" data-editor-preview="false">
+                                            <%- include('partials/course-run-form', { course, run, facilities, prefix: 'run-' + run.guid }) %>
+                                            <button class="btn btn-primary btn-sm" type="submit">Save run</button>
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            <% }); %>
+                            <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-run-<%= course.guid %>">Add facility run</button>
+                            <div id="add-run-<%= course.guid %>" data-edit-panel hidden>
+                                <form method="POST" action="/admin/courses/runs" class="mt-3" data-editor-preview="false">
+                                    <%- include('partials/course-run-form', { course, run: null, facilities, prefix: 'new-run-' + course.guid }) %>
+                                    <button class="btn btn-primary btn-sm" type="submit">Add run</button>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
+                                </form>
+                            </div>
+                        </section>
+                    </article>
+                <% }); %>
+            </div>
+            <div class="alert alert-success" data-course-feedback role="status" aria-live="polite" aria-atomic="true" hidden></div>
+            <div class="alert alert-danger" data-course-error role="alert" tabindex="-1" hidden></div>
         </section>
+        <% if (isAdmin) { %>
+            <section class="mt-5" aria-labelledby="sport-faq-heading">
+                <h2 id="sport-faq-heading" class="h4">Sport course FAQs</h2>
+                <p>Answers are shared by every course assigned to that sport, across all facilities. Only Administrators can edit them.</p>
+                <% sports.forEach(sport => { const sportFaqs = faqs.filter(faq => faq.sport_guid === sport.guid); %>
+                    <article id="sport-faq-<%= sport.guid %>" data-sport-faq-card class="bg-white border rounded p-3 mb-3">
+                        <details data-sport-faq-details>
+                        <summary class="h5 mb-0"><h3 class="h5 d-inline"><%= sport.name %></h3> <span class="badge <%= sportFaqs.length ? 'badge-info' : 'badge-light text-muted' %> ml-2" data-sport-faq-count><%= sportFaqs.length ? sportFaqs.length + (sportFaqs.length === 1 ? ' FAQ' : ' FAQs') : 'No FAQs' %></span></summary>
+                        <div data-sport-faq-list>
+                        <% sportFaqs.forEach(faq => { %>
+                            <div class="border-top pt-3 mt-3">
+                                <h4 class="h6"><%= faq.question %></h4>
+                                <div class="d-flex align-items-center" data-faq-actions>
+                                    <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-faq-<%= faq.guid %>">Edit</button>
+                                    <form method="POST" action="/admin/courses/faqs/destroy">
+                                        <input type="hidden" name="guid" value="<%= faq.guid %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                                    </form>
+                                </div>
+                                <div id="edit-faq-<%= faq.guid %>" data-edit-panel hidden>
+                                <form class="mt-3" method="POST" action="/admin/courses/faqs/update" data-editor-label="Edit" data-editor-preview="false" data-faq-edit>
+                                    <input type="hidden" name="guid" value="<%= faq.guid %>">
+                                    <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                                    <%- include('partials/sport-faq-form', { faq, prefix: 'faq-' + faq.guid }) %>
+                                    <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                </form>
+                                </div>
+                            </div>
+                        <% }); %>
+                        <% if (sportFaqs.length) { %>
+                            <hr class="my-4">
+                        <% } %>
+                        </div>
+                        <div class="mt-3" data-faq-add-spacing>
+                        <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle data-hide-when-editing aria-expanded="false" aria-controls="add-faq-<%= sport.guid %>">Add FAQ</button>
+                        <div id="add-faq-<%= sport.guid %>" data-edit-panel hidden>
+                        <form method="POST" action="/admin/courses/faqs" data-editor-label="Add FAQ" data-faq-add>
+                            <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                            <%- include('partials/sport-faq-form', { faq: null, prefix: 'new-faq-' + sport.guid }) %>
+                            <button class="btn btn-primary btn-sm" type="submit">Add FAQ</button>
+                        </form>
+                        </div>
+                        </div>
+                        </details>
+                    </article>
+                <% }); %>
+            </section>
+        <% } %>
     </main>
 </body>
-
 </html>

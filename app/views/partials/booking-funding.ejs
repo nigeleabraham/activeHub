@@ -1,0 +1,10 @@
+<% if (booking.credit_applied_pence > 0) { %>
+    <div class="small mt-1">
+        Card paid: £<%= ((booking.card_paid_pence ?? (booking.amount_paid_pence - booking.credit_applied_pence)) / 100).toFixed(2) %><br>
+        Refundable credit used: £<%= ((booking.refundable_credit_pence ?? 0) / 100).toFixed(2) %><br>
+        Non-refundable credit used: £<%= ((booking.non_refundable_credit_pence ?? booking.credit_applied_pence) / 100).toFixed(2) %>
+        <% if (booking.untraced_credit_pence > 0) { %>
+            <br><strong>Includes £<%= (booking.untraced_credit_pence / 100).toFixed(2) %> with missing funding history; treated as non-refundable.</strong>
+        <% } %>
+    </div>
+<% } %>

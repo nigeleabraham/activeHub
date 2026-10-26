@@ -1,0 +1,10 @@
+    async function animateDeletion(row) {
+        row.style.backgroundColor = '#f8d7da';
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            await row.animate([
+                { backgroundColor: '#f8d7da', opacity: 1, offset: 0 },
+                { backgroundColor: '#f8d7da', opacity: 1, offset: 0.55 },
+                { backgroundColor: '#f8d7da', opacity: 0, offset: 1 }
+            ], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished;
+        }
+    }

@@ -21,7 +21,7 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
     const db = new Pool({ connectionString: databaseUrl });
     const Bookings = require('../models/Bookings');
     const Credits = require('../models/Credits');
-    for (const name of ['Facilities', 'OpeningHours', 'Courses', 'Sports', 'Settings', 'Roles', 'Profiles', 'AuditLog', 'Bookings']) {
+    for (const name of ['Facilities', 'OpeningHours', 'Courses', 'Sports', 'Settings', 'Roles', 'Profiles', 'AuditLog', 'Bookings', 'CourseOrders']) {
         await require(`../models/${name}`).initialize();
     }
     const { rows: [facility] } = await db.query(`
@@ -69,6 +69,55 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
     async function requestRow(guid) {
         const { rows: [row] } = await db.query('SELECT * FROM credit_refund_requests WHERE guid = $1', [guid]);
         return row;
+    }
+
+    async function profileDeletion() {
+        const Profiles = require('../models/Profiles');
+        const resident = await person();
+        const other = await person();
+        const source = await granted(resident);
+        const refund = await Credits.requestRefund(resident.guid, source.credit.guid);
+        const past = await Bookings.createBooking(bookingInput(resident));
+        await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 days', ends_at = now() - INTERVAL '1 day' WHERE guid = $1", [past.guid]);
+        const request = await Bookings.requestCredit(resident.guid, past.guid, 'discretionary', 'Test request');
+        const ongoing = await Bookings.createBooking(bookingInput(resident));
+        await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '1 minute', ends_at = now() + INTERVAL '1 hour' WHERE guid = $1", [ongoing.guid]);
+        const future = await Bookings.createBooking(bookingInput(resident));
+        const unaffected = await Bookings.createBooking({ ...bookingInput(other), booked_by_guid: resident.guid });
+        const { rows: [stored] } = await db.query('SELECT email FROM profiles WHERE guid = $1', [resident.guid]);
+        assert.equal(await Profiles.remove(resident.guid, 'Deletion admin'), true);
+        assert.equal(await Profiles.findByGuid(resident.guid), null);
+        assert.equal((await Profiles.findAll()).some(p => p.guid === resident.guid), false);
+        assert.deepEqual(await Profiles.search(stored.email), []);
+        const { rows: [archived] } = await db.query('SELECT deleted_at, credit_pence FROM profiles WHERE guid = $1', [resident.guid]);
+        assert.ok(archived.deleted_at);
+        assert.equal(archived.credit_pence, 0);
+        const { rows: [credit] } = await db.query('SELECT * FROM credits WHERE guid = $1', [source.credit.guid]);
+        assert.equal(credit.remaining_pence, 0);
+        assert.equal(credit.voided_pence, 1000);
+        assert.ok(credit.voided_at);
+        assert.equal((await requestRow(refund.guid)).status, 'cancelled');
+        assert.equal((await requestRow(refund.guid)).decided_by_name, 'Deletion admin');
+        assert.equal((await Bookings.findCreditRequests()).find(r => r.guid === request.guid).status, 'cancelled');
+        for (const booking of [source.booking, future]) {
+            assert.equal((await db.query('SELECT 1 FROM bookings WHERE guid = $1', [booking.guid])).rowCount, 0);
+            assert.equal((await db.query('SELECT 1 FROM booking_reservations WHERE booking_guid = $1', [booking.guid])).rowCount, 0);
+        }
+        for (const booking of [past, ongoing, unaffected]) {
+            assert.equal((await db.query('SELECT 1 FROM bookings WHERE guid = $1', [booking.guid])).rowCount, 1);
+        }
+        assert.equal(await Profiles.remove(resident.guid, 'Deletion admin'), false);
+        assert.equal(await Profiles.update(resident.guid, { name: 'Restored', email: stored.email, roles: ['Resident'] }), null);
+        assert.equal(await Credits.requestRefund(resident.guid, source.credit.guid), null);
+        assert.equal(await Credits.decideRefund(refund.guid, true, 'Admin'), null);
+        assert.equal(await Bookings.decideCreditRequest(request.guid, true, 'Admin', true), null);
+        assert.equal(await Bookings.requestCredit(resident.guid, past.guid, 'weather', null), null);
+        await assert.rejects(Bookings.createBooking(bookingInput(resident)), /profile no longer exists/);
+        await assert.rejects(Bookings.addCreditToBooking(facility.guid, past.guid, 'Admin', true), /recipient no longer exists/);
+        const replacement = await Bookings.createBooking({
+            ...bookingInput(other), starts_at: future.starts_at, ends_at: future.ends_at
+        });
+        assert.ok(replacement.guid, 'Deleted future booking releases the slot');
     }
 
     await t.test('daylight template flags persist and generated schedules enforce limits for each facility', async () => {
@@ -195,6 +244,332 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(await balance(profile), 1300);
     });
 
+    await t.test('course section inheritance persists live defaults, independent overrides and appended sections', async () => {
+        const Sports = require('../models/Sports');
+        const Courses = require('../models/Courses');
+        const { randomUUID } = require('node:crypto');
+        const age = { id: randomUUID(), heading: 'Age', text: 'Default age' };
+        const refunds = { id: randomUUID(), heading: 'Refunds', text: 'Default refunds' };
+        const extra = { id: randomUUID(), heading: 'Extra', text: 'Course only' };
+        const source = await Sports.create('Section inheritance fixture', [age, refunds]);
+        const details = { name: 'Section course', description: 'Original retained',
+            sport_guids: [source.guid, sport.guid], description_sport_guid: source.guid,
+            description_overrides: { [age.id]: { heading: 'Course age', text: 'Unique age' } },
+            description_sections: [extra] };
+        const course = await Courses.create(details);
+        const read = async () => (await Courses.findAll()).find(c => c.guid === course.guid);
+        assert.deepEqual((await read()).resolved_sections.map(s => s.text), ['Unique age', 'Default refunds', 'Course only']);
+        await Sports.update(source.guid, source.name, [refunds, { ...age, text: 'Changed age default' }]);
+        assert.deepEqual((await read()).resolved_sections.map(s => s.text), ['Default refunds', 'Unique age', 'Course only']);
+        assert.equal((await read()).description, 'Original retained');
+        await assert.rejects(Courses.update(course.guid, { ...details, sport_guids: [sport.guid] }), /assigned sport/);
+        await assert.rejects(Courses.update(course.guid, { ...details, description_overrides: { [randomUUID()]: age } }), /current sport sections/);
+        assert.equal((await read()).resolved_sections.length, 3);
+        await Courses.update(course.guid, { ...details, description_sport_guid: null, description_overrides: {} });
+        assert.deepEqual((await read()).resolved_sections, [extra]);
+        await Courses.remove(course.guid);
+        await Sports.remove(source.guid);
+    });
+
+    await t.test('course run prices count only future session starts and hide completed or draft runs', async () => {
+        const Courses = require('../models/Courses');
+        const course = await Courses.create({ name: 'Session price test', sport_guids: [sport.guid] });
+        const { rows: [run] } = await db.query(`INSERT INTO course_runs
+            (course_guid, facility_guid, name, full_price_pence, capacity, published)
+            VALUES ($1,$2,'Tuesday',1000,12,true) RETURNING guid`, [course.guid, facility.guid]);
+        await db.query(`INSERT INTO course_sessions (run_guid, starts_at, ends_at)
+            VALUES ($1, now()-interval '30 minutes', now()+interval '30 minutes'),
+                   ($1, now()+interval '1 day', now()+interval '1 day 1 hour'),
+                   ($1, now()+interval '2 days', now()+interval '2 days 1 hour')`, [run.guid]);
+        const visible = (await Courses.findAll({ availableOnly: true })).find(item => item.guid === course.guid);
+        assert.equal(visible.runs[0].current_price_pence, 667);
+        assert.equal(visible.runs[0].remaining_sessions, 2);
+        assert.equal(visible.runs[0].total_sessions, 3);
+        assert.equal(visible.runs[0].sessions.length, 2);
+        const adminRun = (await Courses.findAll()).find(item => item.guid === course.guid).runs[0];
+        assert.equal(adminRun.sessions.length, 3);
+        assert.deepEqual(visible.runs[0].sessions, adminRun.sessions.slice(1));
+        assert.equal(adminRun.current_price_pence, 667);
+        assert.equal((await db.query('SELECT count(*)::int AS count FROM course_sessions WHERE run_guid=$1',
+            [run.guid])).rows[0].count, 3);
+        await db.query('UPDATE course_runs SET published=false WHERE guid=$1', [run.guid]);
+        assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        await db.query('UPDATE course_runs SET published=true WHERE guid=$1', [run.guid]);
+        await db.query("UPDATE course_sessions SET starts_at=starts_at-interval '1 year', ends_at=ends_at-interval '1 year' WHERE run_guid=$1", [run.guid]);
+        assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        assert.equal((await Courses.findAll()).find(item => item.guid === course.guid).runs[0].current_price_pence, 0);
+        await Courses.remove(course.guid);
+    });
+
+    await t.test('course baskets persist family attendees, use credit atomically and prevent duplicate enrolments and overselling', async () => {
+        const Orders = require('../models/CourseOrders');
+        const Courses = require('../models/Courses');
+        const buyer = await person();
+        const rival = await person();
+        await granted(buyer);
+        const member = await Orders.addFamilyMember(buyer.guid, 'Test child');
+        assert.equal((await Orders.familyMembers(buyer.guid))[0].name, 'Test child');
+        await assert.rejects(Orders.add(rival.guid, crypto.randomUUID(), member.guid, '/courses'), /saved family member/);
+        const { rows: [course] } = await db.query("INSERT INTO courses(name) VALUES ('Basket course') RETURNING guid");
+        const { rows: [run] } = await db.query(`
+            INSERT INTO course_runs(course_guid,facility_guid,name,full_price_pence,capacity,published)
+            VALUES ($1,$2,'Tuesday',3000,2,true) RETURNING guid`, [course.guid, facility.guid]);
+        await db.query(`INSERT INTO course_sessions(run_guid,starts_at,ends_at) VALUES
+            ($1,now()-interval '2 days',now()-interval '2 days'+interval '1 hour'),
+            ($1,now()+interval '2 days',now()+interval '2 days 1 hour'),
+            ($1,now()+interval '9 days',now()+interval '9 days 1 hour')`, [run.guid]);
+        await Orders.add(buyer.guid, run.guid, member.guid, '/facilities#test-hall');
+        await Orders.add(buyer.guid, run.guid, member.guid, '/facilities#test-hall');
+        let basket = await Orders.basket(buyer.guid);
+        assert.equal(basket.items.length, 1);
+        assert.equal(await Orders.itemCount(buyer.guid), 1);
+        assert.equal(await Orders.itemCount(rival.guid), 0);
+        assert.equal(basket.return_to, '/facilities#test-hall');
+        assert.equal(basket.total, 2000);
+        assert.equal(basket.credit, 1000);
+        await assert.rejects(Orders.pay(buyer.guid, basket.revision, { total: 1, credit: 0 }, 'SIM-TEST'), /changed/);
+        assert.equal(await balance(buyer), 1000);
+        const order = await Orders.pay(buyer.guid, basket.revision, { total: basket.total, credit: basket.credit }, 'SIM-TEST');
+        assert.equal((await Orders.pay(buyer.guid, basket.revision, { total: basket.total, credit: basket.credit }, 'SIM-TEST')).guid, order.guid);
+        assert.equal((await Orders.basket(buyer.guid)).items.length, 0);
+        assert.equal(await Orders.itemCount(buyer.guid), 0);
+        assert.equal(await balance(buyer), 0);
+        const confirmed = await Orders.order(buyer.guid, order.guid);
+        assert.equal(confirmed.items[0].attendee_name, 'Test child');
+        assert.equal(confirmed.items[0].sessions.length, 2);
+        assert.equal(confirmed.items[0].credit_applied_pence, 1000);
+        assert.equal(await Orders.order(rival.guid, order.guid), null);
+        assert.equal((await db.query('SELECT sum(amount_pence)::int AS pence FROM credit_spending WHERE booking_guid = $1',
+            [confirmed.items[0].guid])).rows[0].pence, 1000);
+        assert.equal((await Courses.findRuns()).find(r => r.guid === run.guid).spaces_remaining, 1);
+        await assert.rejects(Orders.add(buyer.guid, run.guid, member.guid, '/courses'), /already enrolled/);
+
+        // Two customers can basket the last place, but only one can purchase it.
+        await Orders.add(buyer.guid, run.guid, 'self', '/courses');
+        await Orders.add(rival.guid, run.guid, 'self', '/courses');
+        const first = await Orders.basket(buyer.guid);
+        const second = await Orders.basket(rival.guid);
+        const outcomes = await Promise.allSettled([
+            Orders.pay(buyer.guid, first.revision, { total: first.total, credit: first.credit }, 'SIM-FIRST'),
+            Orders.pay(rival.guid, second.revision, { total: second.total, credit: second.credit }, 'SIM-SECOND')
+        ]);
+        assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+        assert.equal(outcomes.find(result => result.status === 'rejected').reason.code, 'BASKET_CONFLICT');
+        assert.equal((await Courses.findRuns()).find(r => r.guid === run.guid).spaces_remaining, 0);
+        assert.equal((await db.query('SELECT count(*)::int AS count FROM course_enrolments WHERE run_guid=$1', [run.guid])).rows[0].count, 2);
+
+        const another = await Orders.addFamilyMember(rival.guid, 'Another child');
+        await Orders.removeFamilyMember(buyer.guid, another.guid).then(() => assert.fail('Foreign member removed'),
+            error => assert.match(error.message, /no longer available/));
+        await Orders.removeFamilyMember(rival.guid, another.guid);
+        assert.equal((await Orders.familyMembers(rival.guid)).length, 0);
+        await Orders.removeFamilyMember(buyer.guid, member.guid);
+        assert.equal((await Orders.order(buyer.guid, order.guid)).items[0].attendee_name, 'Test child');
+        await assert.rejects(Courses.removeRun(run.guid, course.guid), { constraint: 'course_enrolments_run_guid_fkey' });
+        await assert.rejects(Courses.saveRun(run.guid, course.guid, {
+            facility_guid: facility.guid, name: 'Tuesday', full_price_pence: 3000, capacity: 1,
+            sessions: [{ starts_local: '2090-01-05 18:00', ends_local: '2090-01-05 19:00' }]
+        }), { code: 'COURSE_CAPACITY' });
+
+        const covered = await person();
+        await granted(covered);
+        const { rows: [creditRun] } = await db.query(`
+            INSERT INTO course_runs(course_guid,facility_guid,name,full_price_pence,capacity,published)
+            VALUES ($1,$2,'Credit run',500,3,true) RETURNING guid`, [course.guid, facility.guid]);
+        await db.query(`INSERT INTO course_sessions(run_guid,starts_at,ends_at)
+            VALUES ($1,now()+interval '3 days',now()+interval '3 days 1 hour')`, [creditRun.guid]);
+        await Orders.add(covered.guid, creditRun.guid, 'self', '/courses');
+        basket = await Orders.basket(covered.guid);
+        assert.equal(basket.due, 0);
+        await db.query('UPDATE course_runs SET full_price_pence=600 WHERE guid=$1', [creditRun.guid]);
+        await assert.rejects(Orders.pay(covered.guid, basket.revision, { total: basket.total, credit: basket.credit }, 'CREDIT'), /changed/);
+        assert.equal(await balance(covered), 1000);
+        basket = await Orders.basket(covered.guid);
+        await Orders.pay(covered.guid, basket.revision, { total: basket.total, credit: basket.credit }, 'CREDIT');
+        assert.equal(await balance(covered), 400);
+        const archived = await Orders.addFamilyMember(covered.guid, 'Archived child');
+        await Orders.add(covered.guid, creditRun.guid, archived.guid, '/courses');
+        await Orders.removeFamilyMember(covered.guid, archived.guid);
+        assert.equal((await Orders.basket(covered.guid)).valid, false);
+        assert.match((await Orders.basket(covered.guid)).items[0].error, /no longer available/);
+    });
+
+    await t.test('multiple child profiles preserve member IDs, inherit live contacts and isolate ownership', async () => {
+        const Children = require('../models/Children');
+        const Orders = require('../models/CourseOrders');
+        const Profiles = require('../models/Profiles');
+        const parent = await person();
+        const other = await person();
+        const oldMember = await Orders.addFamilyMember(parent.guid, 'Existing child');
+        const input = { name: 'Updated child', inherit_address: 'yes', inherit_parental_contact: 'yes',
+            inherit_emergency_contact: 'no', emergency_contact_name: 'Guardian', emergency_contact_telephone: '12345',
+            medical_concern: 'yes', medical_conditions: ['asthma'], activity_limitation: 'no',
+            membership_number: 'CHILD-1', interest_sport_guids: [sport.guid] };
+        await Children.save(parent.guid, oldMember.guid, input);
+        assert.equal((await Children.find(parent.guid, oldMember.guid)).name, 'Updated child');
+        const second = await Children.save(parent.guid, null, { ...input, name: 'Second child', medical_concern: 'no' });
+        assert.equal((await Orders.familyMembers(parent.guid)).length, 2);
+        await Children.save(parent.guid, oldMember.guid, { ...input, date_of_birth: '2010-01-01' });
+        await Children.save(parent.guid, second.guid, { ...input, name: 'Second child', date_of_birth: '2020-01-01' });
+        assert.deepEqual((await Orders.familyMembers(parent.guid)).map(child => child.guid), [second.guid, oldMember.guid]);
+        assert.equal((await Children.find(parent.guid, second.guid)).date_of_birth, '2020-01-01');
+        assert.equal(await Children.find(other.guid, oldMember.guid), null);
+        assert.equal(await Children.save(other.guid, oldMember.guid, { ...input, name: 'Tampered' }), null);
+        await db.query("UPDATE profiles SET address_line_1='Parent address', telephone='555', emergency_contact_name='Parent emergency' WHERE guid=$1", [parent.guid]);
+        const child = await Children.find(parent.guid, oldMember.guid);
+        assert.deepEqual(child.medical_conditions, ['asthma']);
+        assert.equal(child.membership_number, 'CHILD-1');
+        assert.deepEqual(child.interest_sport_guids, [sport.guid]);
+        let resolved = Children.resolve(child, await Profiles.findByGuid(parent.guid));
+        assert.equal(resolved.address_line_1, 'Parent address');
+        assert.equal(resolved.parental_contact_telephone, '555');
+        assert.equal(resolved.emergency_contact_name, 'Guardian');
+        await db.query("UPDATE profiles SET address_line_1='New address' WHERE guid=$1", [parent.guid]);
+        assert.equal(Children.resolve(child, await Profiles.findByGuid(parent.guid)).address_line_1, 'New address');
+        await Children.save(parent.guid, second.guid, { ...input, name: 'Second child', inherit_address: 'no', address_line_1: 'Other address' });
+        resolved = Children.resolve(await Children.find(parent.guid, second.guid), await Profiles.findByGuid(parent.guid));
+        assert.equal(resolved.address_line_1, 'Other address');
+        await Orders.removeFamilyMember(parent.guid, oldMember.guid);
+        assert.equal(await Children.find(parent.guid, oldMember.guid), null);
+        assert.equal(await Children.save(parent.guid, oldMember.guid, input), null);
+        await assert.rejects(Children.save(parent.guid, null, { ...input, interest_sport_guids: [crypto.randomUUID()] }),
+            Children.ChildInputError);
+    });
+
+    await t.test('independent profile section saves preserve unrelated data and unanswered legacy health', async () => {
+        const Profiles = require('../models/Profiles');
+        const Children = require('../models/Children');
+        const Orders = require('../models/CourseOrders');
+        const parent = await person(250);
+        const other = await person();
+        const before = await Profiles.findByGuid(parent.guid);
+        await Promise.all([
+            Profiles.updateDetails(parent.guid, { membership_number: 'PARENT', name: 'Ignored' }, 'membership'),
+            Profiles.updateDetails(parent.guid, { address_line_1: 'Parent address' }, 'address')
+        ]);
+        let adult = await Profiles.findByGuid(parent.guid);
+        assert.equal(adult.name, before.name);
+        assert.equal(adult.email, before.email);
+        assert.equal(adult.medical_concern, null);
+        assert.equal(adult.credit_pence, before.credit_pence);
+        assert.equal(adult.membership_number, 'PARENT');
+        assert.equal(adult.address_line_1, 'Parent address');
+        const child = await Orders.addFamilyMember(parent.guid, 'Legacy child');
+        await Promise.all([
+            Children.save(parent.guid, child.guid, { membership_number: ' CHILD ', name: 'Ignored' }, 'membership'),
+            Children.save(parent.guid, child.guid, { name: 'New name', date_of_birth: '2020-01-01' }, 'name')
+        ]);
+        let saved = await Children.find(parent.guid, child.guid);
+        assert.equal(saved.membership_number, 'CHILD');
+        assert.equal(saved.name, 'New name');
+        assert.equal(saved.date_of_birth, '2020-01-01');
+        assert.equal(saved.medical_concern, null);
+        assert.equal(saved.activity_limitation, null);
+        assert.equal(saved.inherit_address, true);
+        await Children.save(parent.guid, child.guid, {
+            inherit_address: 'no', address_line_1: 'Child address'
+        }, 'address');
+        assert.equal((await Children.find(parent.guid, child.guid)).address_line_1, 'Child address');
+        await Children.save(parent.guid, child.guid, { inherit_address: 'yes', address_line_1: 'Ignored' }, 'address');
+        saved = await Children.find(parent.guid, child.guid);
+        assert.equal(saved.address_line_1, null);
+        assert.equal(Children.resolve(saved, adult).address_line_1, 'Parent address');
+        await Children.save(parent.guid, child.guid, {
+            medical_concern: 'yes', medical_conditions: ['other'], medical_other: 'Test concern', activity_limitation: 'no'
+        }, 'health');
+        await Children.save(parent.guid, child.guid, {
+            medical_concern: 'no', medical_conditions: ['other'], medical_other: 'Stale', activity_limitation: 'no'
+        }, 'health');
+        saved = await Children.find(parent.guid, child.guid);
+        assert.deepEqual(saved.medical_conditions, []);
+        assert.equal(saved.medical_other, null);
+        assert.equal(saved.membership_number, 'CHILD');
+        assert.equal(await Children.save(other.guid, child.guid, { membership_number: 'OTHER' }, 'membership'), null);
+        await assert.rejects(Children.save(parent.guid, child.guid, { name: '' }, 'name'), Children.ChildInputError);
+        await Orders.removeFamilyMember(parent.guid, child.guid);
+        assert.equal(await Children.save(parent.guid, child.guid, { membership_number: 'ARCHIVED' }, 'membership'), null);
+    });
+
+    await t.test('self-service contact details persist without changing roles or booking credit', async () => {
+        const Profiles = require('../models/Profiles');
+        const resident = await person(250);
+        const before = await Profiles.findByGuid(resident.guid);
+        const details = { name: before.name, email: before.email, telephone: '+44 (0)20 1234 5678',
+            emergency_contact_name: 'Emergency Person', emergency_contact_telephone: '07700 900123',
+            address_line_1: '1 Test Street', address_line_2: 'Flat 2', town_city: 'London', county: 'Greater London', postcode: 'NW1 1AA',
+            medical_concern: true, medical_conditions: ['asthma', 'other'], medical_other: 'Test concern',
+            activity_limitation: 'limited_a_lot', membership_number: 'ABC 123-X' };
+        await Profiles.updateDetails(resident.guid, { ...details, roles: ['Administrator'], credit_pence: 999999 });
+        const stored = await Profiles.findByGuid(resident.guid);
+        for (const [field, value] of Object.entries(details)) assert.deepEqual(stored[field], value);
+        for (const row of [...await Profiles.findAll(), ...await Profiles.search(before.name)]) {
+            for (const field of ['medical_concern', 'medical_conditions', 'medical_other', 'activity_limitation']) {
+                assert.equal(Object.hasOwn(row, field), false);
+            }
+        }
+        assert.deepEqual(stored.roles, before.roles);
+        assert.equal(stored.credit_pence, before.credit_pence);
+        await Profiles.updateDetails(resident.guid, { ...details, telephone: null,
+            emergency_contact_name: null, emergency_contact_telephone: null,
+            address_line_1: null, address_line_2: null, town_city: null, county: null, postcode: null,
+            medical_concern: false, activity_limitation: 'no', membership_number: null });
+        const cleared = await Profiles.findByGuid(resident.guid);
+        assert.equal(cleared.telephone, null);
+        assert.equal(cleared.emergency_contact_name, null);
+        assert.equal(cleared.emergency_contact_telephone, null);
+        for (const field of ['address_line_1', 'address_line_2', 'town_city', 'county', 'postcode']) assert.equal(cleared[field], null);
+        assert.equal(cleared.medical_concern, false);
+        assert.deepEqual(cleared.medical_conditions, []);
+        assert.equal(cleared.medical_other, null);
+        assert.equal(cleared.activity_limitation, 'no');
+        assert.equal(cleared.membership_number, null);
+    });
+
+    await t.test('profile sport interests persist, follow renamed sports and omit deleted sports', async () => {
+        const Profiles = require('../models/Profiles');
+        const Sports = require('../models/Sports');
+        const resident = await person();
+        const before = await Profiles.findByGuid(resident.guid);
+        const first = await Sports.create('Interest test sport');
+        const second = await Sports.create('Second interest test sport');
+        try {
+            const details = { name: before.name, email: before.email,
+                interest_sport_guids: [first.guid, second.guid] };
+            await Profiles.updateDetails(resident.guid, details);
+            assert.deepEqual(new Set((await Profiles.findByGuid(resident.guid)).interest_sport_guids),
+                new Set(details.interest_sport_guids));
+            await Sports.update(first.guid, 'Renamed interest test sport');
+            assert.ok((await Profiles.findByGuid(resident.guid)).interest_sport_guids.includes(first.guid));
+            await Sports.remove(second.guid);
+            assert.deepEqual((await Profiles.findByGuid(resident.guid)).interest_sport_guids, [first.guid]);
+            await Profiles.updateDetails(resident.guid, { ...details, interest_sport_guids: [] });
+            const cleared = await Profiles.findByGuid(resident.guid);
+            assert.deepEqual(cleared.interest_sport_guids, []);
+            assert.deepEqual(cleared.roles, before.roles);
+            assert.equal(cleared.credit_pence, before.credit_pence);
+        } finally {
+            await Sports.remove(first.guid);
+            await Sports.remove(second.guid);
+        }
+    });
+
+    await t.test('profile deletion removes future bookings, cancels requests and preserves inactive history', profileDeletion);
+
+    await t.test('concurrent deletion and booking creation cannot leave active bookings for a deleted profile', async () => {
+        const Profiles = require('../models/Profiles');
+        const resident = await person();
+        const input = bookingInput(resident);
+        const results = await Promise.allSettled([
+            Profiles.remove(resident.guid, 'Deletion admin'),
+            Bookings.createBooking(input)
+        ]);
+        assert.equal(results[0].status, 'fulfilled');
+        assert.equal(results[0].value, true);
+        if (results[1].status === 'rejected') assert.match(results[1].reason.message, /profile no longer exists/);
+        assert.equal(await Profiles.findByGuid(resident.guid), null);
+        assert.equal((await db.query('SELECT 1 FROM bookings WHERE profile_guid = $1', [resident.guid])).rowCount, 0);
+    });
+
     await t.test('granting credit is once per booking and refundability is administrator-selected', async () => {
         const profile = await person();
         const { booking, credit } = await granted(profile, false);
@@ -203,6 +578,193 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(await Credits.requestRefund(profile.guid, credit.guid), null);
         assert.equal(await Bookings.addCreditToBooking(facility.guid, booking.guid, 'Admin', true), null);
         assert.equal(await balance(profile), 1000);
+    });
+
+    await t.test('mixed funding retains original refund eligibility across manual, weather, automatic and cancellation credits', async () => {
+        const Settings = require('../models/Settings');
+        for (const method of ['manual-refundable', 'manual-non-refundable', 'weather', 'automatic', 'cancel']) {
+            const resident = await person(800);
+            for (const [amount, refundable] of [[300, true], [500, false]]) {
+                await db.query(`
+                    INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+                    VALUES ($1, 'Original funding', $2, $2, $3)`, [resident.guid, amount, refundable]);
+            }
+            const [booking] = await Bookings.createBookings([
+                { ...bookingInput(resident), credit_applied_pence: 800 }
+            ], { profile_guid: resident.guid, pence: 800 });
+            const allocations = await db.query('SELECT amount_pence, refundable FROM credit_spending WHERE booking_guid = $1', [booking.guid]);
+            assert.equal(allocations.rows.filter(a => a.refundable).reduce((sum, a) => sum + a.amount_pence, 0), 300);
+            const funded = (await Bookings.findBookings(facility.guid)).find(b => b.guid === booking.guid);
+            assert.equal(funded.card_paid_pence, 200);
+            assert.equal(funded.refundable_credit_pence, 300);
+            assert.equal(funded.non_refundable_credit_pence, 500);
+            assert.equal(funded.untraced_credit_pence, 0);
+            let request;
+            if (method === 'weather' || method === 'automatic') {
+                await db.query('UPDATE bookings SET starts_at = $2, ends_at = $3 WHERE guid = $1',
+                    [booking.guid, new Date(Date.now() - 7200000), new Date(Date.now() - 3600000)]);
+                request = await Bookings.requestCredit(resident.guid, booking.guid, 'weather', null);
+                const queued = (await Bookings.findCreditRequests()).find(r => r.guid === request.guid);
+                assert.equal(queued.non_refundable_credit_pence, 500);
+                if (method === 'automatic') {
+                    await Settings.set('credit_slot_auto_approval', '1');
+                    await Bookings.decideCreditRequest(request.guid, true, 'Admin', false, null, true);
+                    const later = await person(1000);
+                    await db.query(`
+                        INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+                        VALUES ($1, 'School allocation', 1000, 1000, false)`, [later.guid]);
+                    const [laterBooking] = await Bookings.createBookings([
+                        { ...bookingInput(later), credit_applied_pence: 1000 }
+                    ], { profile_guid: later.guid, pence: 1000 });
+                    await db.query(`
+                        UPDATE bookings SET starts_at = b.starts_at, ends_at = b.ends_at
+                        FROM bookings b WHERE bookings.guid = $1 AND b.guid = $2`, [laterBooking.guid, booking.guid]);
+                    const automatic = await Bookings.requestCredit(later.guid, laterBooking.guid, 'weather', null);
+                    assert.equal(automatic.auto_approved, true);
+                    const laterCredits = await Credits.findForProfile(later.guid);
+                    assert.equal(laterCredits.length, 1);
+                    assert.equal(laterCredits[0].refundable, false);
+                    await Settings.set('credit_slot_auto_approval', '0');
+                    await db.query(`
+                        DELETE FROM credit_auto_approval_slots s USING bookings b
+                        WHERE b.guid = $1 AND s.starts_at = b.starts_at AND s.ends_at = b.ends_at`, [booking.guid]);
+                } else {
+                    const decision = await Bookings.decideCreditRequest(request.guid, true, 'Admin', false);
+                    assert.equal(decision.refundable_pence, 500);
+                    assert.equal(decision.non_refundable_pence, 500);
+                }
+            } else if (method === 'cancel') {
+                assert.equal(await Bookings.removeBookingWithCredit(facility.guid, booking.guid, resident.guid, 1000, 'Admin', true), true);
+            } else {
+                assert.equal(await Bookings.addCreditToBooking(facility.guid, booking.guid, 'Admin', method === 'manual-refundable'), 1000);
+            }
+            const expected = method === 'manual-non-refundable' ? 300 : 500;
+            const reissued = (await Credits.findForProfile(resident.guid)).filter(c => c.booking_guid === booking.guid);
+            assert.equal(reissued.length, 2);
+            assert.equal(reissued.filter(c => c.refundable).reduce((sum, c) => sum + c.remaining_pence, 0), expected);
+            assert.equal(reissued.filter(c => !c.refundable).reduce((sum, c) => sum + c.remaining_pence, 0), 1000 - expected);
+            assert.equal(await balance(resident), 1000);
+            const historical = (await Bookings.search({ reference: booking.booking_ref })).bookings[0];
+            assert.equal(historical.credit_applied_pence, 800);
+            assert.equal(historical.non_refundable_credit_pence, 500);
+            assert.equal(await Credits.requestRefund(resident.guid, reissued.find(c => !c.refundable).guid), null);
+            // A second all-credit booking must not increase cash eligibility, even with another weather award.
+            const [again] = await Bookings.createBookings([
+                { ...bookingInput(resident), credit_applied_pence: 1000 }
+            ], { profile_guid: resident.guid, pence: 1000 });
+            await Bookings.addCreditToBooking(facility.guid, again.guid, 'Admin', true);
+            const returned = await Credits.findForProfile(resident.guid);
+            assert.equal(returned.filter(c => c.refundable).reduce((sum, c) => sum + c.remaining_pence, 0), expected);
+            assert.equal(await balance(resident), 1000);
+            const eligible = returned.find(c => c.refundable);
+            const refund = await Credits.requestRefund(resident.guid, eligible.guid);
+            assert.equal((await Credits.decideRefund(refund.guid, true, 'Admin')).refunded_pence, expected);
+            assert.equal(await balance(resident), 1000 - expected);
+        }
+    });
+
+    await t.test('discretionary non-refundable approval overrides refundable source credit permanently', async () => {
+        for (const [creditPence, sourceRefundable, approveRefundable, expectedRefundable] of [
+            [1000, true, false, 0],
+            [600, true, false, 0],
+            [600, true, true, 1000],
+            [600, false, true, 400]
+        ]) {
+            const resident = await person(creditPence);
+            await db.query(`
+                INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+                VALUES ($1, 'Original allocation', $2, $2, $3)`, [resident.guid, creditPence, sourceRefundable]);
+            const [booking] = await Bookings.createBookings([
+                { ...bookingInput(resident), credit_applied_pence: creditPence }
+            ], { profile_guid: resident.guid, pence: creditPence });
+            await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [booking.guid]);
+            const request = await Bookings.requestCredit(resident.guid, booking.guid, 'discretionary', 'Court closed');
+            const decision = await Bookings.decideCreditRequest(request.guid, true, 'Admin', approveRefundable);
+            assert.equal(decision.refundable_pence, expectedRefundable);
+            assert.equal(decision.non_refundable_pence, 1000 - expectedRefundable);
+            const credits = await Credits.findForProfile(resident.guid);
+            assert.equal(credits.filter(c => c.refundable).reduce((sum, c) => sum + c.remaining_pence, 0), expectedRefundable);
+            assert.equal(await balance(resident), 1000);
+            for (const credit of credits.filter(c => !c.refundable)) {
+                assert.equal(await Credits.requestRefund(resident.guid, credit.guid), null);
+            }
+            if (!approveRefundable) {
+                const [again] = await spend(resident, 1000);
+                await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [again.guid]);
+                const weather = await Bookings.requestCredit(resident.guid, again.guid, 'weather', null);
+                const reissued = await Bookings.decideCreditRequest(weather.guid, true, 'Weather admin', true);
+                assert.equal(reissued.refundable_pence, 0);
+                assert.equal(reissued.non_refundable_pence, 1000);
+                assert.equal(await balance(resident), 1000);
+            }
+        }
+    });
+
+    await t.test('wholly non-refundable and untraced credits cannot become cash-refundable', async () => {
+        for (const tracked of [true, false]) {
+            const resident = await person(tracked ? 1000 : 0);
+            let booking;
+            if (tracked) {
+                await db.query(`
+                    INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+                    VALUES ($1, 'School allocation', 1000, 1000, false)`, [resident.guid]);
+                [booking] = await Bookings.createBookings([
+                    { ...bookingInput(resident), credit_applied_pence: 1000 }
+                ], { profile_guid: resident.guid, pence: 1000 });
+            } else {
+                booking = await Bookings.createBooking(bookingInput(resident));
+                await db.query('UPDATE bookings SET credit_applied_pence = 1000 WHERE guid = $1', [booking.guid]);
+            }
+            const funding = (await Bookings.search({ reference: booking.booking_ref })).bookings[0];
+            assert.equal(funding.untraced_credit_pence, tracked ? 0 : 1000);
+            await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [booking.guid]);
+            const request = await Bookings.requestCredit(resident.guid, booking.guid, 'weather', null);
+            await Bookings.decideCreditRequest(request.guid, true, 'Admin', true);
+            const credits = await Credits.findForProfile(resident.guid);
+            assert.equal(credits.length, 1);
+            assert.equal(credits[0].refundable, false);
+            assert.equal(credits[0].remaining_pence, 1000);
+            assert.equal(await Credits.requestRefund(resident.guid, credits[0].guid), null);
+        }
+    });
+
+    await t.test('legacy allocation eligibility is backfilled once and cancelled booking funding survives migration', async () => {
+        const resident = await person(600);
+        const { rows: [source] } = await db.query(`
+            INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+            VALUES ($1, 'Legacy school allocation', 600, 600, false) RETURNING guid`, [resident.guid]);
+        const [booking] = await Bookings.createBookings([
+            { ...bookingInput(resident), credit_applied_pence: 600 }
+        ], { profile_guid: resident.guid, pence: 600 });
+        await db.query('UPDATE credit_spending SET refundable = NULL WHERE booking_guid = $1', [booking.guid]);
+        await Credits.initialize();
+        assert.equal((await db.query('SELECT refundable FROM credit_spending WHERE booking_guid = $1', [booking.guid])).rows[0].refundable, false);
+        await db.query('UPDATE credits SET refundable = true WHERE guid = $1', [source.guid]);
+        await Credits.initialize();
+        assert.equal((await db.query('SELECT refundable FROM credit_spending WHERE booking_guid = $1', [booking.guid])).rows[0].refundable, false);
+        await Bookings.removeBookingWithCredit(facility.guid, booking.guid, resident.guid, 1000, 'Admin', true);
+        await db.query('UPDATE booking_refunds SET credit_applied_pence = 0 WHERE guid = $1', [booking.guid]);
+        await Credits.initialize();
+        const historical = (await Bookings.search({ reference: booking.booking_ref })).bookings[0];
+        assert.equal(historical.credit_applied_pence, 600);
+        assert.equal(historical.card_paid_pence, 400);
+        assert.equal(historical.non_refundable_credit_pence, 600);
+    });
+
+    await t.test('inconsistent funding rolls back the award rather than granting excess refundable credit', async () => {
+        const resident = await person(1000);
+        await db.query(`
+            INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence, refundable)
+            VALUES ($1, 'Test allocation', 1000, 1000, false)`, [resident.guid]);
+        const [booking] = await Bookings.createBookings([
+            { ...bookingInput(resident), credit_applied_pence: 1000 }
+        ], { profile_guid: resident.guid, pence: 1000 });
+        await db.query('UPDATE bookings SET credit_applied_pence = 900 WHERE guid = $1', [booking.guid]);
+        await assert.rejects(Bookings.addCreditToBooking(facility.guid, booking.guid, 'Admin', true), /funding history/);
+        assert.equal((await db.query('SELECT credited_at FROM bookings WHERE guid = $1', [booking.guid])).rows[0].credited_at, null);
+        assert.equal((await db.query('SELECT 1 FROM credits WHERE booking_guid = $1', [booking.guid])).rowCount, 0);
+        assert.equal(await balance(resident), 0);
+        await db.query('UPDATE bookings SET credit_applied_pence = 1000 WHERE guid = $1', [booking.guid]);
     });
 
     await t.test('pending refund shrinks after partial spending and approval deducts only what remains', async () => {
@@ -569,7 +1131,185 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         }
     });
 
-    await t.test('configured rolling day limit controls both profile visibility and new requests', async () => {
+    await t.test('profile role assignments migrate idempotently, persist, rename and protect the last administrator', async () => {
+        const Profiles = require('../models/Profiles');
+        const Roles = require('../models/Roles');
+        const legacy = await person();
+        assert.deepEqual((await Profiles.findByGuid(legacy.guid)).roles, ['Resident']);
+        await Profiles.initialize();
+        await Profiles.initialize();
+        assert.deepEqual((await Profiles.findByGuid(legacy.guid)).roles, ['Resident']);
+        const created = await Profiles.create({ name: 'Multi role', email: `${crypto.randomUUID()}@example.test`, roles: ['Coach', 'Resident'] });
+        assert.deepEqual(created.roles, ['Coach', 'Resident']);
+        assert.deepEqual((await Profiles.search('Multi role')).find(p => p.guid === created.guid).roles, ['Coach', 'Resident']);
+        const custom = await Roles.create({ name: 'Role test', description: null, permissions: ['bookings.manage'] });
+        await Profiles.update(created.guid, { name: created.name, email: created.email, roles: ['Resident', custom.name] });
+        assert.equal((await Roles.findByGuid(custom.guid)).member_count, 1);
+        await assert.rejects(Roles.remove(custom.guid), error => ['23503', '23001'].includes(error.code));
+        await Roles.update(custom.guid, { name: 'Renamed role test', description: null, permissions: [] });
+        assert.deepEqual((await Profiles.findByGuid(created.guid)).roles, ['Renamed role test', 'Resident']);
+        await assert.rejects(Profiles.update(created.guid, { name: 'Invalid edit', email: created.email, roles: ['Resident', 'Missing role'] }),
+            error => error.code === '23503');
+        assert.equal((await Profiles.findByGuid(created.guid)).name, created.name);
+        assert.deepEqual((await Profiles.findByGuid(created.guid)).roles, ['Renamed role test', 'Resident']);
+        const baseline = await Profiles.create({ name: 'Baseline resident', email: `${crypto.randomUUID()}@example.test` });
+        assert.equal(baseline.role, 'Resident');
+        assert.deepEqual(baseline.roles, ['Resident']);
+        const coach = await Profiles.create({ name: 'Additional coach', email: `${crypto.randomUUID()}@example.test`, roles: ['Coach'] });
+        assert.deepEqual(coach.roles, ['Coach', 'Resident']);
+        assert.equal(coach.role, 'Resident');
+        assert.deepEqual((await Profiles.update(coach.guid, { ...coach, roles: [] })).roles, ['Resident']);
+        await Profiles.update(created.guid, { ...created, roles: ['Resident'] });
+        assert.equal((await Profiles.findByGuid(created.guid)).role, 'Resident');
+        assert.equal((await Roles.findByGuid(custom.guid)).member_count, 0);
+        assert.equal(await Roles.remove(custom.guid), true);
+        await Profiles.initialize();
+        assert.deepEqual((await Profiles.findByGuid(created.guid)).roles, ['Resident']);
+
+        const originalAdmins = (await Profiles.findAll()).filter(p => p.roles.includes('Administrator'));
+        const admins = [];
+        for (let i = 0; i < 2; i++) {
+            const admin = await Profiles.create({ name: 'Role admin', email: `${crypto.randomUUID()}@example.test`, roles: ['Resident'] });
+            admins.push(await Profiles.update(admin.guid, { ...admin, roles: ['Resident', 'Administrator'] }));
+        }
+        assert.ok(admins.every(p => p.role === 'Resident'));
+        assert.equal(await Profiles.countAdministrators(), originalAdmins.length + 2);
+        for (const admin of originalAdmins) await Profiles.update(admin.guid, { ...admin, roles: ['Resident'] });
+        const outcomes = await Promise.allSettled(admins.map(admin => Profiles.update(admin.guid, { ...admin, roles: ['Resident'] })));
+        assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+        assert.equal(outcomes.find(result => result.status === 'rejected').reason.code, 'LAST_ADMINISTRATOR');
+        assert.equal(await Profiles.countAdministrators(), 1);
+        const survivor = (await Profiles.findAll()).find(p => p.roles.includes('Administrator'));
+        await assert.rejects(Profiles.remove(survivor.guid, 'Admin'), error => error.code === 'LAST_ADMINISTRATOR');
+        for (const admin of originalAdmins) await Profiles.update(admin.guid, admin);
+        for (const admin of admins) await Profiles.remove(admin.guid, 'Admin');
+        assert.equal(await Profiles.countAdministrators(), originalAdmins.length);
+    });
+
+    await t.test('roles inherit Resident permissions and login ranking counts only additional privileges', async () => {
+        const Roles = require('../models/Roles');
+        const resident = (await Roles.findAll()).find(role => role.name === 'Resident');
+        const original = [...resident.permissions];
+        const created = [];
+        try {
+            await Roles.update(resident.guid, { name: 'Resident', description: resident.description, permissions: ['bookings.manage'] });
+            for (const [name, permissions] of [
+                ['Alpha rank test', ['bookings.manage', 'profiles.manage']],
+                ['Beta rank test', ['roles.manage']],
+                ['Highest rank test', ['profiles.manage', 'roles.manage']]
+            ]) created.push(await Roles.create({ name, description: null, permissions }));
+            assert.deepEqual(await Roles.permissionsFor('Beta rank test'), ['bookings.manage', 'roles.manage']);
+            assert.deepEqual(await Roles.permissionsFor('Resident'), ['bookings.manage']);
+            assert.equal(await Roles.highestFor(['Beta rank test', 'Alpha rank test']), 'Alpha rank test');
+            assert.equal(await Roles.highestFor(created.map(role => role.name)), 'Highest rank test');
+            assert.equal(await Roles.highestFor(['Resident', 'Administrator']), 'Administrator');
+            assert.equal(await Roles.highestFor(['Resident']), 'Resident');
+        } finally {
+            await Roles.update(resident.guid, { name: 'Resident', description: resident.description, permissions: original });
+            for (const role of created) await Roles.remove(role.guid);
+        }
+    });
+
+    await t.test('courses migrate draft runs once, support multiple sites and preserve shared FAQs', async () => {
+        const Courses = require('../models/Courses');
+        const Facilities = require('../models/Facilities');
+        const Roles = require('../models/Roles');
+        const leader = (await Roles.findAll()).find(role => role.name === 'Course leader');
+        assert.ok(leader.permissions.includes('courses.manage'));
+        const { rows: [second] } = await db.query(`
+            INSERT INTO facilities (name, address, postcode, latitude, longitude, google_maps_url, description)
+            VALUES ('Course second hall', 'Test', 'AB1 2CD', 0, 0, '', '') RETURNING guid`);
+        const { rows: [secondSport] } = await db.query("INSERT INTO sports (name) VALUES ('Course test sport') RETURNING guid");
+        const { rows: [legacy] } = await db.query('INSERT INTO courses (name, facility_guid) VALUES ($1, $2) RETURNING guid',
+            ['Legacy course', facility.guid]);
+        await Courses.initialize();
+        await Courses.initialize();
+        const migrated = (await Courses.findAll()).find(course => course.guid === legacy.guid);
+        assert.deepEqual(migrated.facility_guids, [facility.guid]);
+        assert.deepEqual(migrated.sport_guids, []);
+        assert.equal(migrated.runs.length, 1);
+        assert.equal(migrated.runs[0].published, false);
+        assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === legacy.guid));
+        const course = await Courses.create({ name: 'Multi-site course', description: '<script>not markup</script>',
+            sport_guids: [sport.guid, secondSport.guid] });
+        const details = { name: 'Tuesday group', full_price_pence: 12000, capacity: 20, facility_guid: facility.guid,
+            sessions: [{ starts_local: '2090-01-03 18:00', ends_local: '2090-01-03 19:00' }] };
+        const firstRun = await Courses.saveRun(null, course.guid, details);
+        await Courses.saveRun(null, course.guid, { ...details, name: 'Another term' });
+        await Courses.saveRun(null, course.guid, { ...details, facility_guid: second.guid });
+        const faq = await Courses.saveFaq(null, { sport_guid: sport.guid, question: 'What to bring?', answer: 'A racket.' });
+        assert.ok((await Courses.findFaqs()).some(item => item.guid === faq.guid));
+        const directory = await Facilities.findAll();
+        assert.ok(directory.find(f => f.guid === facility.guid).courses.some(c => c.guid === course.guid));
+        assert.ok(directory.find(f => f.guid === second.guid).courses.some(c => c.guid === course.guid));
+        await assert.rejects(Courses.update(course.guid, { name: 'Bad edit', start_date: '2026-10-01', end_date: '2026-12-01', facility_guids: [facility.guid], sport_guids: [crypto.randomUUID()] }),
+            error => error.code === '23503');
+        assert.equal((await Courses.findAll()).find(c => c.guid === course.guid).name, 'Multi-site course');
+        await Courses.update(course.guid, { name: 'Updated course', description: '', sport_guids: [sport.guid] });
+        assert.equal((await Courses.findAll()).find(c => c.guid === course.guid).runs.length, 3);
+        await Courses.saveRun(firstRun.guid, course.guid, { ...details, full_price_pence: 9000,
+            sessions: [{ starts_local: '2090-02-03 17:00', ends_local: '2090-02-03 18:00' }] });
+        const edited = (await Courses.findRuns()).find(run => run.guid === firstRun.guid);
+        assert.equal(edited.current_price_pence, 9000);
+        assert.equal(edited.sessions[0].starts_local, '2090-02-03 17:00');
+        await assert.rejects(Courses.saveRun(firstRun.guid, course.guid, { ...details,
+            sessions: [{ starts_local: '2027-03-28 01:30', ends_local: '2027-03-28 02:30' }] }),
+        error => error.code === 'INVALID_SESSION_TIME');
+        assert.equal((await Courses.findRuns()).find(run => run.guid === firstRun.guid).sessions[0].starts_local, '2090-02-03 17:00');
+        const dstRun = await Courses.saveRun(null, course.guid, { ...details, name: 'Clock change test',
+            sessions: [{ starts_local: '2027-03-22 18:00', ends_local: '2027-03-22 19:00' },
+                { starts_local: '2027-03-29 18:00', ends_local: '2027-03-29 19:00' }] });
+        const { rows: instants } = await db.query("SELECT to_char(starts_at AT TIME ZONE 'UTC', 'HH24:MI') AS utc FROM course_sessions WHERE run_guid=$1 ORDER BY starts_at", [dstRun.guid]);
+        assert.deepEqual(instants.map(row => row.utc), ['18:00', '17:00']);
+        await Courses.removeRun(dstRun.guid, course.guid);
+        await assert.rejects(Courses.saveRun(firstRun.guid, course.guid, { ...details, facility_guid: crypto.randomUUID() }),
+            error => error.code === '23503');
+        assert.equal((await Courses.findRuns()).find(run => run.guid === firstRun.guid).current_price_pence, 9000);
+        await Courses.initialize();
+        assert.equal((await Courses.findAll()).find(c => c.guid === course.guid).runs.length, 3);
+        await Facilities.remove(second.guid);
+        assert.ok((await Courses.findAll()).some(c => c.guid === course.guid));
+        assert.deepEqual((await Courses.findAll()).find(c => c.guid === course.guid).facility_guids, [facility.guid]);
+        await Courses.remove(course.guid);
+        assert.equal((await db.query('SELECT 1 FROM course_sports WHERE course_guid = $1', [course.guid])).rowCount, 0);
+        assert.ok((await Courses.findFaqs()).some(item => item.guid === faq.guid));
+        await Courses.saveFaq(faq.guid, { sport_guid: sport.guid, question: 'Updated question', answer: 'Updated answer' });
+        assert.equal((await Courses.findFaqs()).find(item => item.guid === faq.guid).answer, 'Updated answer');
+        await Courses.removeFaq(faq.guid);
+        await Courses.remove(legacy.guid);
+        await db.query('DELETE FROM sports WHERE guid = $1', [secondSport.guid]);
+    });
+
+    await t.test('Camden course import creates drafts, is repeatable and never overwrites edited data', async () => {
+        const { importCourses } = require('../scripts/importCamdenCourses');
+        const source = 'https://camdenactive.camden.gov.uk/courses/detail/test-import/';
+        const data = [{ name: 'Camden import test', source, description: 'Original summary',
+            runs: [{ source: source + 'run', full_price_pence: 21000, original_sessions: 15,
+                advertised_remaining: 1, advertised_price_pence: 1400,
+                sessions: [{ starts_local: '2026-11-03 13:45', ends_local: '2026-11-03 14:30',
+                    location: 'Credit test hall' }] }] }];
+        await db.query("INSERT INTO sports (name) VALUES ('Gymnastics') ON CONFLICT DO NOTHING");
+        const result = await importCourses(db, data);
+        assert.deepEqual(result, { courses_added: 1, runs_added: 1, runs_skipped: 0, sessions_added: 1 });
+        const { rows: [stored] } = await db.query("SELECT * FROM courses WHERE name='Camden import test'");
+        const { rows: [run] } = await db.query('SELECT * FROM course_runs WHERE course_guid=$1', [stored.guid]);
+        assert.equal(run.published, false);
+        assert.equal(run.capacity, null);
+        assert.equal(run.full_price_pence, 21000);
+        await db.query("UPDATE courses SET description='Admin edited' WHERE guid=$1", [stored.guid]);
+        assert.deepEqual(await importCourses(db, data),
+            { courses_added: 0, runs_added: 0, runs_skipped: 1, sessions_added: 0 });
+        assert.equal((await db.query('SELECT description FROM courses WHERE guid=$1', [stored.guid])).rows[0].description, 'Admin edited');
+        const invalid = [{ ...data[0], source: source + 'invalid', name: 'Should roll back',
+            runs: [{ ...data[0].runs[0], source: source + 'missing-location',
+                sessions: [{ ...data[0].runs[0].sessions[0], location: 'Missing facility' }] }] }];
+        await assert.rejects(importCourses(db, invalid), /facility match/);
+        assert.equal((await db.query("SELECT 1 FROM courses WHERE name='Should roll back'")).rowCount, 0);
+        await db.query('DELETE FROM courses WHERE guid=$1', [stored.guid]);
+        await db.query('DELETE FROM site_settings WHERE key=$1 OR key=$2', ['camden_course_import:' + source, 'camden_course_import:' + source + 'run']);
+    });
+
+    await t.test('rolling limit restricts new requests but keeps older pending requests visible and approvable', async () => {
         const Settings = require('../models/Settings');
         await Settings.set('credit_request_days', '7');
         const profile = await person();
@@ -586,11 +1326,25 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         const request = await Bookings.requestCredit(profile.guid, inside.guid, 'weather', null);
         assert.ok(request);
         await Settings.set('credit_request_days', '1');
-        assert.equal((await Bookings.findRecentPastForProfile(profile.guid)).length, 0);
+        const visible = await Bookings.findRecentPastForProfile(profile.guid);
+        assert.deepEqual(visible.map(b => b.guid), [inside.guid]);
+        assert.equal(visible[0].credit_request_status, 'pending');
+        assert.equal((await Bookings.findRecentPastForProfile((await person()).guid)).length, 0);
+        assert.equal(await Bookings.requestCredit(profile.guid, outside.guid, 'weather', null), null);
+        assert.equal(await Bookings.requestCredit(profile.guid, inside.guid, 'weather', null), null);
         assert.ok((await Bookings.findCreditRequests('pending')).some(r => r.guid === request.guid));
+        const decision = await Bookings.decideCreditRequest(request.guid, true, 'Admin', true);
+        assert.equal(decision.credited, 1000);
+        assert.equal(await balance(profile), 1000);
+        assert.equal((await Bookings.findRecentPastForProfile(profile.guid)).length, 0);
         await Settings.set('credit_request_days', '8');
-        assert.equal((await Bookings.findRecentPastForProfile(profile.guid)).length, 2);
-        assert.ok(await Bookings.requestCredit(profile.guid, outside.guid, 'weather', null));
+        assert.deepEqual((await Bookings.findRecentPastForProfile(profile.guid)).map(b => b.guid), [outside.guid]);
+        const declined = await Bookings.requestCredit(profile.guid, outside.guid, 'weather', null);
+        assert.ok(declined);
+        await Settings.set('credit_request_days', '1');
+        assert.equal((await Bookings.findRecentPastForProfile(profile.guid)).length, 1);
+        await Bookings.decideCreditRequest(declined.guid, false, 'Admin', false, 'Court was available');
+        assert.equal((await Bookings.findRecentPastForProfile(profile.guid)).length, 0);
         await Settings.set('credit_request_days', '30');
     });
 });

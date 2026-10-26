@@ -7,37 +7,275 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head h1 { font-size: 2.25rem; font-weight: 700; }
+        .page-head a { color: #fff; }
+        .text-muted { color: #505a5f !important; }
+        .form-check-label { font-weight: 400; }
+        .children-list { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; column-gap: 0.5rem; row-gap: 0.75rem; }
+        .children-list > li { display: grid; grid-template-columns: subgrid; grid-column: span 3; align-items: center; border: 1px solid #6c757d; padding: 0.75rem; }
+        .children-list .child-name { overflow-wrap: anywhere; padding-right: 0.5rem; }
+        .children-list form { margin: 0; }
+        @media (min-width: 768px) {
+            .children-list { grid-template-columns: repeat(2, minmax(0, 1fr) max-content max-content); }
+        }
+        @media (min-width: 1200px) {
+            .children-list { grid-template-columns: repeat(3, minmax(0, 1fr) max-content max-content); }
+        }
+    </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 <body class="bg-light">
     <%- include('partials/cookie-banner') %>
-    <div class="bg-white border-bottom">
+    <div class="site-bar">
         <div class="container py-3 d-md-flex justify-content-between align-items-center">
-            <a href="/"><% if (hasLogo) { %><img src="/site-logo" alt="<%= siteTitle %> logo" style="height: 2rem; width: auto; max-width: 12rem;"><% } else { %><%= siteTitle %><% } %></a>
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
             <%- include('partials/navigation') %>
         </div>
     </div>
-    <main class="container py-5">
-        <p><a href="/">&larr; Back to home</a></p>
-        <h1 class="h2">My profile</h1>
-        <p>Update your name and email address. For booking credit and requests, visit <a href="/credits-and-refunds">Credits and refunds</a>.</p>
-        <section class="bg-white border rounded shadow-sm p-4" aria-labelledby="my-details">
-            <h2 id="my-details" class="h4 mb-3">My details</h2>
+    <header class="page-head">
+        <div class="container">
+            <%- include('partials/basket-button') %>
+            <p class="mb-2"><a href="/">&larr; Back to home</a></p>
+            <h1 class="mb-2">My profile</h1>
+            <p class="lead mb-0">Update your name and contact details. For booking credit and requests, visit <a href="/credits-and-refunds">Credits and refunds</a>.</p>
+        </div>
+    </header>
+    <main class="container py-4">
             <% if (saved) { %><div class="alert alert-success" role="status">Your details have been saved.</div><% } %>
-            <% if (error) { %><div class="alert alert-danger" role="alert"><%= error === 'duplicate-email' ? 'That email address is already used by another profile.' : 'Please enter a name and a valid email address.' %></div><% } %>
-            <form method="POST" action="/profile">
-                <div class="form-row">
-                    <div class="form-group col-md-6">
+            <% if (error) { %><div class="alert alert-danger" role="alert"><%= error === 'duplicate-email' ? 'That email address is already used by another profile.' : 'Enter a name and valid email address. Names must be at most 120 characters. Optional telephone numbers must be at most 40 characters and contain only digits, spaces, +, -, parentheses or full stops. Address lines must be at most 160 characters, town/city and county 120, and postcode 20. Answer both health questions. If you answer Yes to a medical concern, select at least one condition and specify details (up to 1,000 characters) if you select Other.' %></div><% } %>
+            <form method="POST" action="/profile" data-profile-sections>
+                <div class="row">
+                    <div class="col-12 mb-4">
+                    <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-name" data-profile-section="name">
+                        <h2 id="my-name" class="h4 mb-3">My name</h2>
+                        <div class="form-group">
                         <label for="profile-name">Name</label>
                         <input class="form-control" id="profile-name" name="name" type="text" maxlength="120" required autocomplete="name" value="<%= profile.name %>">
+                        </div>
+                    </section>
                     </div>
-                    <div class="form-group col-md-6">
+                    <div class="col-12 mb-4">
+                    <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-contact-details" data-profile-section="contact">
+                        <h2 id="my-contact-details" class="h4 mb-3">My contact details</h2>
+                        <div class="form-group">
                         <label for="profile-email">Email</label>
                         <input class="form-control" id="profile-email" name="email" type="email" maxlength="254" required autocomplete="email" value="<%= profile.email %>">
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-telephone">My telephone number (optional)</label>
+                            <input class="form-control" id="profile-telephone" name="telephone" type="tel" maxlength="40" autocomplete="tel" value="<%= profile.telephone || '' %>">
+                        </div>
+                        <div class="form-group">
+                            <label for="emergency-contact-name">Emergency contact name (optional)</label>
+                            <input class="form-control" id="emergency-contact-name" name="emergency_contact_name" type="text" maxlength="120" autocomplete="section-emergency name" value="<%= profile.emergency_contact_name || '' %>">
+                        </div>
+                        <div class="form-group">
+                            <label for="emergency-contact-telephone">Emergency contact telephone number (optional)</label>
+                            <input class="form-control" id="emergency-contact-telephone" name="emergency_contact_telephone" type="tel" maxlength="40" autocomplete="section-emergency tel" value="<%= profile.emergency_contact_telephone || '' %>">
+                        </div>
+                    </section>
+                    </div>
+                    <div class="col-12 mb-4">
+                        <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-address" data-profile-section="address">
+                            <h2 id="my-address" class="h4 mb-3">My address</h2>
+                            <p class="text-muted small">Enter your address manually. All address fields are optional.</p>
+                            <% for (const [field, label, autocomplete, maxLength] of [
+                                ['address_line_1', 'Address line 1', 'address-line1', 160],
+                                ['address_line_2', 'Address line 2', 'address-line2', 160],
+                                ['town_city', 'Town/city', 'address-level2', 120],
+                                ['county', 'County', 'address-level1', 120],
+                                ['postcode', 'Postcode', 'postal-code', 20]
+                            ]) { %>
+                                <div class="form-group">
+                                    <label for="profile-<%= field %>"><%= label %></label>
+                                    <input class="form-control" id="profile-<%= field %>" name="<%= field %>" type="text" maxlength="<%= maxLength %>" autocomplete="<%= autocomplete %>" value="<%= profile[field] || '' %>">
+                                </div>
+                            <% } %>
+                        </section>
+                    </div>
+                    <div class="col-12 mb-4">
+                        <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-health" data-profile-section="health">
+                            <h2 id="my-health" class="h4 mb-3">My health</h2>
+                            <fieldset class="form-group">
+                                <legend class="h6">Do you have a medical concern you'd like to tell us about?</legend>
+                                <% for (const [value, label] of [['yes', 'Yes'], ['no', 'No']]) { %>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" id="medical-concern-<%= value %>" name="medical_concern" value="<%= value %>" required <%= profile.medical_concern === (value === 'yes') ? 'checked' : '' %>>
+                                        <label class="form-check-label" for="medical-concern-<%= value %>"><%= label %></label>
+                                    </div>
+                                <% } %>
+                            </fieldset>
+                            <fieldset id="medical-conditions" class="form-group">
+                                <legend class="h6">Please select which of the following apply:</legend>
+                                <p class="small text-muted">Select at least one if you answered Yes above. Saving No clears any previously saved conditions and Other details.</p>
+                                <% for (const [value, label] of [['asthma', 'Asthma'], ['epilepsy', 'Epilepsy'], ['epipen', 'Allergy requiring EpiPen'], ['other', 'Other - please specify']]) { %>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="medical-condition-<%= value %>" name="medical_conditions" value="<%= value %>" <%= (profile.medical_conditions || []).includes(value) ? 'checked' : '' %>>
+                                        <label class="form-check-label" for="medical-condition-<%= value %>"><%= label %></label>
+                                    </div>
+                                <% } %>
+                                <div id="medical-other-details" class="mt-3">
+                                    <label for="medical-other">Please specify your other medical concern:</label>
+                                    <textarea class="form-control" id="medical-other" name="medical_other" maxlength="1000" rows="3"><%= profile.medical_other || '' %></textarea>
+                                </div>
+                            </fieldset>
+                            <fieldset class="form-group mb-0">
+                                <legend class="h6">Are your day-to-day activities limited because of a health problem or disability which has lasted, or is expected to last, at least 12 months? <span class="font-weight-normal">(Include problems related to old age)</span></legend>
+                                <% for (const [value, label] of [['limited_a_lot', 'Yes, limited a lot'], ['limited_a_little', 'Yes, limited a little'], ['no', 'No']]) { %>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" id="activity-limitation-<%= value %>" name="activity_limitation" value="<%= value %>" required <%= profile.activity_limitation === value ? 'checked' : '' %>>
+                                        <label class="form-check-label" for="activity-limitation-<%= value %>"><%= label %></label>
+                                    </div>
+                                <% } %>
+                            </fieldset>
+                        </section>
+                    </div>
+                    <div class="col-12 mb-4">
+                        <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-membership" data-profile-section="membership">
+                            <h2 id="my-membership" class="h4 mb-3">My membership</h2>
+                            <div class="form-group mb-0">
+                                <label for="membership-number"><%= locals.membershipScheme || 'GLL Better Card' %> membership number</label>
+                                <input class="form-control" id="membership-number" name="membership_number" type="text" maxlength="120" value="<%= profile.membership_number || '' %>" aria-describedby="membership-number-help">
+                                <small class="form-text text-muted" id="membership-number-help">Optional. Enter your membership number (up to 120 characters).</small>
+                                <% if (error === 'invalid') { %><p class="text-danger small mt-2">Check that your membership number is no longer than 120 characters.</p><% } %>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="col-12 mb-4">
+                        <section class="bg-white border rounded shadow-sm p-4 h-100" aria-labelledby="my-interests" data-profile-section="interests">
+                            <h2 id="my-interests" class="h4 mb-3">My interests</h2>
+                            <% if (sports.length) { %>
+                                <fieldset>
+                                    <legend class="h6">Which sports are you interested in? (optional)</legend>
+                                    <div class="row">
+                                        <% for (const sport of sports) { %>
+                                            <div class="col-12 col-md-6 col-lg-4 mb-2">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="interest-<%= sport.guid %>" name="interest_sport_guids" value="<%= sport.guid %>" <%= (profile.interest_sport_guids || []).includes(sport.guid) ? 'checked' : '' %>>
+                                                    <label class="form-check-label" for="interest-<%= sport.guid %>"><%= sport.name %></label>
+                                                </div>
+                                            </div>
+                                        <% } %>
+                                    </div>
+                                </fieldset>
+                            <% } else { %>
+                                <p class="text-muted mb-0">No sports are available yet.</p>
+                            <% } %>
+                        </section>
                     </div>
                 </div>
                 <button class="btn btn-primary" type="submit">Save changes</button>
             </form>
-        </section>
+            <section class="bg-white border rounded shadow-sm p-4 mt-4" id="my-children" aria-labelledby="my-children-heading">
+                <h2 class="h4" id="my-children-heading">My children</h2>
+                <p>Manage profiles for all your children and choose them when booking courses. Children do not receive a separate login.</p>
+                <% if (locals.familySaved || locals.childSaved) { %><p class="alert alert-success" role="status">Your children’s records have been updated.</p><% } %>
+                <% if (locals.familyError) { %><p class="alert alert-danger" role="alert">Choose an existing child.</p><% } %>
+                <p class="alert alert-danger" role="alert" data-child-archive-error hidden></p>
+                <p class="sr-only" role="status" data-child-archive-status></p>
+                <ul class="list-unstyled children-list">
+                    <% (locals.familyMembers || []).forEach(member => { %>
+                        <li>
+                            <span class="child-name"><%= member.name %></span>
+                            <a class="btn btn-outline-primary btn-sm" href="/profile/children/<%= member.guid %>">Edit <span class="sr-only"><%= member.name %></span></a>
+                            <form method="POST" action="/profile/family-members/remove" data-child-archive>
+                                <input type="hidden" name="guid" value="<%= member.guid %>">
+                                <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Archive <%= member.name %>">Archive</button>
+                            </form>
+                        </li>
+                    <% }); %>
+                </ul>
+                <a class="btn btn-primary" href="/profile/children/new">Add child</a>
+            </section>
     </main>
+    <%- include('partials/profile-editors') %>
+    <script>
+        (() => {
+<%- include('partials/deletion-animation') %>
+            const section = document.getElementById('my-children');
+            const error = section.querySelector('[data-child-archive-error]');
+            const status = section.querySelector('[data-child-archive-status]');
+            section.querySelectorAll('[data-child-archive]').forEach(form => {
+                form.addEventListener('submit', event => {
+                    event.preventDefault();
+                    const button = form.querySelector('button');
+                    if (button.disabled) return;
+                    button.disabled = true;
+                    form.setAttribute('aria-busy', 'true');
+                    error.hidden = true;
+                    void (async () => {
+                        try {
+                            const response = await fetch(form.action, {
+                                method: 'POST', body: new URLSearchParams(new FormData(form))
+                            });
+                            const destination = new URL(response.url);
+                            if (!response.ok || destination.pathname !== '/profile' ||
+                                destination.searchParams.get('family_saved') !== '1') {
+                                throw new Error('Archiving could not be confirmed. Check your session and try again.');
+                            }
+                            const updated = new DOMParser().parseFromString(await response.text(), 'text/html');
+                            const list = updated.querySelector('.children-list');
+                            const guid = form.querySelector('[name="guid"]').value;
+                            if (!list || Array.from(list.querySelectorAll('[name="guid"]')).some(input => input.value === guid)) {
+                                throw new Error('Archiving could not be confirmed. Reload your children before trying again.');
+                            }
+                            const row = form.closest('li');
+                            const nextFocus = row.nextElementSibling?.querySelector('a') ||
+                                row.previousElementSibling?.querySelector('a') ||
+                                section.querySelector('a[href="/profile/children/new"]');
+                            await animateDeletion(row);
+                            const shouldMoveFocus = row.contains(document.activeElement);
+                            row.remove();
+                            section.querySelector('.alert-success')?.remove();
+                            status.textContent = 'Child archived.';
+                            if (shouldMoveFocus) nextFocus.focus();
+                        } catch (problem) {
+                            console.error('Unable to archive child', problem);
+                            error.textContent = problem.message;
+                            error.hidden = false;
+                        } finally {
+                            button.disabled = false;
+                            form.removeAttribute('aria-busy');
+                        }
+                    })();
+                });
+            });
+        })();
+    </script>
+    <script>
+        (() => {
+            const medicalAnswers = document.querySelectorAll('[name="medical_concern"]');
+            const conditions = document.getElementById('medical-conditions');
+            const checkboxes = Array.from(conditions.querySelectorAll('[name="medical_conditions"]'));
+            const otherDetails = document.getElementById('medical-other-details');
+            const otherInput = document.getElementById('medical-other');
+            function updateHealthQuestions() {
+                const hasConcern = document.getElementById('medical-concern-yes').checked;
+                conditions.hidden = !hasConcern;
+                conditions.disabled = !hasConcern;
+                checkboxes[0].setCustomValidity(hasConcern && !checkboxes.some(input => input.checked)
+                    ? 'Select at least one medical condition.' : '');
+                const hasOther = hasConcern && document.getElementById('medical-condition-other').checked;
+                otherDetails.hidden = !hasOther;
+                otherInput.disabled = !hasOther;
+                otherInput.required = hasOther;
+            }
+            medicalAnswers.forEach(input => input.addEventListener('change', () => {
+                checkboxes.forEach(checkbox => { checkbox.checked = false; });
+                otherInput.value = '';
+                updateHealthQuestions();
+            }));
+            checkboxes.forEach(input => input.addEventListener('change', updateHealthQuestions));
+            conditions.closest('section').addEventListener('profile-reset', updateHealthQuestions);
+            updateHealthQuestions();
+        })();
+    </script>
 </body>
 </html>

@@ -52,6 +52,7 @@ async function initialize() {
         await client.query(`ALTER TABLE credits ADD COLUMN IF NOT EXISTS expires_at timestamptz
             NOT NULL DEFAULT (now() + INTERVAL '365 days')`);
         await client.query('ALTER TABLE credits ADD COLUMN IF NOT EXISTS payment_reference text');
+        await client.query('ALTER TABLE credits ADD COLUMN IF NOT EXISTS voided_at timestamptz, ADD COLUMN IF NOT EXISTS voided_pence integer NOT NULL DEFAULT 0');
         await client.query(`
             UPDATE credits c SET payment_reference = source.payment_reference
             FROM (
@@ -62,6 +63,10 @@ async function initialize() {
             WHERE c.booking_guid = source.guid AND c.payment_reference IS NULL`);
         await client.query('ALTER TABLE credit_refund_requests ADD COLUMN IF NOT EXISTS decline_comment text');
         await client.query(`
+            ALTER TABLE credit_refund_requests DROP CONSTRAINT IF EXISTS credit_refund_requests_status_check,
+            ADD CONSTRAINT credit_refund_requests_status_check CHECK (status IN ('pending', 'approved', 'declined', 'spent', 'cancelled'))
+        `);
+        await client.query(`
             CREATE TABLE IF NOT EXISTS credit_spending (
                 credit_guid uuid NOT NULL REFERENCES credits(guid) ON DELETE CASCADE,
                 booking_guid uuid NOT NULL,
@@ -70,6 +75,15 @@ async function initialize() {
                 PRIMARY KEY (credit_guid, booking_guid)
             )
         `);
+        await client.query('ALTER TABLE credit_spending ADD COLUMN IF NOT EXISTS refundable boolean');
+        await client.query('CREATE INDEX IF NOT EXISTS credit_spending_booking_idx ON credit_spending (booking_guid)');
+        await client.query(`
+            UPDATE credit_spending s SET refundable = c.refundable
+            FROM credits c WHERE c.guid = s.credit_guid AND s.refundable IS NULL`);
+        await client.query(`
+            UPDATE booking_refunds b SET credit_applied_pence = s.pence
+            FROM (SELECT booking_guid, SUM(amount_pence)::int AS pence FROM credit_spending GROUP BY booking_guid) s
+            WHERE b.guid = s.booking_guid AND b.credit_applied_pence = 0`);
         await client.query('CREATE INDEX IF NOT EXISTS credits_profile_idx ON credits (profile_guid, created_at, guid)');
         await client.query('CREATE TABLE IF NOT EXISTS credit_migrations (name text PRIMARY KEY)');
         const migrated = await client.query("SELECT 1 FROM credit_migrations WHERE name = 'opening-balances'");
@@ -110,32 +124,75 @@ async function initialize() {
     });
 }
 
+async function withFunding(client, bookings, key = 'guid') {
+    if (!bookings.length) return [];
+    const { rows } = await client.query(`
+        SELECT booking_guid,
+               SUM(amount_pence)::int AS tracked_pence,
+               COALESCE(SUM(amount_pence) FILTER (WHERE refundable IS TRUE), 0)::int AS refundable_pence
+        FROM credit_spending WHERE booking_guid = ANY($1::uuid[]) GROUP BY booking_guid`,
+    [bookings.map(booking => booking[key])]);
+    const funding = new Map(rows.map(row => [row.booking_guid, row]));
+    return bookings.map(booking => {
+        const credit = booking.credit_applied_pence || 0;
+        const paid = booking.amount_paid_pence;
+        const tracked = funding.get(booking[key]);
+        if (!Number.isSafeInteger(paid) || !Number.isSafeInteger(credit) ||
+            credit < 0 || paid < credit || (tracked?.tracked_pence || 0) > credit) {
+            throw new Error('Booking payment does not match its credit funding history');
+        }
+        const refundable = tracked?.refundable_pence || 0;
+        return {
+            ...booking,
+            card_paid_pence: paid - credit,
+            refundable_credit_pence: refundable,
+            non_refundable_credit_pence: credit - refundable,
+            untraced_credit_pence: credit - (tracked?.tracked_pence || 0)
+        };
+    });
+}
+
+function fundingForBookings(bookings, key = 'guid') {
+    return withFunding(pool, bookings, key);
+}
+
 // Called inside the booking transaction so its credit and the profile total cannot diverge.
-async function grant(client, booking, pence, byName, refundable) {
+async function grant(client, booking, pence, byName, refundable, { forceNonRefundable = false } = {}) {
     if (!Number.isSafeInteger(pence) || pence <= 0 || typeof refundable !== 'boolean') {
         throw new Error('Invalid credit grant');
     }
-    const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 FOR UPDATE', [booking.profile_guid]);
+    const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [booking.profile_guid]);
     if (!profile.rowCount) throw new Error('Credit recipient no longer exists');
     const { rows } = await client.query("SELECT value FROM site_settings WHERE key = 'credit_lifetime_days'");
     const days = Settings.parseCreditLifetimeDays(rows[0]?.value ?? Settings.DEFAULTS.credit_lifetime_days);
     if (days === null) throw new Error('Invalid configured credit lifetime');
-    await client.query(`
+    const [funding] = await withFunding(client, [booking]);
+    if (pence !== booking.amount_paid_pence) throw new Error('Credit must match the booking payment');
+    if (funding.untraced_credit_pence) {
+        console.warn('Untraced booking credit retained as non-refundable:', booking.guid, funding.untraced_credit_pence);
+    }
+    const refundablePence = forceNonRefundable ? 0
+        : funding.refundable_credit_pence + (refundable ? funding.card_paid_pence : 0);
+    for (const [amount, eligible] of [[refundablePence, true], [pence - refundablePence, false]]) {
+        if (!amount) continue;
+        await client.query(`
         INSERT INTO credits (profile_guid, booking_guid, booking_ref, facility_name,
                              amount_pence, remaining_pence, created_by_name, refundable, created_at, expires_at, payment_reference)
         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, statement_timestamp(),
                 statement_timestamp() + $8 * INTERVAL '24 hours',
                 (SELECT payment_reference FROM bookings WHERE guid = $2
                  UNION ALL SELECT payment_reference FROM booking_refunds WHERE guid = $2 LIMIT 1))`,
-    [booking.profile_guid, booking.guid, booking.booking_ref, booking.facility_name, pence, byName, refundable, days]);
+        [booking.profile_guid, booking.guid, booking.booking_ref, booking.facility_name, amount, byName, eligible, days]);
+    }
     await client.query('UPDATE profiles SET credit_pence = credit_pence + $2 WHERE guid = $1', [booking.profile_guid, pence]);
+    return { refundable_pence: refundablePence, non_refundable_pence: pence - refundablePence };
 }
 
 async function spend(client, profileGuid, bookings) {
     const pence = bookings.reduce((sum, booking) => sum + booking.credit_applied_pence, 0);
     if (!Number.isSafeInteger(pence) || pence < 0) throw new Error('Invalid credit spend');
     const deducted = await client.query(`
-        UPDATE profiles SET credit_pence = credit_pence - $2 WHERE guid = $1 AND credit_pence >= $2
+        UPDATE profiles SET credit_pence = credit_pence - $2 WHERE guid = $1 AND deleted_at IS NULL AND credit_pence >= $2
         RETURNING guid`, [profileGuid, pence]);
     if (!deducted.rowCount) {
         const error = new Error('Insufficient credit');
@@ -143,7 +200,7 @@ async function spend(client, profileGuid, bookings) {
         throw error;
     }
     const { rows } = await client.query(`
-        SELECT guid, remaining_pence FROM credits WHERE profile_guid = $1 AND remaining_pence > 0
+        SELECT guid, remaining_pence, refundable FROM credits WHERE profile_guid = $1 AND remaining_pence > 0
         AND expires_at > statement_timestamp()
         ORDER BY created_at, guid FOR UPDATE`, [profileGuid]);
     if (rows.reduce((sum, credit) => sum + credit.remaining_pence, 0) < pence) {
@@ -158,8 +215,8 @@ async function spend(client, profileGuid, bookings) {
             const credit = rows[index];
             const applied = Math.min(needed, credit.remaining_pence);
             await client.query(`
-                INSERT INTO credit_spending (credit_guid, booking_guid, booking_ref, amount_pence)
-                VALUES ($1, $2, $3, $4)`, [credit.guid, booking.guid, booking.booking_ref, applied]);
+                INSERT INTO credit_spending (credit_guid, booking_guid, booking_ref, amount_pence, refundable)
+                VALUES ($1, $2, $3, $4, $5)`, [credit.guid, booking.guid, booking.booking_ref, applied, credit.refundable]);
             credit.remaining_pence -= applied;
             needed -= applied;
             await client.query('UPDATE credits SET remaining_pence = $2 WHERE guid = $1', [credit.guid, credit.remaining_pence]);
@@ -188,7 +245,8 @@ async function findForProfile(profileGuid) {
 
 function requestRefund(profileGuid, creditGuid) {
     return transaction(async client => {
-        await client.query('SELECT guid FROM profiles WHERE guid = $1 FOR UPDATE', [profileGuid]);
+        const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
+        if (!profile.rowCount) return null;
         const { rows } = await client.query(`
             INSERT INTO credit_refund_requests (credit_guid, requested_pence)
             SELECT guid, remaining_pence FROM credits
@@ -229,7 +287,8 @@ function decideRefund(requestGuid, approve, byName, comment = null) {
             WHERE r.guid = $1`, [requestGuid]);
         if (!owner.rowCount) return null;
         const profileGuid = owner.rows[0].profile_guid;
-        await client.query('SELECT guid FROM profiles WHERE guid = $1 FOR UPDATE', [profileGuid]);
+        const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
+        if (!profile.rowCount) return null;
         const found = await client.query(`
             SELECT r.credit_guid, c.remaining_pence, c.booking_ref
             FROM credit_refund_requests r JOIN credits c ON c.guid = r.credit_guid
@@ -252,4 +311,4 @@ function decideRefund(requestGuid, approve, byName, comment = null) {
     });
 }
 
-module.exports = { initialize, grant, spend, findForProfile, requestRefund, findRefundRequests, decideRefund, findExpiredPendingRefunds };
+module.exports = { initialize, grant, spend, fundingForBookings, findForProfile, requestRefund, findRefundRequests, decideRefund, findExpiredPendingRefunds };

@@ -31,6 +31,7 @@
         .text-muted { color: #505a5f !important; }
         .week-table td { padding: 0.15rem 1rem 0.15rem 0; }
     </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 
 <body>
@@ -44,6 +45,7 @@
 
     <header class="page-head">
         <div class="container">
+            <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
             <h1 class="mb-2">Facilities</h1>
             <p class="lead mb-0">Find a sport, fitness or wellbeing venue near you.</p>
@@ -130,7 +132,36 @@
                         <% if (facility.courses.length) { %>
                             <details class="mb-2">
                                 <summary>Courses (<%= facility.courses.length %>)</summary>
-                                <ul class="mt-2 mb-0"><% facility.courses.forEach(course => { %><li><%= course.name %></li><% }) %></ul>
+                                <ul class="mt-2 mb-0">
+                                    <% facility.courses.forEach(course => { %>
+                                        <li class="mb-3">
+                                            <strong><%= course.name %></strong>
+                                            <%- include('partials/course-description', { course, collapsible: true }) %>
+                                            <% if ((course.runs || []).length) { %>
+                                            <div class="mb-3" data-course-runs>
+                                                <p class="h5 mt-3">Choose a class (<%= course.runs.length %>)</p>
+                                            <% course.runs.forEach(run => { %>
+                                                <div class="border rounded bg-light p-3 mt-3" data-course-run><%- include('partials/course-run-details', { run, returnTo: '/facilities' }) %></div>
+                                            <% }); %>
+                                            </div>
+                                            <% } %>
+                                            <% (course.sports || []).forEach(sport => { %>
+                                                <p class="small mb-1"><%= sport.name %></p>
+                                                <% if (sport.faqs.length) { %>
+                                                    <details>
+                                                        <summary><%= sport.name %> course FAQs</summary>
+                                                        <dl class="mt-2">
+                                                            <% sport.faqs.forEach(faq => { %>
+                                                                <dt><%= faq.question %></dt>
+                                                                <dd style="white-space: pre-wrap;"><%- include('partials/faq-answer', { answer: faq.answer }) %></dd>
+                                                            <% }); %>
+                                                        </dl>
+                                                    </details>
+                                                <% } %>
+                                            <% }); %>
+                                        </li>
+                                    <% }); %>
+                                </ul>
                             </details>
                         <% } %>
                         <div class="mt-3">
@@ -240,6 +271,7 @@
             apply();
         })();
     </script>
+    <%- include('partials/course-basket-return') %>
 </body>
 
 </html>

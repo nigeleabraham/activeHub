@@ -5,8 +5,9 @@ const adminItems = [
     { key: 'facilities', label: 'Facilities', href: '/admin/facilities' },
     { key: 'courses', label: 'Courses', href: '/admin/courses' },
     { key: 'sports', label: 'Sports', href: '/admin/sports' },
-    { key: 'opening-hours', label: 'Opening hours', href: '/admin/opening-hours' },
-    { key: 'bookings', label: 'Bookings', href: '/admin/bookings' },
+    { key: 'opening-hours', label: 'Opening hours templates', href: '/admin/opening-hours' },
+    { key: 'bookings', label: 'Bookings management', href: '/admin/bookings' },
+    { key: 'court-configuration', label: 'Court configuration', href: '/admin/court-configuration' },
     { key: 'credit-requests', label: 'Credit requests', href: '/admin/credit-requests' },
     { key: 'credit-refunds', label: 'Credit refunds', href: '/admin/credit-refunds' },
     { key: 'refunds', label: 'Refunds', href: '/admin/refunds' },
@@ -16,46 +17,81 @@ const adminItems = [
     { key: 'audit', label: 'Audit', href: '/admin/audit' }
 ];
 const adminArea = locals.area === 'admin';
-const navigationItems = currentProfile && isAdmin && adminArea ? adminItems : [];
+const allowedAdmin = path => locals.canAccessAdmin ? locals.canAccessAdmin(path)
+    : isAdmin || (path === '/courses' && (currentProfile?.permissions || []).includes('courses.manage'));
+const navigationItems = currentProfile && adminArea && (allowedAdmin('/') || allowedAdmin('/courses'))
+    ? adminItems.filter(item => item.key === 'external-home' || allowedAdmin(item.href.slice('/admin'.length) || '/'))
+    : [];
+const adminBrand = locals.adminBrand || { title: locals.siteTitle || 'ActiveHub', hasLogo: Boolean(locals.hasLogo) };
+const adminGroups = [
+    { label: 'Home Pages', keys: ['admin-home', 'external-home'] },
+    { label: 'Facilities management', keys: ['facilities', 'courses', 'sports', 'opening-hours', 'court-configuration'] },
+    { label: 'Bookings management', keys: ['bookings', 'credit-requests', 'credit-refunds', 'refunds'] },
+    { label: 'System Admin', keys: ['profiles', 'roles', 'audit', 'settings'] }
+].map(group => ({ ...group, keys: group.keys.filter(key => navigationItems.some(item => item.key === key)) }))
+    .filter(group => group.keys.length);
 %>
+<% if (navigationItems.length) { %>
+<header class="admin-site-header">
+<div class="container">
+<div class="admin-site-masthead">
+    <a class="admin-site-brand" href="/admin" aria-label="<%= adminBrand.title %> admin home">
+        <% if (adminBrand.hasLogo) { %>
+            <img src="/site-logo" alt="<%= adminBrand.title %>" class="admin-site-logo">
+        <% } else { %>
+            <span class="admin-site-title"><%= adminBrand.title %></span>
+        <% } %>
+        <span class="admin-site-label">Administration</span>
+    </a>
+<% } else { %>
 <div class="mt-3 mt-md-0 ml-auto text-right">
+<% } %>
     <% if (currentProfile) { %>
+        <% if (!adminArea && !['home', 'courses', 'facilities', 'bookings', 'profile', 'credits-and-refunds'].includes(locals.activePage)) { %>
+            <%- include('basket-button') %>
+        <% } %>
         <form class="d-flex flex-wrap align-items-center justify-content-end mb-2" method="POST" action="/logout">
-            <span class="small mr-2">Signed in as <% if (adminArea) { %><strong><%= currentProfile.name %></strong><% } else { %><a href="/profile"><strong><%= currentProfile.name %></strong></a><% } %> (<%= currentProfile.actualRole || currentProfile.role %>)</span>
+            <span class="small mr-2">Signed in as <% if (adminArea) { %><strong><%= currentProfile.name %></strong><% } else { %><a href="/profile"><strong><%= currentProfile.name %></strong></a><% } %> (<%= currentProfile.role %>)</span>
             <button class="btn btn-outline-secondary btn-sm" type="submit">Log out</button>
         </form>
     <% } %>
-    <% if (canSwitchRole && !adminArea) { %>
+    <% if (canSwitchRole) { %>
         <form class="d-flex flex-wrap align-items-center justify-content-end mb-2" style="gap: 0.5rem;" method="POST" action="/view-as">
-            <label class="small mb-0" for="view-as-role">View as role</label>
+            <label class="small mb-0" for="view-as-role">Active role</label>
             <select class="form-control form-control-sm w-auto" id="view-as-role" name="role">
                 <% switchableRoles.forEach(roleName => { %>
-                    <option value="<%= roleName %>"<%= (viewingAs || 'Administrator') === roleName ? ' selected' : '' %>><%= roleName %></option>
+                    <option value="<%= roleName %>"<%= currentProfile.role === roleName ? ' selected' : '' %>><%= roleName %></option>
                 <% }); %>
             </select>
             <button class="btn btn-outline-primary btn-sm" type="submit">Switch</button>
         </form>
         <% if (viewingAs) { %>
             <div class="alert alert-warning small py-1 px-2 mb-2 text-left" role="status">
-                You are viewing ActiveHub as the <strong><%= viewingAs %></strong> role.
-                <form class="d-inline" method="POST" action="/view-as">
-                    <input type="hidden" name="role" value="">
-                    <button class="btn btn-link btn-sm p-0 align-baseline" type="submit">Return to Administrator</button>
-                </form>
+                Your active role is <strong><%= viewingAs %></strong>. Access uses this role's permissions only.
             </div>
         <% } %>
     <% } %>
     <% if (navigationItems.length) { %>
-        <nav class="d-flex flex-wrap justify-content-end" style="gap: 0.5rem;" aria-label="Main navigation">
-            <div class="d-flex flex-wrap justify-content-end w-100" style="gap: 0.5rem;">
-                <% navigationItems.slice(0, 2).forEach(item => { %>
-                    <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
-                <% }); %>
-            </div>
-            <% navigationItems.slice(2).forEach(item => { %>
-                <a class="btn <%= activePage === item.key ? 'btn-primary' : 'btn-outline-secondary' %> btn-sm" href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a>
+        </div>
+        </div>
+        <div class="admin-navigation-bar">
+        <div class="container">
+        <nav class="admin-navigation" aria-label="Main navigation">
+            <% adminGroups.forEach(group => { %>
+                <details class="admin-navigation-group<%= group.keys.includes(activePage) ? ' admin-navigation-group-current' : '' %>">
+                    <summary><span class="admin-navigation-label"><%= group.label %></span></summary>
+                    <ul>
+                        <% group.keys.forEach(key => { const item = navigationItems.find(item => item.key === key); %>
+                            <li><a href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.key === 'bookings' ? 'Bookings' : item.label %></a></li>
+                        <% }); %>
+                    </ul>
+                </details>
             <% }); %>
         </nav>
+        </div>
+        </div>
+        </header>
         <%- include('admin-editors') %>
+    <% } else { %>
+        </div>
     <% } %>
-</div>

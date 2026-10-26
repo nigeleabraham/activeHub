@@ -39,7 +39,7 @@
                                         <input type="hidden" name="profile_guid" value="<%= profile.guid %>">
                                         <div class="mr-3">
                                             <span class="text-break"><%= profile.name %></span>
-                                            <span class="badge badge-secondary ml-1"><%= profile.role %></span>
+                                            <% (profile.roles || [profile.role]).forEach(role => { %><span class="badge badge-secondary ml-1"><%= role %></span><% }); %>
                                             <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
                                         </div>
                                         <button class="btn btn-primary btn-sm" type="submit" aria-label="Sign in as <%= profile.name %>">Sign in</button>

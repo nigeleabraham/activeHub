@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Profiles = require('./../models/Profiles');
 const Roles = require('./../models/Roles');
+const { PERMISSION_KEYS, adminPermissions } = require('../permissions');
 
 // Simulated login: a signed cookie identifies the selected profile. Replace this module
 // (cookie handling and loadProfile) with Auth0 later; routes only rely on req.profile and the permission helpers.
@@ -60,8 +61,7 @@ function clearSession(res) {
     res.append('Set-Cookie', `${COOKIE_NAME}=; ${cookieAttributes()}; Max-Age=0`);
 }
 
-// "View as" lets a real administrator experience the tool as another role. The cookie is signed against the
-// administrator's guid, and is ignored unless the signed-in profile is genuinely an administrator.
+// The selected role is signed against the profile and rechecked against current assignments on every request.
 function setViewAs(res, profileGuid, roleName) {
     const encoded = Buffer.from(roleName).toString('base64url');
     res.append('Set-Cookie', `${VIEW_AS_COOKIE}=${encoded}.${sign(`view-as:${profileGuid}:${roleName}`)}; ${cookieAttributes()}`);
@@ -86,10 +86,26 @@ function isAdministrator(profile) {
     return Boolean(profile) && profile.role === ADMINISTRATOR;
 }
 
+async function switchableRoles(profile) {
+    const assigned = profile.roles || [profile.role];
+    return assigned.includes(ADMINISTRATOR) ? Roles.names() : assigned;
+}
+
 // Administrators always hold every permission; other roles hold what the Roles page grants them.
 function can(profile, permission) {
     if (!profile) return false;
     return isAdministrator(profile) || (profile.permissions || []).includes(permission);
+}
+
+function canAccessAdmin(profile, path = '/') {
+    if (isAdministrator(profile)) return true;
+    const permissions = path === '/' ? PERMISSION_KEYS : adminPermissions(path);
+    return permissions.some(permission => can(profile, permission));
+}
+
+function requireAdminAccess(req, res, next) {
+    if (canAccessAdmin(req.profile, req.path)) return next();
+    return deny(req, res);
 }
 
 async function loadProfile(req, res, next) {
@@ -101,20 +117,22 @@ async function loadProfile(req, res, next) {
         res.locals.canSwitchRole = false;
         res.locals.viewingAs = null;
         if (req.profile) {
-            const isRealAdmin = req.profile.role === ADMINISTRATOR;
-            const viewAs = isRealAdmin ? readViewAs(cookies[VIEW_AS_COOKIE], req.profile.guid) : null;
-            const roleNames = isRealAdmin ? await Roles.names() : [];
-            if (viewAs && viewAs !== ADMINISTRATOR && roleNames.includes(viewAs)) {
-                req.profile = { ...req.profile, role: viewAs, actualRole: ADMINISTRATOR };
-                res.locals.viewingAs = viewAs;
+            const viewAs = readViewAs(cookies[VIEW_AS_COOKIE], req.profile.guid);
+            const roleNames = await switchableRoles(req.realProfile);
+            if (viewAs && roleNames.includes(viewAs)) {
+                req.profile = { ...req.profile, role: viewAs };
+                res.locals.viewingAs = viewAs !== req.realProfile.role ? viewAs : null;
+            } else if (cookies[VIEW_AS_COOKIE]) {
+                clearViewAs(res);
             }
             req.profile.permissions = await Roles.permissionsFor(req.profile.role);
-            res.locals.canSwitchRole = isRealAdmin;
+            res.locals.canSwitchRole = roleNames.length > 1;
             res.locals.switchableRoles = roleNames;
         }
         res.locals.currentProfile = req.profile;
         res.locals.can = permission => can(req.profile, permission);
         res.locals.isAdmin = isAdministrator(req.profile);
+        res.locals.canAccessAdmin = path => canAccessAdmin(req.profile, path);
         next();
     } catch (error) {
         next(error);
@@ -149,7 +167,10 @@ module.exports = {
     clearViewAs,
     readViewAs,
     isAdministrator,
+    switchableRoles,
     can,
+    canAccessAdmin,
+    requireAdminAccess,
     loadProfile,
     requireLogin,
     requireAdministrator

@@ -17,7 +17,7 @@
         .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
         .brand-hero { background: #113255; color: #fff; padding: 4rem 0; }
         .brand-hero h1 { font-size: 2.25rem; font-weight: 700; line-height: 1.15; max-width: 20ch; }
-        .brand-hero .lead { max-width: 45ch; }
+        .brand-hero .lead { overflow-wrap: anywhere; }
         .brand-tile { display: block; height: 100%; padding: 1.5rem; background: #fff; color: #0b0c0c; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; border-radius: 0; }
         .brand-tile h3 { font-weight: 700; color: #003e90; text-decoration: underline; text-underline-offset: 0.2em; }
         a.brand-tile:hover { color: #0b0c0c; background: #fff9cc; border-bottom-color: #ffde02; }
@@ -27,6 +27,7 @@
         .text-muted { color: #505a5f !important; }
         @media (min-width: 768px) { .brand-hero h1 { font-size: 3rem; } }
     </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 
 <body class="bg-light">
@@ -40,6 +41,7 @@
 
     <header class="brand-hero">
         <div class="container">
+            <%- include('partials/basket-button') %>
             <h1 class="mb-3"><%= siteTitle %></h1>
             <p class="lead mb-0">Welcome back, <%= currentProfile.name %>. Find and book sport, fitness and wellbeing services near you.</p>
         </div>
@@ -77,19 +79,19 @@
                 </div></a>
             </div>
             <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
-                <section class="brand-tile"><div>
+                <a class="brand-tile text-decoration-none" href="/courses"><div>
                     <div class="icon" aria-hidden="true">🎓</div>
                     <h3 class="h5 mt-2">Courses</h3>
                     <p class="text-muted mb-0">Find a class or coaching programme that suits you.</p>
-                </div></section>
+                </div></a>
             </div>
-            <% if (isAdmin) { %>
-                <div class="col-md-6 col-lg-3 mb-4">
+            <% if (locals.canAccessAdmin ? locals.canAccessAdmin('/') : isAdmin || (currentProfile?.permissions || []).length > 0) { %>
+                <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
                     <a class="brand-tile text-decoration-none" href="/admin">
                         <div>
                             <div class="icon" aria-hidden="true">⚙️</div>
-                            <h3 class="h5 mt-2">Admin</h3>
-                            <p class="text-muted mb-0">Manage facilities, bookings, people and roles.</p>
+                            <h3 class="h5 mt-2">Administration</h3>
+                            <p class="text-muted mb-0">Open the management areas available to your active role.</p>
                         </div>
                     </a>
                 </div>

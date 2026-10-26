@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= child.guid ? 'Edit child' : 'Add child' %> | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <style>.page-head { background: #113255; color: #fff; } .page-head a { color: #fff; }</style>
+    <%- include('partials/resident-banner-styles') %>
+</head>
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="bg-white">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><%= siteTitle %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+    <header class="page-head">
+        <div class="container">
+            <%- include('partials/basket-button') %>
+            <p class="mb-2"><a href="/profile#my-children">&larr; Back to My children</a></p>
+            <h1><%= child.guid ? 'Edit child' : 'Add child' %></h1>
+        </div>
+    </header>
+    <main class="container py-4">
+        <% if (error) { %><div class="alert alert-danger" role="alert"><%= error %></div><% } %>
+        <form method="POST" action="/profile/children<%= child.guid ? '/' + child.guid : '' %>" data-child-form <%= child.guid ? 'data-profile-sections' : '' %>>
+            <section class="bg-white border rounded p-4 mb-4" data-profile-section="name">
+                <h2 class="h4">Child’s name</h2>
+                <label for="child-name">Name</label>
+                <input class="form-control" id="child-name" name="name" maxlength="120" required value="<%= child.name || '' %>">
+                <div class="form-group mt-3">
+                    <label for="child-date-of-birth">Date of birth (optional)</label>
+                    <input class="form-control" id="child-date-of-birth" name="date_of_birth" type="date" value="<%= child.date_of_birth || '' %>" aria-describedby="child-age-order">
+                    <small id="child-age-order" class="form-text text-muted">Children are listed youngest to oldest. Children without a date of birth appear last.</small>
+                </div>
+            </section>
+            <% for (const [group, heading, fields] of [
+                ['parental_contact', 'Parental contact details', [
+                    ['parental_contact_name', 'Parent or guardian name', 120, 'text'],
+                    ['parental_contact_email', 'Parent or guardian email', 254, 'email'],
+                    ['parental_contact_telephone', 'Parent or guardian telephone', 40, 'tel']]],
+                ['emergency_contact', 'Emergency contact details', [
+                    ['emergency_contact_name', 'Emergency contact name', 120, 'text'],
+                    ['emergency_contact_telephone', 'Emergency contact telephone', 40, 'tel']]],
+                ['address', 'Child’s address', [
+                    ['address_line_1', 'Address line 1', 160, 'text'], ['address_line_2', 'Address line 2', 160, 'text'],
+                    ['town_city', 'Town/city', 120, 'text'], ['county', 'County', 120, 'text'], ['postcode', 'Postcode', 20, 'text']]]
+            ]) { %>
+                <section class="bg-white border rounded p-4 mb-4" data-inheritance-group data-profile-section="<%= group %>">
+                    <h2 class="h4"><%= heading %></h2>
+                    <label for="inherit-<%= group %>">Use details from my profile?</label>
+                    <select class="form-control mb-3" id="inherit-<%= group %>" name="inherit_<%= group %>" data-inheritance-select>
+                        <option value="yes" <%= child['inherit_' + group] ? 'selected' : '' %>>Yes — inherit updates from my profile</option>
+                        <option value="no" <%= !child['inherit_' + group] ? 'selected' : '' %>>No — use separate details for this child</option>
+                    </select>
+                    <div data-inherited-preview <%= !child['inherit_' + group] ? 'hidden' : '' %>>
+                        <p class="small">Changes to your profile will automatically update these inherited details.</p>
+                        <dl>
+                            <% fields.forEach(([field, label]) => { %>
+                                <dt><%= label %></dt><dd><%= parent[field.startsWith('parental_contact_') ? field.replace('parental_contact_', '') : field] || 'Not provided in your profile' %></dd>
+                            <% }); %>
+                        </dl>
+                    </div>
+                    <fieldset data-inheritance-fields <%= child['inherit_' + group] ? 'hidden disabled' : '' %>>
+                        <legend class="h6">Separate details (optional)</legend>
+                        <% fields.forEach(([field, label, max, type]) => { %>
+                            <div class="form-group">
+                                <label for="child-<%= field %>"><%= label %></label>
+                                <input class="form-control" id="child-<%= field %>" name="<%= field %>" type="<%= type %>" maxlength="<%= max %>" value="<%= child[field] || '' %>">
+                            </div>
+                        <% }); %>
+                    </fieldset>
+                </section>
+            <% } %>
+            <section class="bg-white border rounded p-4 mb-4" data-profile-section="health">
+                <h2 class="h4">Child’s health</h2>
+                <fieldset class="form-group">
+                    <legend class="h6">Does your child have a medical concern you would like to tell us about?</legend>
+                    <% for (const [value, label] of [['yes', 'Yes'], ['no', 'No']]) { %>
+                        <div class="form-check">
+                            <input class="form-check-input" id="child-medical-<%= value %>" type="radio" name="medical_concern" value="<%= value %>" required <%= child.medical_concern === (value === 'yes') ? 'checked' : '' %>>
+                            <label class="form-check-label" for="child-medical-<%= value %>"><%= label %></label>
+                        </div>
+                    <% } %>
+                </fieldset>
+                <fieldset class="form-group" data-child-conditions>
+                    <legend class="h6">Medical conditions</legend>
+                    <p class="small">Select at least one if Yes. Selecting No clears saved medical conditions.</p>
+                    <% for (const [value, label] of [['asthma', 'Asthma'], ['epilepsy', 'Epilepsy'], ['epipen', 'Allergy requiring EpiPen'], ['other', 'Other']]) { %>
+                        <div class="form-check">
+                            <input class="form-check-input" id="child-condition-<%= value %>" type="checkbox" name="medical_conditions" value="<%= value %>" <%= (child.medical_conditions || []).includes(value) ? 'checked' : '' %>>
+                            <label class="form-check-label" for="child-condition-<%= value %>"><%= label %></label>
+                        </div>
+                    <% } %>
+                    <div class="mt-3" data-child-other>
+                        <label for="child-medical-other">Other medical concern</label>
+                        <textarea class="form-control" id="child-medical-other" name="medical_other" maxlength="1000" rows="3"><%= child.medical_other || '' %></textarea>
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend class="h6">Are your child’s day-to-day activities limited because of a health problem or disability which has lasted, or is expected to last, at least 12 months?</legend>
+                    <% for (const [value, label] of [['limited_a_lot', 'Yes, limited a lot'], ['limited_a_little', 'Yes, limited a little'], ['no', 'No']]) { %>
+                        <div class="form-check">
+                            <input class="form-check-input" id="child-limitation-<%= value %>" type="radio" name="activity_limitation" value="<%= value %>" required <%= child.activity_limitation === value ? 'checked' : '' %>>
+                            <label class="form-check-label" for="child-limitation-<%= value %>"><%= label %></label>
+                        </div>
+                    <% } %>
+                </fieldset>
+            </section>
+            <section class="bg-white border rounded p-4 mb-4" data-profile-section="membership">
+                <h2 class="h4">Child’s membership</h2>
+                <label for="child-membership"><%= membershipScheme || 'GLL Better Card' %> membership number (optional)</label>
+                <input class="form-control" id="child-membership" name="membership_number" maxlength="120" value="<%= child.membership_number || '' %>">
+            </section>
+            <section class="bg-white border rounded p-4 mb-4" data-profile-section="interests">
+                <h2 class="h4">Child’s interests</h2>
+                <fieldset>
+                    <legend class="h6">Which sports is your child interested in? (optional)</legend>
+                    <% sports.forEach(sport => { %>
+                        <div class="form-check">
+                            <input class="form-check-input" id="child-interest-<%= sport.guid %>" type="checkbox" name="interest_sport_guids" value="<%= sport.guid %>" <%= (child.interest_sport_guids || []).includes(sport.guid) ? 'checked' : '' %>>
+                            <label class="form-check-label" for="child-interest-<%= sport.guid %>"><%= sport.name %></label>
+                        </div>
+                    <% }); %>
+                </fieldset>
+            </section>
+            <a class="btn btn-outline-secondary mr-2" href="/profile#my-children">Cancel</a>
+            <button class="btn btn-primary" type="submit"><%= child.guid ? 'Save child profile' : 'Create child profile' %></button>
+        </form>
+    </main>
+    <% if (child.guid) { %><%- include('partials/profile-editors') %><% } %>
+    <script>
+        (() => {
+            document.querySelectorAll('[data-inheritance-group]').forEach(group => {
+                const select = group.querySelector('[data-inheritance-select]');
+                const updateInheritance = () => {
+                    const inherit = select.value === 'yes';
+                    group.querySelector('[data-inherited-preview]').hidden = !inherit;
+                    const fields = group.querySelector('[data-inheritance-fields]');
+                    fields.hidden = inherit;
+                    fields.disabled = inherit;
+                };
+                select.addEventListener('change', updateInheritance);
+                group.addEventListener('profile-reset', updateInheritance);
+            });
+            const conditions = document.querySelector('[data-child-conditions]');
+            const checks = Array.from(conditions.querySelectorAll('[name="medical_conditions"]'));
+            const other = document.querySelector('[data-child-other]');
+            function update() {
+                const yes = document.getElementById('child-medical-yes').checked;
+                if (!yes) {
+                    checks.forEach(check => { check.checked = false; });
+                    other.querySelector('textarea').value = '';
+                }
+                conditions.hidden = !yes;
+                conditions.disabled = !yes;
+                checks[0].setCustomValidity(yes && !checks.some(check => check.checked) ? 'Select at least one medical condition.' : '');
+                const hasOther = yes && document.getElementById('child-condition-other').checked;
+                other.hidden = !hasOther;
+                other.querySelector('textarea').disabled = !hasOther;
+                other.querySelector('textarea').required = hasOther;
+            }
+            document.querySelectorAll('[name="medical_concern"], [name="medical_conditions"]').forEach(input => input.addEventListener('change', update));
+            conditions.closest('section').addEventListener('profile-reset', update);
+            update();
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<style>
+    .profile-editor-content { display: grid; }
+    .profile-editor-content > * { grid-area: 1 / 1; min-width: 0; }
+    .profile-editor-content.is-editing > dl { visibility: hidden; }
+    .profile-editor-actions { min-height: 2.5rem; }
+    [data-profile-section] { overflow-anchor: none; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('form[data-profile-sections]').forEach(original => {
+        const sections = Array.from(original.querySelectorAll('[data-profile-section]'));
+        const container = document.createElement('div');
+        original.before(container);
+        sections.forEach(section => {
+            const heading = section.querySelector('h2');
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = original.action;
+            form.id = `profile-editor-${section.dataset.profileSection}`;
+            form.setAttribute('data-profile-editor', '');
+            form.dataset.editorLabel = `Edit ${heading.textContent.trim()}`;
+            form.dataset.editorPreview = 'false';
+            const key = document.createElement('input');
+            key.type = 'hidden';
+            key.name = 'section';
+            key.value = section.dataset.profileSection;
+            const summary = document.createElement('dl');
+            summary.className = 'mb-3';
+            const content = document.createElement('div');
+            content.className = 'profile-editor-content';
+            const toggle = document.createElement('button');
+            const actions = document.createElement('div');
+            actions.className = 'profile-editor-actions';
+            toggle.type = 'button';
+            toggle.className = 'btn btn-outline-secondary btn-sm mb-2';
+            toggle.textContent = 'Edit';
+            toggle.setAttribute('aria-label', form.dataset.editorLabel);
+            toggle.setAttribute('data-edit-toggle', '');
+            toggle.setAttribute('data-hide-when-editing', '');
+            toggle.setAttribute('aria-expanded', 'false');
+            const panel = document.createElement('div');
+            panel.id = `${form.id}-panel`;
+            panel.setAttribute('data-edit-panel', '');
+            panel.hidden = true;
+            toggle.setAttribute('aria-controls', panel.id);
+            actions.append(toggle);
+            const feedback = document.createElement('p');
+            feedback.className = 'alert-success sr-only';
+            feedback.setAttribute('role', 'status');
+            feedback.hidden = true;
+            const contents = Array.from(section.children).filter(element => element !== heading);
+            form.append(key, ...contents);
+            const submit = document.createElement('button');
+            submit.type = 'submit';
+            submit.className = 'btn btn-primary btn-sm';
+            submit.textContent = 'Save changes';
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'btn btn-outline-secondary btn-sm mr-2';
+            cancel.textContent = 'Cancel';
+            cancel.setAttribute('data-cancel-edit', '');
+            form.append(cancel, submit);
+            panel.append(form);
+            content.append(summary, panel);
+            section.append(content, feedback, actions);
+            section.classList.remove('h-100');
+            section.classList.add('mb-4');
+            container.append(section);
+            form.addEventListener('profile-editor-toggle', event => {
+                content.style.minHeight = event.detail.open ? `${content.getBoundingClientRect().height}px` : '';
+                content.classList.toggle('is-editing', event.detail.open);
+                summary.inert = event.detail.open;
+            });
+
+            function refreshSummary() {
+                const previous = Array.from(summary.querySelectorAll('dd'), element => element.textContent);
+                summary.replaceChildren();
+                const seen = new Set();
+                Array.from(form.elements).forEach(field => {
+                    if (!field.name || field.type === 'hidden' || field.matches(':disabled') || seen.has(field.name) ||
+                        ['FIELDSET', 'BUTTON'].includes(field.tagName)) return;
+                    seen.add(field.name);
+                    let label = field.labels?.[0]?.textContent.trim();
+                    let value = field.value;
+                    if (['radio', 'checkbox'].includes(field.type)) {
+                        const group = Array.from(form.elements).filter(input => input.name === field.name);
+                        label = field.closest('fieldset')?.querySelector('legend')?.textContent.trim() || label;
+                        value = group.filter(input => input.checked).map(input => input.labels?.[0]?.textContent.trim()).join(', ');
+                    } else if (field.tagName === 'SELECT') {
+                        value = field.selectedOptions[0]?.textContent.trim();
+                    } else if (field.name === 'date_of_birth' && value) {
+                        value = new Intl.DateTimeFormat('en-GB', {
+                            day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'
+                        }).format(new Date(`${value}T00:00:00Z`));
+                    }
+                    const term = document.createElement('dt');
+                    term.textContent = label;
+                    const description = document.createElement('dd');
+                    description.textContent = value || 'Not provided';
+                    summary.append(term, description);
+                });
+                const inherited = form.querySelector('[data-inherited-preview]:not([hidden]) dl');
+                if (inherited) summary.append(...Array.from(inherited.children, element => element.cloneNode(true)));
+                if (previous.length) summary.querySelectorAll('dd').forEach((value, index) => {
+                    if (value.textContent === previous[index]) return;
+                    value.classList.add('admin-course-highlight');
+                    window.setTimeout(() => value.classList.remove('admin-course-highlight'), 2000);
+                });
+            }
+            form.addEventListener('profile-saved', refreshSummary);
+            form.addEventListener('profile-feedback', () => {
+                feedback.textContent = 'Changes saved successfully.';
+                feedback.hidden = false;
+            });
+            refreshSummary();
+        });
+        original.remove();
+    });
+});
+</script>
+<%- include('admin-editors') %>

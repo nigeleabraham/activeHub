@@ -1,5 +1,4 @@
-// Responsibilities that can be assigned to roles. They are recorded now and will gate features outside the
-// administrator-only /admin area as those are built.
+// Settings and financial reviews remain Administrator-only.
 const PERMISSIONS = [
     { key: 'facilities.manage', area: 'Facilities', label: 'Manage facilities', description: 'Add, edit and delete facilities.' },
     { key: 'courses.manage', area: 'Courses', label: 'Manage courses', description: 'Add, edit and delete courses.' },
@@ -13,4 +12,18 @@ const PERMISSIONS = [
 
 const PERMISSION_KEYS = PERMISSIONS.map(permission => permission.key);
 
-module.exports = { PERMISSIONS, PERMISSION_KEYS };
+function adminPermissions(path) {
+    if (path === '/courses/faqs' || path.startsWith('/courses/faqs/')) return [];
+    if (path === '/profiles/search') return ['profiles.manage', 'bookings.manage'];
+    if (path === '/facilities/courses/destroy') return ['courses.manage'];
+    const area = path.split('/')[1];
+    const permissions = {
+        facilities: 'facilities.manage', courses: 'courses.manage', sports: 'sports.manage',
+        'opening-hours': 'opening_hours.manage', bookings: 'bookings.manage',
+        'court-configuration': 'bookings.manage', profiles: 'profiles.manage',
+        roles: 'roles.manage', audit: 'audit.view'
+    };
+    return permissions[area] ? [permissions[area]] : [];
+}
+
+module.exports = { PERMISSIONS, PERMISSION_KEYS, adminPermissions };

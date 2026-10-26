@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basket | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <%- include('partials/resident-banner-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/cookie-banner') %>
+    <header class="bg-white border-bottom">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img src="/site-logo" alt="<%= siteTitle %>" style="max-height: 2rem;"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </header>
+    <main class="container py-4">
+        <h1>Your basket</h1>
+        <% if (message) { %><div class="alert alert-danger" role="alert"><%= message %></div><% } %>
+        <p><a href="<%= basket.return_to %>">&larr; Return to where you came from</a></p>
+        <p>Places are not reserved until payment is confirmed. Prices are based on the remaining sessions.</p>
+        <% if (!basket.items.length) { %>
+            <p>Your basket is empty.</p>
+            <a class="btn btn-primary" href="/courses">Browse courses</a>
+        <% } else { %>
+            <ul class="list-unstyled">
+                <% basket.items.forEach(item => { %>
+                    <li class="bg-white border rounded p-3 mb-3">
+                        <h2 class="h5"><%= item.course_name %></h2>
+                        <p class="mb-1"><%= item.run_name %> &mdash; <%= item.facility_name %></p>
+                        <p class="mb-1">Attendee: <strong><%= item.attendee_name %></strong></p>
+                        <p><%= item.remaining_sessions %> remaining sessions &middot; <strong><%= money(item.amount_pence) %></strong></p>
+                        <% if (item.error) { %><p class="text-danger" role="alert"><%= item.error %></p><% } %>
+                        <form method="POST" action="/basket/remove">
+                            <input type="hidden" name="item_guid" value="<%= item.guid %>">
+                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= item.course_name %> for <%= item.attendee_name %>">Remove</button>
+                        </form>
+                    </li>
+                <% }); %>
+            </ul>
+            <section class="bg-white border rounded p-3 mb-3" aria-labelledby="basket-total">
+                <h2 id="basket-total" class="h4">Order total</h2>
+                <p>Total: <strong><%= money(basket.total) %></strong></p>
+                <p>Account credit applied: <strong><%= money(basket.credit) %></strong></p>
+                <p>To pay: <strong><%= money(basket.due) %></strong></p>
+            </section>
+            <% if (basket.valid) { %>
+                <form method="POST" action="/basket/checkout">
+                    <button class="btn btn-primary" type="submit">Pay / checkout</button>
+                </form>
+            <% } %>
+        <% } %>
+        <% if (orders.length) { %>
+            <section class="mt-4" aria-labelledby="previous-course-orders">
+                <h2 id="previous-course-orders" class="h4">Your confirmed course orders</h2>
+                <ul>
+                    <% orders.forEach(order => { %>
+                        <li><a href="/course-orders/<%= order.guid %>"><%= new Date(order.created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/London' }) %>
+                            &mdash; <%= money(order.total_pence) %> &mdash; view confirmation</a></li>
+                    <% }); %>
+                </ul>
+            </section>
+        <% } %>
+    </main>
+</body>
+</html>

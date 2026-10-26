@@ -11,6 +11,7 @@
 </head>
 
 <body class="bg-light">
+    <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
@@ -18,7 +19,6 @@
                 <h1 class="h2 mb-1">Refunds</h1>
                 <p class="text-muted mb-0">Find a booking and refund it as account credit</p>
             </div>
-            <%- include('partials/navigation') %>
         </header>
 
         <% if (done === 'credit') { %>
@@ -87,7 +87,9 @@
                                         <td><%= booking.facility_name %><br><span class="small text-muted"><%= booking.option_name %> · <%= booking.sport_name %></span></td>
                                         <td><%= booking.profile_name || 'Unassigned' %><% if (booking.profile_email) { %><br><span class="small text-muted"><%= booking.profile_email %></span><% } %></td>
                                         <td><%= booking.booked_by_name || 'Not recorded' %></td>
-                                        <td>Fee £<%= (booking.amount_pence / 100).toFixed(2) %><br>Paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %></td>
+                                        <td>Fee £<%= (booking.amount_pence / 100).toFixed(2) %><br>Paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %>
+                                            <%- include('partials/booking-funding', { booking }) %>
+                                        </td>
                                         <td>
                                             <% const money = pence => '£' + (pence / 100).toFixed(2); %>
                                             <% if (booking.refunded_at) { %>
@@ -103,7 +105,8 @@
                                                         <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
                                                         <input type="hidden" name="return_to" value="/admin/refunds?<%= new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, value]) => value))).toString() %>">
                                                         <% if (booking.refundable) { %>
-                                                            <label class="d-block small"><input type="checkbox" name="refundable" value="1"> Allow bank refund of this credit</label>
+                                                            <label class="d-block small"><input type="checkbox" name="refundable" value="1"> Allow bank refund of the card-paid portion</label>
+                                                            <p class="small">Reissued credits retain their original refund eligibility.</p>
                                                             <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="method" value="credit" data-confirm="Add <%= money(booking.amount_paid_pence) %> to <%= booking.profile_name %>'s credit for booking <%= booking.booking_ref %>? The booking stays in place and can't be credited again.">Add credit to profile</button>
                                                         <% } %>
                                                         <% if (booking.externallyRefundable) { %>

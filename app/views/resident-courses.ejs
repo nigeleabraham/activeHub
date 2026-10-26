@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Courses | <%= siteTitle %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <style>
+        body { color: #0b0c0c; background: #f2f5f9; }
+        a { color: #003e90; }
+        .site-bar { background: #fff; border-bottom: 0.6rem solid #ffde02; }
+        .brand-logo { height: 2rem; width: auto; max-width: 12rem; }
+        .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
+        .page-head a { color: #fff; }
+        .course-card { background: #fff; border: 1px solid #b1b4b6; border-left: 0.4rem solid #113255; padding: 1.5rem; height: 100%; }
+        .text-muted { color: #505a5f !important; }
+        [data-course-description] > summary { font-size: 1.25rem; font-weight: 500; line-height: 1.2; }
+    </style>
+    <%- include('partials/resident-banner-styles') %>
+</head>
+<body>
+    <%- include('partials/cookie-banner') %>
+    <div class="site-bar">
+        <div class="container py-3 d-md-flex justify-content-between align-items-center">
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %> logo"><% } else { %><%= siteTitle %><% } %></a>
+            <%- include('partials/navigation') %>
+        </div>
+    </div>
+    <header class="page-head">
+        <div class="container">
+            <%- include('partials/basket-button') %>
+            <p class="mb-2"><a href="/">&larr; Back to home</a></p>
+            <h1 class="mb-2">Courses</h1>
+            <p class="lead mb-0">Find a class or coaching programme that suits you.</p>
+        </div>
+    </header>
+    <main class="container py-4">
+        <% if (!courses.length) { %>
+            <p>No courses are available at the moment. Please check back soon.</p>
+        <% } %>
+        <% courseGroups.forEach(group => { %>
+            <% if (group.courses.length && group.faqs.length) { %>
+                <details class="course-card mb-4" data-sport-faqs>
+                    <summary class="h5 mb-0"><%= group.name %> FAQs</summary>
+                    <dl class="mt-3 mb-0">
+                        <% group.faqs.forEach(faq => { %>
+                            <dt class="mb-2"><%= faq.question %></dt>
+                            <dd class="mb-3" style="white-space: pre-wrap;"><%- include('partials/faq-answer', { answer: faq.answer }) %></dd>
+                        <% }); %>
+                    </dl>
+                </details>
+            <% } %>
+        <% }); %>
+        <% courses.forEach(course => { %>
+        <section class="course-card mb-4" aria-labelledby="course-heading-<%= course.guid %>">
+            <h2 class="h3 mb-3" id="course-heading-<%= course.guid %>"><%= course.name %></h2>
+            <%- include('partials/course-description', { course, collapsible: true }) %>
+            <% if ((course.runs || []).length) { %>
+            <details class="mb-3" data-course-runs>
+                <summary class="h5" id="choose-class-<%= course.guid %>">Choose a class (<%= course.runs.length %>)</summary>
+                <div class="row mt-3">
+                <% course.runs.forEach(run => { %>
+                    <div class="col-12 col-lg-6 col-xl-4 mb-3">
+                        <article class="border rounded bg-light p-3 h-100" data-course-run>
+                            <%- include('partials/course-run-details', { run, returnTo: '/courses#course-heading-' + course.guid }) %>
+                        </article>
+                    </div>
+                <% }); %>
+                </div>
+            </details>
+            <% } %>
+        </section>
+        <% }); %>
+    </main>
+    <%- include('partials/course-basket-return') %>
+</body>
+</html>

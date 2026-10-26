@@ -25,6 +25,7 @@
         .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
         .text-muted { color: #505a5f !important; }
     </style>
+    <%- include('partials/resident-banner-styles') %>
 </head>
 
 <body>
@@ -38,6 +39,7 @@
 
     <header class="page-head">
         <div class="container">
+            <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
             <h1 class="mb-2">Credits and refunds</h1>
             <p class="lead mb-0">Your booking credit, refund requests and recent past bookings.</p>
@@ -56,7 +58,7 @@
                 </div>
             <% } %>
             <p><strong>Total available: £<%= (creditBalance / 100).toFixed(2) %></strong></p>
-            <p class="small text-muted">Unexpired credit is used automatically at checkout, when booking. The oldest credit is drawn down first. You can still spend unexpired credit while a bank refund is pending review. A refund requested before expiry remains pending for review, but expired credit cannot be spent.</p>
+            <p class="small text-muted">Unexpired credit is used automatically at checkout, when booking. The oldest credit is drawn down first. Credit returned from a booking keeps its original bank-refund eligibility, including for weather cancellations, unless an administrator approves a discretionary request as non-refundable: the entire award is then non-refundable. Non-refundable credit cannot become cash-refundable. Mixed payments may produce separate refundable and non-refundable credits. You can still spend unexpired credit while a bank refund is pending review. A refund requested before expiry remains pending for review, but expired credit cannot be spent.</p>
             <% if (refundRequested) { %><div class="alert alert-success" role="status">Your bank refund request is pending review.</div><% } %>
             <% if (refundError) { %><div class="alert alert-warning" role="alert">That credit cannot be requested for a bank refund. It may be non-refundable, expired, already requested or fully spent.</div><% } %>
             <% if (credits.length) { %>
@@ -106,8 +108,8 @@
         <% } %>
 
         <section class="panel" aria-labelledby="past-bookings">
-            <h2 id="past-bookings" class="h4 mb-1">Bookings eligible for credit requests.</h2>
-            <p class="text-muted small">Only bookings that took place within the last <%= creditRequestDays %> days and have not already been credited are eligible for credit requests. Bookings are shown most recent first.</p>
+            <h2 id="past-bookings" class="h4 mb-1">Bookings eligible for credit requests and pending requests</h2>
+            <p class="text-muted small">New credit requests must be submitted within <%= creditRequestDays %> days of the booking ending, before it has been credited. Pending requests remain visible and can still be approved after this period ends. Bookings are shown most recent first.</p>
             <p>Credit requests are only accepted for bookings that have passed in the last <%= creditRequestDays %> days. The council incurs a cost when refunding a transaction so we will credit your account. If you could not use the court because of bad weather a bank refund can then be requested in place of the credit applied to your account. If credit has been applied to your account at the discretion of <%= organisationName %>, this may not be refundable.</p>
             <% if (requested) { %><div class="alert alert-success" role="status">Your credit request has been submitted. Pending requests are shown below. Approved bookings no longer appear here; any available credit is shown above.</div><% } %>
             <% if (error === 'invalid-reason') { %><div class="alert alert-danger" role="alert">Please select Weather or Other as the reason for your credit request.</div><% } %>
@@ -154,7 +156,7 @@
                     <% }) %>
                 </ul>
             <% } else { %>
-                <p class="text-muted mb-0">No uncredited bookings in the last <%= creditRequestDays %> days.</p>
+                <p class="text-muted mb-0">No uncredited bookings in the last <%= creditRequestDays %> days and no pending credit requests.</p>
             <% } %>
         </section>
     </main>
