@@ -134,31 +134,8 @@
                                 <summary>Courses (<%= facility.courses.length %>)</summary>
                                 <ul class="mt-2 mb-0">
                                     <% facility.courses.forEach(course => { %>
-                                        <li class="mb-3">
-                                            <strong><%= course.name %></strong>
-                                            <%- include('partials/course-description', { course, collapsible: true }) %>
-                                            <% if ((course.runs || []).length) { %>
-                                            <div class="mb-3" data-course-runs>
-                                                <p class="h5 mt-3">Choose a class (<%= course.runs.length %>)</p>
-                                            <% course.runs.forEach(run => { %>
-                                                <div class="border rounded bg-light p-3 mt-3" data-course-run><%- include('partials/course-run-details', { run, returnTo: '/facilities' }) %></div>
-                                            <% }); %>
-                                            </div>
-                                            <% } %>
-                                            <% (course.sports || []).forEach(sport => { %>
-                                                <p class="small mb-1"><%= sport.name %></p>
-                                                <% if (sport.faqs.length) { %>
-                                                    <details>
-                                                        <summary><%= sport.name %> course FAQs</summary>
-                                                        <dl class="mt-2">
-                                                            <% sport.faqs.forEach(faq => { %>
-                                                                <dt><%= faq.question %></dt>
-                                                                <dd style="white-space: pre-wrap;"><%- include('partials/faq-answer', { answer: faq.answer }) %></dd>
-                                                            <% }); %>
-                                                        </dl>
-                                                    </details>
-                                                <% } %>
-                                            <% }); %>
+                                        <li class="mb-2">
+                                            <a href="/courses#course-heading-<%= course.guid %>"><%= course.name %></a>
                                         </li>
                                     <% }); %>
                                 </ul>

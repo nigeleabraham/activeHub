@@ -13,7 +13,7 @@ And open http://localhost:3000 in your browser.
 
 ## Responsive layout
 
-On the Courses page, **Choose a class** is a collapsed disclosure for each course. Expanding it reveals its class cards; returning from the basket restores its open state and scroll position. Facility-page class lists remain visible.
+On the Courses page, **Choose a class** is a collapsed disclosure for each course. Expanding it reveals its class cards; returning from the basket restores its open state and scroll position. Facility cards show a course count and course-title links to the corresponding heading on the Courses page, rather than descriptions, FAQs, class runs or purchase controls. A course-heading anchor automatically opens that course's class disclosure and scrolls to its heading, both on arrival and when the anchor changes.
 
 The basket's **Pay / checkout** action opens the existing Payment page used for court bookings, with course places and attendees in its order summary. Class selection also offers **Checkout** (or **Add to basket and checkout** when the basket already contains items), which adds the selected place before opening Payment for the whole basket. Both flows share the card form and account-credit confirmation layout; course payments retain their own basket revision checks and enrolment transaction. Declined course payments remain on the Payment page, while stale or invalid baskets return to basket review.
 

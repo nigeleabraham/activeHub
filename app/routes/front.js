@@ -1060,14 +1060,12 @@ router.get('/', async (req, res) => {
 });
 router.get('/facilities', async (req, res) => {
     try {
-        const [settings, hasLogo, facilityRows, sports, courseRows, faqs, familyMembers] = await Promise.all([
+        const [settings, hasLogo, facilityRows, sports, courseRows] = await Promise.all([
             Settings.getAll(),
             Settings.getLogo().then(Boolean),
             Facilities.findAll(),
             Sports.findAll(),
-            Courses.findAll({ availableOnly: true }),
-            Courses.findFaqs(),
-            CourseOrders.familyMembers(req.profile.guid)
+            Courses.findAll({ availableOnly: true })
         ]);
         const facilities = await Promise.all(facilityRows.map(async facility => {
             const week = await OpeningHours.getSchedules(facility.opening_hours_template_guid, new Date(), 7, facility);
@@ -1085,11 +1083,7 @@ router.get('/facilities', async (req, res) => {
                 booking_mode: facility.booking_mode,
                 sports: facility.sports,
                 courses: courseRows.filter(course => course.facility_guids.includes(facility.guid)).map(course => ({
-                    ...course,
-                    runs: (course.runs || []).filter(run => run.facility_guid === facility.guid),
-                    sports: sports.filter(sport => course.sport_guids.includes(sport.guid)).map(sport => ({
-                        ...sport, faqs: faqs.filter(faq => faq.sport_guid === sport.guid)
-                    }))
+                    guid: course.guid, name: course.name
                 })),
                 today: week ? week[0] : null,
                 week
@@ -1101,7 +1095,6 @@ router.get('/facilities', async (req, res) => {
             siteTitle: settings.site_title,
             hasLogo,
             facilities,
-            familyMembers,
             sports: sports.filter(sport => offeredSportGuids.has(sport.guid))
         });
     } catch (error) {

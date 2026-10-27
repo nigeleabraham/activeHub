@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ejs = require('ejs');
 const path = require('node:path');
+const vm = require('node:vm');
 const Courses = require('../models/Courses');
 const Facilities = require('../models/Facilities');
 const Sports = require('../models/Sports');
@@ -14,6 +15,43 @@ const sport = { guid: GUID, name: 'Tennis' };
 const facility = { guid: GUID, name: 'Hall', courses: [], sports: [sport] };
 const course = { guid: GUID, name: 'Tennis course', facility_guids: [GUID], sport_guids: [GUID], description: 'All levels' };
 const faq = { guid: GUID, sport_guid: GUID, question: 'What should I bring?', answer: '<b>A racket</b>' };
+
+test('course anchors open only the matching class disclosure on load and hash changes', async () => {
+    const html = await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
+        courses: [], courseGroups: [], siteTitle: 'ActiveHub', hasLogo: false,
+        currentProfile: null, isAdmin: false, canSwitchRole: false
+    });
+    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
+    const first = { open: false };
+    const second = { open: false };
+    const scrolled = [];
+    const heading = (runs, name) => ({
+        closest: () => ({ querySelector: () => runs }),
+        scrollIntoView: () => scrolled.push(name)
+    });
+    const headings = {
+        'course-heading-first': heading(first, 'first'),
+        'course-heading-second': heading(second, 'second')
+    };
+    const location = { hash: '#course-heading-first' };
+    let hashchange;
+    vm.runInNewContext(script, {
+        location, document: { getElementById: id => headings[id] },
+        window: { addEventListener: (event, listener) => { assert.equal(event, 'hashchange'); hashchange = listener; } },
+        requestAnimationFrame: callback => callback()
+    });
+    assert.equal(first.open, true);
+    assert.equal(second.open, false);
+    location.hash = '#course-heading-second';
+    hashchange();
+    assert.equal(second.open, true);
+    assert.deepEqual(scrolled, ['first', 'second']);
+    for (const hash of ['', '#unrelated', '#course-heading-missing']) {
+        location.hash = hash;
+        assert.doesNotThrow(hashchange);
+    }
+    assert.deepEqual(scrolled, ['first', 'second']);
+});
 
 test('FAQ answer formatting supports coloured text, underline and bullets without allowing arbitrary HTML', async () => {
     for (const [answer, expected] of [
@@ -94,7 +132,7 @@ test('customer sport sections omit unused sports and FAQs, and retain unassigned
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
         ...values, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
     });
-    assert.equal((html.match(/data-sport-faqs/g) || []).length, 1);
+    assert.equal((html.match(/<details[^>]*data-sport-faqs/g) || []).length, 1);
     assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<section class="course-card'),
         'Sport FAQs appear once outside and before the course cards');
     assert.match(html, /<span style="color: #003e90; font-weight: 400;">Bring<\/span> <u>trainers<\/u>/);
@@ -225,7 +263,7 @@ test('course writes reject missing or malformed sports before calling the model'
     assert.equal(update.mock.callCount(), 0);
 });
 
-test('customer listings share sport FAQs across courses and escape answers as text', async t => {
+test('facility course listings link to the matching course without descriptions, FAQs or run controls', async t => {
     t.mock.method(require('../models/CourseOrders'), 'familyMembers', async () => []);
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
     t.mock.method(Settings, 'getLogo', async () => null);
@@ -241,11 +279,13 @@ test('customer listings share sport FAQs across courses and escape answers as te
     let values;
     await handler({ profile: { guid: GUID } }, { render(_view, locals) { values = locals; }, sendStatus(code) { assert.fail(`Unexpected status ${code}`); } });
     assert.equal(values.facilities[0].courses.length, 2);
-    assert.deepEqual(values.facilities[0].courses.map(item => item.sports[0].faqs[0]), [faq, faq]);
+    assert.deepEqual(values.facilities[0].courses, [
+        { guid: course.guid, name: course.name }, { guid: 'other', name: 'Second course' }
+    ]);
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-facilities.ejs'), {
         ...values, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
     });
-    assert.equal((html.match(/What should I bring\?/g) || []).length, 2);
-    assert.equal((html.match(/&lt;b&gt;A racket&lt;\/b&gt;/g) || []).length, 2);
-    assert.doesNotMatch(html, /<b>A racket<\/b>/);
+    assert.ok(html.includes(`href="/courses#course-heading-${course.guid}"`));
+    assert.match(html, /href="\/courses#course-heading-other">Second course<\/a>/);
+    assert.doesNotMatch(html, /What should I bring\?|data-course-description|data-course-run|action="\/basket\/add"/);
 });

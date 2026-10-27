@@ -17,6 +17,8 @@
         .course-card { background: #fff; border: 1px solid #b1b4b6; border-left: 0.4rem solid #113255; padding: 1.5rem; height: 100%; }
         .text-muted { color: #505a5f !important; }
         [data-course-description] > summary { font-size: 1.25rem; font-weight: 500; line-height: 1.2; }
+        [data-course-description] .readable-content { max-width: none; }
+        [data-sport-faqs] dd { max-width: none; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -75,5 +77,19 @@
         <% }); %>
     </main>
     <%- include('partials/course-basket-return') %>
+    <script>
+        (() => {
+            function openLinkedCourse() {
+                if (!location.hash.startsWith('#course-heading-')) return;
+                const heading = document.getElementById(location.hash.slice(1));
+                const runs = heading?.closest('.course-card')?.querySelector('details[data-course-runs]');
+                if (!runs) return;
+                runs.open = true;
+                requestAnimationFrame(() => heading.scrollIntoView({ block: 'start' }));
+            }
+            window.addEventListener('hashchange', openLinkedCourse);
+            openLinkedCourse();
+        })();
+    </script>
 </body>
 </html>
