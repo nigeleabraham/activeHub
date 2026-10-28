@@ -5,7 +5,18 @@ const INDEX = '/courses/7/gymnastics/';
 const MARKER = 'camden_course_import:';
 
 function text(html) {
-    return html.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'")
+    const parts = [];
+    let offset = 0;
+    let start = html.indexOf('<', offset);
+    while (start !== -1) {
+        const end = html.indexOf('>', start + 1);
+        if (end === -1) break;
+        parts.push(html.slice(offset, start));
+        offset = end + 1;
+        start = html.indexOf('<', offset);
+    }
+    parts.push(html.slice(offset));
+    return parts.join('').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'")
         .replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
@@ -57,7 +68,9 @@ function parsePrice(html) {
 }
 
 function summary(name) {
-    const audience = name.replace(/\s*Autumn term 2026\s*$/i, '');
+    const trimmed = name.trimEnd();
+    const audience = /Autumn term 2026$/i.test(trimmed)
+        ? trimmed.slice(0, -'Autumn term 2026'.length).trimEnd() : name;
     return `${audience}. Autumn 2026 gymnastics tuition using apparatus to develop movement skills, balance and coordination.
 
 Imported from Camden Active. Runs are drafts: the website does not publish maximum capacity and lists only remaining session dates. Before publishing, confirm capacity and restore the complete original session schedule so prorated prices use the correct total. Full-course prices exclude membership charges and discounts.`;

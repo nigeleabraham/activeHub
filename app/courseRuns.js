@@ -51,7 +51,7 @@ function courseAge(name) {
     if (age) return Number(age[1]);
     if (/\bpre[- ]school\b/i.test(name)) return 3;
     if (/\breception\b/i.test(name)) return 4;
-    const year = /\b(?:school\s+)?years?\s*:?\s*(\d{1,2})\b/i.exec(name);
+    const year = /\b(?:school\s+)?years?\s*(?::\s*)?(\d{1,2})\b/i.exec(name);
     return year ? Number(year[1]) + 4 : Infinity;
 }
 

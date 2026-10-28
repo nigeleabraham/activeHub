@@ -20,3 +20,20 @@ test('Camden full price is derived from original count, not the reduced advertis
     assert.match(summary('Preschool'), /maximum capacity/);
     assert.match(summary('Preschool'), /complete original session schedule/);
 });
+
+test('Camden text extraction handles nested opening brackets and long unmatched tag prefixes', () => {
+    const table = location => `Session Times</h4><table><tr><td>Tuesday 3 Nov 2026</td>
+        <td>13:45 - 14:30</td><td>${location}</td></tr></table>`;
+    assert.equal(parseSessions(table('A <<span>Hall</span> &amp; &quot;Gym&quot;'))[0].location,
+        'A Hall & "Gym"');
+    assert.throws(() => parsePrice('<'.repeat(100000)), /Missing source/);
+});
+
+test('Camden summaries remove only the trailing term label and its surrounding whitespace', () => {
+    const description = summary('Preschool');
+    assert.equal(summary('Preschool \t autumn TERM 2026 \n'), description);
+    assert.equal(summary(`Preschool${' '.repeat(100000)}Autumn term 2026`), description);
+    const unchanged = `Preschool${' '.repeat(100000)}other term`;
+    assert.ok(summary(unchanged).startsWith(`${unchanged}.`));
+    assert.ok(summary('Autumn term 2026 Preschool').startsWith('Autumn term 2026 Preschool.'));
+});

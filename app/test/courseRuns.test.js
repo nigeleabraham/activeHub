@@ -32,6 +32,17 @@ test('runs sort Sunday to Saturday then UK start time, using schedules before la
         run('Two', '2027-01-05 13:45', 'Z hall')) < 0);
 });
 
+test('school year sorting handles optional colons and long whitespace without changing age order', () => {
+    const course = name => ({ name, guid: name });
+    for (const name of ['School year 2', 'School years: 2/3', 'School year : 2', 'Year\t:\t2']) {
+        assert.ok(compareCourses(course(name), course('Age 7')) < 0);
+        assert.ok(compareCourses(course(name), course('Age 5')) > 0);
+    }
+    const whitespace = ' '.repeat(100000);
+    assert.ok(compareCourses(course(`School year${whitespace}2`), course('Age 7')) < 0);
+    assert.ok(compareCourses(course(`School year${whitespace}unknown`), course('Age 7')) > 0);
+});
+
 test('weekly run generation includes matching dates and retains full price in pennies', () => {
     const run = parseRunInput(weekly);
     assert.equal(run.full_price_pence, 10000);
