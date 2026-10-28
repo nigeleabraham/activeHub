@@ -263,10 +263,28 @@ async function orders(profileGuid) {
     return rows;
 }
 
+async function upcomingForProfile(profileGuid) {
+    const { rows } = await pool.query(`
+        SELECT e.guid, e.order_guid, e.member_guid, e.attendee_name, e.course_name,
+            e.run_name, e.facility_name, e.booking_ref, e.amount_pence,
+            upcoming.sessions
+        FROM course_enrolments e
+        JOIN course_orders o ON o.guid = e.order_guid AND o.profile_guid = e.profile_guid
+        CROSS JOIN LATERAL (
+            SELECT jsonb_agg(session ORDER BY (session->>'starts_at')::timestamptz) AS sessions,
+                min((session->>'starts_at')::timestamptz) AS next_session
+            FROM jsonb_array_elements(e.sessions) AS session
+            WHERE (session->>'starts_at')::timestamptz > statement_timestamp()
+        ) upcoming
+        WHERE e.profile_guid = $1 AND upcoming.next_session IS NOT NULL
+        ORDER BY upcoming.next_session, lower(e.attendee_name), e.guid`, [profileGuid]);
+    return rows;
+}
+
 async function itemCount(profileGuid) {
     const { rows: [result] } = await pool.query(
         'SELECT count(*)::int AS count FROM course_basket_items WHERE profile_guid = $1', [profileGuid]);
     return result.count;
 }
 
-module.exports = { initialize, BasketError, returnPath, familyMembers, addFamilyMember, removeFamilyMember, basket, add, remove, pay, order, orders, itemCount };
+module.exports = { initialize, BasketError, returnPath, familyMembers, addFamilyMember, removeFamilyMember, basket, add, remove, pay, order, orders, upcomingForProfile, itemCount };

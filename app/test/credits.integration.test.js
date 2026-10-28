@@ -436,6 +436,41 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
             Children.ChildInputError);
     });
 
+    await t.test('upcoming course bookings include self and archived children but exclude other owners and completed places', async () => {
+        const Orders = require('../models/CourseOrders');
+        const parent = await person();
+        const other = await person();
+        const child = await Orders.addFamilyMember(parent.guid, 'Booked child');
+        const { rows: [run] } = await db.query('SELECT guid FROM course_runs LIMIT 1');
+        assert.ok(run);
+        const future = new Date(Date.now() + 86400000).toISOString();
+        const end = new Date(Date.now() + 90000000).toISOString();
+        const past = new Date(Date.now() - 86400000).toISOString();
+        for (const [owner, member, name, sessions] of [
+            [parent.guid, null, 'Parent', [{ starts_at: past, ends_at: past }, { starts_at: future, ends_at: end }]],
+            [parent.guid, child.guid, 'Booked child', [{ starts_at: future, ends_at: end }]],
+            [other.guid, null, 'Other parent', [{ starts_at: future, ends_at: end }]]
+        ]) {
+            const { rows: [order] } = await db.query(`INSERT INTO course_orders
+                (profile_guid, checkout_token, total_pence, credit_pence, payment_reference)
+                VALUES ($1, $2, 0, 0, 'TEST') RETURNING guid`, [owner, crypto.randomUUID()]);
+            await db.query(`INSERT INTO course_enrolments
+                (order_guid, run_guid, profile_guid, member_guid, attendee_name, course_name, run_name,
+                 facility_name, sessions, amount_pence, credit_applied_pence, booking_ref)
+                VALUES ($1,$2,$3,$4,$5,'Course','Run','Hall',$6,0,0,$7)`,
+            [order.guid, run.guid, owner, member, name, JSON.stringify(sessions), crypto.randomUUID()]);
+        }
+        await Orders.removeFamilyMember(parent.guid, child.guid);
+        let bookings = await Orders.upcomingForProfile(parent.guid);
+        assert.deepEqual(bookings.map(booking => booking.attendee_name).sort(), ['Booked child', 'Parent']);
+        assert.ok(bookings.every(booking => booking.sessions.length === 1 && booking.sessions[0].starts_at === future));
+        await db.query(`UPDATE course_enrolments SET sessions = $2 WHERE profile_guid = $1 AND member_guid IS NULL`,
+            [parent.guid, JSON.stringify([{ starts_at: past, ends_at: past }])]);
+        bookings = await Orders.upcomingForProfile(parent.guid);
+        assert.deepEqual(bookings.map(booking => booking.attendee_name), ['Booked child']);
+        assert.deepEqual(await Orders.upcomingForProfile(crypto.randomUUID()), []);
+    });
+
     await t.test('independent profile section saves preserve unrelated data and unanswered legacy health', async () => {
         const Profiles = require('../models/Profiles');
         const Children = require('../models/Children');

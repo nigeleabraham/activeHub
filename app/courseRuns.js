@@ -18,7 +18,8 @@ function parseRunInput(body) {
         const start = new Date(`${body.start_date}T00:00:00Z`);
         const end = new Date(`${body.end_date}T00:00:00Z`);
         if ((end - start) / 86400000 > 730) return null;
-        for (const date = start; date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
+        for (let timestamp = start.getTime(); timestamp <= end.getTime(); timestamp += 86400000) {
+            const date = new Date(timestamp);
             if (date.getUTCDay() === Number(body.weekday)) {
                 const day = date.toISOString().slice(0, 10);
                 sessions.push({ starts_local: `${day} ${body.start_time}`, ends_local: `${day} ${body.end_time}` });

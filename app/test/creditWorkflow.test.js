@@ -30,6 +30,7 @@ test('booking funding displays refundable and non-refundable amounts and flags m
 });
 
 test('upcoming booking limits apply only to the Resident role in the calendar, checkout and payment', async t => {
+    t.mock.method(require('../models/CourseOrders'), 'upcomingForProfile', async () => []);
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
     t.mock.method(Settings, 'getLogo', async () => null);
     t.mock.method(Bookings, 'findInAppFacilities', async () => [{
@@ -71,6 +72,8 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
         });
         assert.equal(html.includes('data-max-selectable="0"'), role === 'Resident');
         assert.equal(html.includes('Your role has no upcoming booking limit.'), role !== 'Resident');
+        assert.match(html, /class="form-group court-space-picker mb-2 mr-3"/);
+        assert.match(html, /class="form-control form-control-lg"[^>]*data-calendar-option/);
         for (const url of ['/bookings/checkout', '/bookings/pay']) {
             let location;
             let rendered;

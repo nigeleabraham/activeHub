@@ -48,6 +48,18 @@ test('weekly run generation includes matching dates and retains full price in pe
     ]) assert.equal(parseRunInput({ ...weekly, ...change }), null, JSON.stringify(change));
 });
 
+test('weekly generation includes both endpoints and crosses leap days and year boundaries', () => {
+    for (const [start_date, end_date, weekday, dates] of [
+        ['2028-02-22', '2028-03-07', '2', ['2028-02-22', '2028-02-29', '2028-03-07']],
+        ['2026-12-29', '2027-01-05', '2', ['2026-12-29', '2027-01-05']],
+        ['2027-01-05', '2027-01-05', '2', ['2027-01-05']]
+    ]) {
+        const run = parseRunInput({ ...weekly, start_date, end_date, weekday });
+        assert.deepEqual(run.sessions.map(session => session.starts_local),
+            dates.map(date => `${date} 18:00`));
+    }
+});
+
 test('individual session editing validates dates, duplicates, overlaps and preserves UK wall times', () => {
     const input = { ...weekly, schedule_mode: 'individual', sessions: '2027-04-05 18:00 19:00\n2027-03-22 18:00 19:00' };
     assert.deepEqual(parseRunInput(input).sessions, [

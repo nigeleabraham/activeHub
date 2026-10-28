@@ -157,7 +157,7 @@ async function save(guid, { name, email, roles = [] }) {
     if (!Array.isArray(roles) || roles.some(role => typeof role !== 'string' || !role)) {
         throw new Error('Invalid profile roles');
     }
-    const selected = [...new Set(['Resident', ...roles])].sort();
+    const selected = [...new Set(['Resident', ...roles])].sort((first, second) => first.localeCompare(second));
     const client = await pool.connect();
     try {
         await client.query('BEGIN');

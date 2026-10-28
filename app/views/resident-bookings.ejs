@@ -19,10 +19,13 @@
         .page-head h1 { font-size: 2.25rem; font-weight: 700; }
         .page-head a { color: #fff; }
         .panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-bottom: 2rem; }
-        .panel:first-of-type { margin-top: -1.5rem; }
+        [data-court-bookings] { margin-top: -1.5rem; }
         .booking-item { border-left: 0.4rem solid #113255; background: #f8f9fa; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
         .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
         .text-muted { color: #505a5f !important; }
+        .court-space-picker { flex: 1 1 20rem; min-width: 0; }
+        .court-space-picker label { display: block; font-size: 1.25rem; font-weight: 700; }
+        .court-space-picker select { font-weight: 600; border: 2px solid #113255; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -48,8 +51,8 @@
     <main class="container pb-5">
         <%- include('partials/booking-messages') %>
 
-        <section class="panel" aria-labelledby="my-bookings">
-            <h2 id="my-bookings" class="h4 mb-3">My bookings (<%= myBookings.length %>)</h2>
+        <details class="panel" data-court-bookings>
+            <summary id="my-bookings" class="h4 mb-3">Court bookings (<%= myBookings.length %>)</summary>
             <% if (myBookings.length) { %>
                 <ul class="list-unstyled mb-0">
                     <% myBookings.forEach(booking => { %>
@@ -67,7 +70,34 @@
             <% } else { %>
                 <p class="text-muted mb-0">You have no upcoming bookings.</p>
             <% } %>
-        </section>
+        </details>
+
+        <details class="panel" data-course-bookings>
+            <summary class="h4 mb-3">Course bookings (<%= courseBookings.length %>)</summary>
+            <% if (courseBookings.length) { %>
+                <ul class="list-unstyled mb-0">
+                    <% courseBookings.forEach(booking => { %>
+                        <li class="booking-item">
+                            <p class="h5 mb-2">Booked for: <strong><%= booking.attendee_name %></strong><%= booking.member_guid ? ' (child)' : ' (you)' %></p>
+                            <p class="mb-1"><strong><%= booking.course_name %></strong></p>
+                            <p class="mb-1"><%= booking.run_name %> &mdash; <%= booking.facility_name %></p>
+                            <p class="mb-1">Reference: <code><%= booking.booking_ref %></code> &middot; Price: £<%= (booking.amount_pence / 100).toFixed(2) %></p>
+                            <p class="mb-1"><%= booking.sessions.length %> upcoming <%= booking.sessions.length === 1 ? 'session' : 'sessions' %>:</p>
+                            <ul class="mb-2">
+                                <% booking.sessions.forEach(session => { %>
+                                    <li><time data-local-booking-time datetime="<%= session.starts_at %>"><%= session.starts_at %></time>
+                                        to <time data-local-booking-end datetime="<%= session.ends_at %>"><%= session.ends_at %></time></li>
+                                <% }); %>
+                            </ul>
+                            <a href="/course-orders/<%= booking.order_guid %>">View confirmation<span class="sr-only"> for <%= booking.attendee_name %> &mdash; <%= booking.course_name %></span></a>
+                        </li>
+                    <% }); %>
+                </ul>
+                <p class="text-muted small mt-3 mb-0">To change or cancel a course booking, please contact the facility.</p>
+            <% } else { %>
+                <p class="text-muted mb-0">You and your children have no upcoming course bookings.</p>
+            <% } %>
+        </details>
 
         <section class="panel" aria-labelledby="make-booking">
             <h2 id="make-booking" class="h4 mb-3">Make a booking</h2>
@@ -94,9 +124,9 @@
                         <% } %>
                         <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" <% if (facility.limit !== null) { %>data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>"<% } %>>
                             <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
-                                <div class="form-group mb-2 mr-3">
+                                <div class="form-group court-space-picker mb-2 mr-3">
                                     <label for="calendar-option-<%= facility.guid %>">Court or space</label>
-                                    <select class="form-control form-control-sm" id="calendar-option-<%= facility.guid %>" data-calendar-option>
+                                    <select class="form-control form-control-lg" id="calendar-option-<%= facility.guid %>" data-calendar-option>
                                         <% facility.options.forEach(option => { %>
                                             <option value="<%= option.guid %>"><%= option.name %> · <%= option.sport_name %></option>
                                         <% }); %>

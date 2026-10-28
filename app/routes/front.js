@@ -1014,11 +1014,12 @@ router.post(['/credits-and-refunds/credit-requests', '/profile/credit-requests']
 
 router.get('/bookings', async (req, res) => {
     try {
-        const [settings, hasLogo, facilityRows, myBookings] = await Promise.all([
+        const [settings, hasLogo, facilityRows, myBookings, courseBookings] = await Promise.all([
             Settings.getAll(),
             Settings.getLogo().then(Boolean),
             Bookings.findInAppFacilities(),
-            Bookings.findUpcomingForProfile(req.profile.guid)
+            Bookings.findUpcomingForProfile(req.profile.guid),
+            CourseOrders.upcomingForProfile(req.profile.guid)
         ]);
         const facilities = (await Promise.all(facilityRows.map(async facility => ({
             guid: facility.guid,
@@ -1035,6 +1036,7 @@ router.get('/bookings', async (req, res) => {
             hasLogo,
             facilities,
             myBookings,
+            courseBookings,
             selectedFacilityGuid: facilities.some(facility => facility.guid === req.query.facility)
                 ? req.query.facility : facilities[0]?.guid,
             maxDate: latestResidentBookingStart().toISOString(),
@@ -1045,6 +1047,7 @@ router.get('/bookings', async (req, res) => {
             creditBalance: req.profile.credit_pence
         });
     } catch (error) {
+        console.error('Unable to load customer bookings:', error);
         res.sendStatus(500);
     }
 });

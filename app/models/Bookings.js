@@ -566,7 +566,8 @@ async function createBookings(bookings, creditUse = null) {
             (applied > 0 && bookings.some(booking => booking.profile_guid !== creditUse.profile_guid))) {
             throw new Error('Invalid booking credit allocation');
         }
-        const profileGuids = [...new Set(bookings.map(booking => booking.profile_guid).filter(Boolean))].sort();
+        const profileGuids = [...new Set(bookings.map(booking => booking.profile_guid).filter(Boolean))]
+            .sort((first, second) => first.localeCompare(second));
         for (const profileGuid of profileGuids) {
             const profile = await client.query('SELECT guid FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
             if (!profile.rowCount) throw new Error('The booking profile no longer exists.');
