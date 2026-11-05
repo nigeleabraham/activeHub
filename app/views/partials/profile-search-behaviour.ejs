@@ -1,0 +1,100 @@
+    function attachProfileSearch(search, choices, status, initialProfile, groupName, onSelect) {
+        let timer;
+        let activeRequest;
+        let requestId = 0;
+        let currentProfile = initialProfile;
+
+        function renderChoices(profiles, bestMatchGuid = null) {
+            choices.replaceChildren();
+            for (const profile of profiles) {
+                const label = document.createElement('label');
+                label.className = 'profile-choice';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = groupName;
+                radio.value = profile.guid;
+                radio.checked = currentProfile.guid === radio.value;
+                const text = document.createElement('span');
+                text.className = 'flex-grow-1';
+                const roleLabel = (profile.roles || [profile.role]).filter(Boolean).join(', ');
+                text.textContent = `${profile.name}${roleLabel ? ` (${roleLabel})` : ''}${profile.email ? ` · ${profile.email}` : ''}`;
+                label.append(radio, text);
+                if (profile.guid === bestMatchGuid) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-success';
+                    badge.textContent = 'Best match';
+                    label.append(badge);
+                }
+                if (radio.checked) label.classList.add('is-selected');
+                radio.addEventListener('change', () => {
+                    currentProfile = { guid: profile.guid, name: profile.name, role: profile.role, roles: profile.roles, email: profile.email };
+                    for (const choice of choices.querySelectorAll('.profile-choice')) {
+                        choice.classList.toggle('is-selected', choice.contains(radio));
+                    }
+                    status.textContent = `Selected profile: ${currentProfile.name}.`;
+                    onSelect(currentProfile);
+                });
+                choices.append(label);
+            }
+        }
+
+        renderChoices([currentProfile]);
+        status.textContent = `Currently selected: ${currentProfile.name}. Search to change the selection.`;
+
+        search.addEventListener('input', () => {
+            clearTimeout(timer);
+            if (activeRequest) activeRequest.abort();
+            const query = search.value.trim();
+            const currentRequestId = ++requestId;
+            if (query.length < 2) {
+                renderChoices([currentProfile]);
+                status.textContent = `Currently selected: ${currentProfile.name}. Type at least 2 characters to find another profile.`;
+                return;
+            }
+
+            status.textContent = 'Searching profiles…';
+            choices.replaceChildren();
+            timer = setTimeout(async () => {
+                activeRequest = new AbortController();
+                try {
+                    const response = await fetch(`/admin/profiles/search?q=${encodeURIComponent(query)}`, {
+                        signal: activeRequest.signal
+                    });
+                    if (!response.ok) throw new Error('Profile search failed.');
+                    const data = await response.json();
+                    if (currentRequestId !== requestId) return;
+
+                    const profiles = data.profiles;
+                    if (profiles.length) {
+                        currentProfile = profiles[0];
+                        renderChoices(profiles, currentProfile.guid);
+                        onSelect(currentProfile);
+                        status.textContent = `${profiles.length} match${profiles.length === 1 ? '' : 'es'}. Best match selected: ${currentProfile.name}. Choose a different result if needed.`;
+                    } else {
+                        const empty = document.createElement('p');
+                        empty.className = 'small text-muted mb-0';
+                        empty.textContent = 'No matching profiles found.';
+                        choices.replaceChildren(empty);
+                        status.textContent = `No profiles match “${query}”. Current selection remains ${currentProfile.name}.`;
+                    }
+                } catch (error) {
+                    if (error.name === 'AbortError' || currentRequestId !== requestId) return;
+                    console.error('Unable to search profiles', error);
+                    status.textContent = 'Profile search failed. Please try again.';
+                    status.classList.remove('sr-only');
+                }
+            }, 250);
+        });
+        return {
+            reset(profile) {
+                clearTimeout(timer);
+                if (activeRequest) activeRequest.abort();
+                requestId++;
+                currentProfile = profile;
+                search.value = '';
+                renderChoices([profile]);
+                status.textContent = `Currently selected: ${profile.name}.`;
+                onSelect(profile);
+            }
+        };
+    }

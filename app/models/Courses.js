@@ -54,6 +54,7 @@ async function initialize() {
             created_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS sport_course_faqs_sport_idx ON sport_course_faqs (sport_guid, created_at, guid);
+        ALTER TABLE sport_course_faqs ADD COLUMN IF NOT EXISTS sort_order integer;
     `);
     await pool.query(`
         CREATE TABLE IF NOT EXISTS course_runs (
@@ -236,7 +237,7 @@ async function remove(guid) {
 }
 
 async function findFaqs() {
-    return (await pool.query('SELECT * FROM sport_course_faqs ORDER BY created_at, guid')).rows;
+    return (await pool.query('SELECT * FROM sport_course_faqs ORDER BY sort_order NULLS LAST, created_at, guid')).rows;
 }
 
 async function saveFaq(guid, { sport_guid, question, answer }) {
@@ -252,4 +253,48 @@ async function removeFaq(guid) {
     return (await pool.query('DELETE FROM sport_course_faqs WHERE guid = $1', [guid])).rowCount > 0;
 }
 
-module.exports = { initialize, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, removeFaq };
+async function moveFaq(sportGuid, guid, direction) {
+    if (!['up', 'down'].includes(direction)) throw new RangeError('Invalid FAQ direction');
+    return changeFaqOrder(sportGuid, guid, direction);
+}
+
+async function reorderFaqs(sportGuid, order) {
+    return changeFaqOrder(sportGuid, null, null, order);
+}
+
+async function changeFaqOrder(sportGuid, guid, direction, order) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const sport = await client.query('SELECT guid FROM sports WHERE guid=$1 FOR UPDATE', [sportGuid]);
+        if (!sport.rows.length) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        let { rows } = await client.query(
+            'SELECT guid FROM sport_course_faqs WHERE sport_guid=$1 ORDER BY sort_order NULLS LAST, created_at, guid FOR UPDATE', [sportGuid]);
+        if (order !== undefined) {
+            rows = require('../courseDescriptions').orderedItems(rows, order, 'guid');
+        } else {
+            const index = rows.findIndex(faq => faq.guid === guid);
+            if (index === -1) {
+                await client.query('ROLLBACK');
+                return null;
+            }
+            const target = index + (direction === 'up' ? -1 : 1);
+            if (target >= 0 && target < rows.length) [rows[index], rows[target]] = [rows[target], rows[index]];
+        }
+        for (const [position, faq] of rows.entries()) {
+            await client.query('UPDATE sport_course_faqs SET sort_order=$2 WHERE guid=$1', [faq.guid, position]);
+        }
+        await client.query('COMMIT');
+        return { guid };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+module.exports = { initialize, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, removeFaq, moveFaq, reorderFaqs };

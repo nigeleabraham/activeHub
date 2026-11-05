@@ -1,0 +1,56 @@
+<% const sections = sport.course_description_sections || []; %>
+<details class="admin-disclosure border rounded p-3 mb-3" data-editor-disclosure>
+    <summary class="admin-card-summary"><h5 class="h6 d-inline mb-0">Add section</h5></summary>
+    <form class="mt-3" method="POST" action="/admin/sports/course-sections/create" data-editor-label="Add description section">
+        <input type="hidden" name="guid" value="<%= sport.guid %>">
+        <label class="d-block">Section heading (optional)
+            <input class="form-control" name="heading" maxlength="160">
+        </label>
+        <label class="d-block">Section text
+            <textarea class="form-control" name="text" maxlength="10000" rows="4" required></textarea>
+        </label>
+        <button type="submit" class="btn btn-primary btn-sm">Add section</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-cancel-edit>Cancel</button>
+    </form>
+</details>
+<% if (sections.length) { %>
+    <h5 class="h6 border-top pt-4 mt-4 mb-3">Existing sections</h5>
+<% } %>
+<div data-card-order-list="/admin/sports/course-sections/order" data-order-sport="<%= sport.guid %>">
+<p class="small mb-2" data-order-feedback role="status" aria-live="polite"></p>
+<div class="alert alert-danger" data-order-error role="alert" tabindex="-1" hidden></div>
+<% sections.forEach(section => { %>
+    <% const removeFormId = `remove-section-${sport.guid}-${section.id}`; %>
+    <div class="position-relative mb-3" data-course-section-card="<%= section.id %>" data-order-id="<%= section.id %>">
+    <details class="admin-disclosure border rounded p-3" data-editor-disclosure>
+        <summary class="admin-card-summary card-order-summary"><h5 class="h6 d-inline mb-0 text-break"><%= section.heading || 'Introduction' %></h5></summary>
+        <form class="mt-3" method="POST" action="/admin/sports/course-sections/update" data-editor-preview="false" data-editor-label="Edit description section">
+            <input type="hidden" name="guid" value="<%= sport.guid %>">
+            <input type="hidden" name="section_id" value="<%= section.id %>">
+            <label class="d-block">Section heading (optional)
+                <input class="form-control" name="heading" maxlength="160" value="<%= section.heading %>">
+            </label>
+            <label class="d-block">Section text
+                <textarea class="form-control" name="text" maxlength="10000" rows="4" required><%= section.text %></textarea>
+            </label>
+            <p class="small text-muted">Text supports paired &lt;bold&gt;, &lt;ul&gt; (underline), &lt;bullet&gt; and &lt;email&gt; tags.</p>
+            <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-cancel-edit>Cancel</button>
+                <button type="submit" form="<%= removeFormId %>" class="btn btn-outline-danger btn-sm">Remove section</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save section</button>
+            </div>
+        </form>
+        <form id="<%= removeFormId %>" method="POST" action="/admin/sports/course-sections/destroy" hidden>
+            <input type="hidden" name="guid" value="<%= sport.guid %>">
+            <input type="hidden" name="section_id" value="<%= section.id %>">
+        </form>
+    </details>
+    <%- include('card-order-controls', { label: section.heading || 'Introduction' }) %>
+    <button type="submit" form="<%= removeFormId %>" class="btn btn-outline-danger btn-sm position-absolute" style="top: 1rem; right: 1rem;" aria-label="Remove section: <%= section.heading || 'Introduction' %>" title="Remove section">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path>
+        </svg>
+    </button>
+    </div>
+<% }); %>
+</div>

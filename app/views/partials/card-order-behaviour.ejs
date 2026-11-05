@@ -1,0 +1,133 @@
+    function updateOrderControls(list) {
+        const rows = Array.from(list.querySelectorAll(':scope > [data-order-id]'));
+        rows.forEach((row, index) => {
+            row.querySelector('[data-card-move="up"]').disabled = index === 0;
+            row.querySelector('[data-card-move="down"]').disabled = index === rows.length - 1;
+            row.querySelector('[data-card-drag]').disabled = rows.length < 2;
+        });
+    }
+
+    async function reorderCards(action) {
+        const list = Array.from(document.querySelectorAll('[data-card-order-list]')).find(item =>
+            item.dataset.cardOrderList === action.endpoint && item.dataset.orderSport === action.sport);
+        if (!list || saving) return;
+        const original = Array.from(list.querySelectorAll(':scope > [data-order-id]'));
+        const row = original.find(item => item.dataset.orderId === action.id);
+        const target = original.find(item => item.dataset.orderId === action.target);
+        if (!row || !target || row === target) return;
+        if (active) close(active);
+        active = null;
+        const feedback = list.querySelector('[data-order-feedback]');
+        const error = list.querySelector('[data-order-error]');
+        resetNoticeFade(feedback, false);
+        error.hidden = true;
+        feedback.textContent = 'Saving order...';
+        list.insertBefore(row, action.after ? target.nextElementSibling : target);
+        const order = Array.from(list.querySelectorAll(':scope > [data-order-id]'), item => item.dataset.orderId);
+        saving = true;
+        list.setAttribute('aria-busy', 'true');
+        list.querySelectorAll('.card-order-controls button').forEach(button => { button.disabled = true; });
+        try {
+            const response = await fetch(action.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ sport_guid: action.sport, order: JSON.stringify(order) })
+            });
+            if (!response.headers.get('content-type')?.includes('application/json')) {
+                throw new Error('The order could not be confirmed. Check your session and refresh the list before retrying.');
+            }
+            const result = await response.json();
+            if (!response.ok || result.saved !== true || JSON.stringify(result.order) !== JSON.stringify(order)) {
+                throw new Error(result.error || 'The order could not be confirmed. Refresh the list before retrying.');
+            }
+            feedback.textContent = 'Order saved.';
+            resetNoticeFade(feedback, true, () => { feedback.textContent = ''; });
+        } catch (problem) {
+            original.forEach(item => list.append(item));
+            feedback.textContent = '';
+            console.error('Unable to reorder cards:', problem);
+            error.textContent = problem instanceof TypeError
+                ? 'The order could not be saved because of a connection problem. The previous order has been restored; refresh before retrying.'
+                : `${problem.message} The previous order has been restored.`;
+            error.hidden = false;
+        } finally {
+            saving = false;
+            list.removeAttribute('aria-busy');
+            list.querySelectorAll('.card-order-controls button').forEach(button => { button.disabled = false; });
+            updateOrderControls(list);
+            row.querySelector('[data-card-drag]').focus({ preventScroll: true });
+        }
+    }
+
+    function orderAction(row, target, after) {
+        const list = row.closest('[data-card-order-list]');
+        return { kind: 'reorder', endpoint: list.dataset.cardOrderList, sport: list.dataset.orderSport,
+            id: row.dataset.orderId, target: target.dataset.orderId, after };
+    }
+
+    document.addEventListener('click', event => {
+        const button = event.target.closest('[data-card-move]');
+        if (!button) return;
+        event.preventDefault();
+        const row = button.closest('[data-order-id]');
+        const down = button.dataset.cardMove === 'down';
+        const target = down ? row.nextElementSibling : row.previousElementSibling;
+        if (target?.matches('[data-order-id]')) guard(orderAction(row, target, down));
+    });
+
+    let draggedCard = null;
+    let dragPreview = null;
+    function clearDraggedCard() {
+        draggedCard?.classList.remove('card-being-dragged');
+        dragPreview?.remove();
+        dragPreview = null;
+        draggedCard = null;
+    }
+    function clearDropMarkers() {
+        document.querySelectorAll('.card-drop-before, .card-drop-after').forEach(row =>
+            row.classList.remove('card-drop-before', 'card-drop-after'));
+    }
+    document.addEventListener('dragstart', event => {
+        const handle = event.target.closest('[data-card-drag]');
+        if (!handle || saving) {
+            if (handle) event.preventDefault();
+            return;
+        }
+        clearDraggedCard();
+        draggedCard = handle.closest('[data-order-id]');
+        dragPreview = document.createElement('div');
+        dragPreview.className = 'card-drag-preview';
+        dragPreview.setAttribute('aria-hidden', 'true');
+        dragPreview.textContent = draggedCard.querySelector(':scope > details > summary').textContent.trim();
+        dragPreview.style.width = `${Math.min(draggedCard.getBoundingClientRect().width, 480)}px`;
+        document.body.append(dragPreview);
+        draggedCard.classList.add('card-being-dragged');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', draggedCard.dataset.orderId);
+        event.dataTransfer.setDragImage(dragPreview, 20, 20);
+    });
+    document.addEventListener('dragover', event => {
+        const target = event.target.closest('[data-order-id]');
+        clearDropMarkers();
+        if (!draggedCard || !target || target === draggedCard || saving ||
+            target.parentElement !== draggedCard.parentElement) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const bounds = target.getBoundingClientRect();
+        target.classList.add(event.clientY > bounds.top + bounds.height / 2 ? 'card-drop-after' : 'card-drop-before');
+    });
+    document.addEventListener('drop', event => {
+        const target = event.target.closest('[data-order-id]');
+        if (draggedCard && target && target !== draggedCard && !saving &&
+            target.parentElement === draggedCard.parentElement) {
+            event.preventDefault();
+            const bounds = target.getBoundingClientRect();
+            guard(orderAction(draggedCard, target, event.clientY > bounds.top + bounds.height / 2));
+        }
+        clearDropMarkers();
+        clearDraggedCard();
+    });
+    document.addEventListener('dragend', () => {
+        clearDropMarkers();
+        clearDraggedCard();
+    });

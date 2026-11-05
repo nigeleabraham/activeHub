@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credit refunds | ActiveHub</title>
+    <title>Refund requests | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <%- include('partials/booking-flow-styles') %>
 </head>
 <body class="bg-light">
     <%- include('partials/navigation') %>
@@ -14,62 +15,131 @@
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1">Credit refunds</h1>
+                <h1 class="h2 mb-1">Refund requests</h1>
                 <p class="text-muted">Requests to transfer refundable booking credit to a bank account.</p>
             </div>
         </header>
-        <p>Accepting deducts the current remaining credit immediately. Arrange the bank transfer outside ActiveHub. Pending amounts may decrease if credit is spent; fully spent requests close automatically.</p>
-        <% if (decision) { %>
-            <div class="alert alert-success" role="status"><%= decision === 'approved' ? 'Refund accepted and the remaining credit deducted. Arrange the transfer outside ActiveHub; the exact amount is recorded below.' : 'Refund declined. The credit remains available for bookings.' %></div>
+        <p>Action the bank transfer outside ActiveHub, then mark the request as done to record completion and deduct the current remaining credit. Check the remaining amount before transferring: it may decrease if credit is spent; fully spent requests close automatically. Refund requests cannot be declined.</p>
+        <% if (locals.corrected) { %><div class="alert alert-success" role="status">Declined refund request reopened. It is now in Pending action.</div><% } %>
+        <% if (locals.refundsEnabled === false) { %>
+            <div class="alert alert-warning" role="status">Bank and external refunds are disabled system-wide. Pending requests remain visible but cannot be marked as done until refunds are enabled in Settings.</div>
         <% } %>
-        <% if (declineError) { %><div class="alert alert-danger" role="alert">Enter a decline comment of 1 to 500 characters. This will be visible to the requestor.</div><% } %>
+        <% if (decision === 'approved') { %>
+            <div class="alert alert-success" role="status">Refund marked as done and the remaining credit deducted. Search History using today's date to check the exact completed amount.</div>
+        <% } %>
         <% if (error) { %>
             <div class="alert alert-warning" role="alert">This request can no longer be actioned. It may already be decided or its credit fully spent.</div>
         <% } %>
         <% const money = pence => '£' + (pence / 100).toFixed(2); %>
         <% for (const pending of [true, false]) { %>
-            <% const items = requests.filter(request => (request.status === 'pending') === pending); %>
-            <section class="mb-4" aria-labelledby="<%= pending ? 'pending-refunds' : 'closed-refunds' %>">
-                <h2 class="h5" id="<%= pending ? 'pending-refunds' : 'closed-refunds' %>"><%= pending ? 'Pending review' : 'History' %> (<%= items.length %>)</h2>
+            <% const items = pending ? requests.filter(request => request.status === 'pending') : history.entries; %>
+            <section class="bg-white border rounded shadow-sm p-4 <%= pending ? 'mb-5' : 'mb-4' %>" aria-labelledby="<%= pending ? 'pending-refunds' : 'closed-refunds' %>">
+                <header class="border-bottom pb-3 mb-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between">
+                        <h2 class="h5 mb-0" id="<%= pending ? 'pending-refunds' : 'closed-refunds' %>"><%= pending ? 'Pending action' : 'History' %></h2>
+                        <% if (pending) { %>
+                            <span class="badge <%= items.length ? 'badge-warning' : 'badge-light text-muted' %>"><%= items.length %> awaiting action</span>
+                        <% } else if (searched) { %>
+                            <span class="badge badge-info"><%= history.total %> matching this period</span>
+                        <% } %>
+                    </div>
+                    <p class="small text-muted mt-2 mb-0"><%= pending ? 'Action the refund requests below, then mark them as done.' : 'Completed requests are kept separate from the action queue. Choose a date range to search them.' %></p>
+                </header>
+                <% if (!pending) { %>
+                    <p class="small text-muted">Search by completion date (Europe/London), including both dates. Maximum 62 days; 50 results per page.</p>
+                    <form class="form-row align-items-end mb-3" method="GET" action="/admin/credit-refunds#closed-refunds">
+                        <% const chosen = locals.selectedProfile; %>
+                        <div class="form-group col-12" data-refund-profile-picker
+                            data-guid="<%= chosen ? chosen.guid : '' %>" data-name="<%= chosen ? chosen.name : 'All profiles' %>"
+                            data-email="<%= chosen ? chosen.email : '' %>">
+                            <input type="hidden" name="profile" value="<%= chosen ? chosen.guid : '' %>">
+                            <label for="refund-profile-search">Username</label>
+                            <input class="form-control" id="refund-profile-search" type="search" value="<%= chosen ? chosen.name : '' %>" placeholder="Search by first name, surname or email" autocomplete="off" aria-describedby="refund-profile-help">
+                            <small class="form-text text-muted" id="refund-profile-help">Enter at least 2 characters. Names work in either order. The best match is selected automatically; check the selection before searching history.</small>
+                            <div class="profile-choice-list" data-refund-profile-choices role="radiogroup" aria-label="Refund history profile">
+                                <label><input type="radio" name="refund-profile-choice" value="<%= chosen ? chosen.guid : '' %>" checked> <%= chosen ? chosen.name : 'All profiles' %></label>
+                            </div>
+                            <p class="sr-only" data-refund-profile-status role="status" aria-live="polite"></p>
+                        </div>
+                        <div class="form-group col-md">
+                            <label for="refund-from">From date</label>
+                            <input class="form-control" id="refund-from" name="from" type="date" value="<%= filters.from %>" required>
+                        </div>
+                        <div class="form-group col-md">
+                            <label for="refund-to">To date</label>
+                            <input class="form-control" id="refund-to" name="to" type="date" value="<%= filters.to %>" required>
+                        </div>
+                        <div class="form-group col-md-auto">
+                            <a class="btn btn-outline-secondary mr-2" href="/admin/credit-refunds">Clear</a>
+                            <button class="btn btn-primary" type="submit">Search history</button>
+                        </div>
+                    </form>
+                    <% if (searched) { %><p role="status"><%= history.total %> matching this period</p><% } %>
+                <% } %>
                 <% if (items.length) { %>
                     <div class="table-responsive bg-white border rounded">
                         <table class="table table-sm mb-0">
-                            <thead><tr><th>Booking</th><th>Requested by</th><th>Requested amount</th><th>Remaining credit</th><th>Outcome</th></tr></thead>
+                            <thead><tr><th>Booking</th><th>Requested by</th><th>Requested amount</th><th>Remaining credit</th><th>Outcome</th><% if (!pending) { %><th>Completed (UK)</th><% } %></tr></thead>
                             <tbody>
                                 <% items.forEach(request => { %>
                                     <tr>
                                         <td><code><%= request.booking_ref || 'Opening balance' %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span><br><%= request.facility_name %></td>
                                         <td><%= request.profile_name %><br><span class="small"><%= request.profile_email %></span></td>
                                         <td><%= money(request.requested_pence) %></td>
-                                        <td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund review still allowed</span><% } %></td>
+                                        <td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund can still be completed</span><% } %></td>
                                         <td>
                                             <% if (pending) { %>
                                                 <form method="POST" action="/admin/credit-refunds/decide">
                                                     <input type="hidden" name="request_guid" value="<%= request.guid %>">
-                                                    <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Accept the refund and deduct the remaining credit? The amount may have decreased since this page loaded. Check the accepted amount in History before arranging the transfer.">Accept refund</button>
-                                                </form>
-                                                <form method="POST" action="/admin/credit-refunds/decide">
-                                                    <input type="hidden" name="request_guid" value="<%= request.guid %>">
-                                                    <label class="small d-block" for="decline-<%= request.guid %>">Decline reason (visible to requestor)</label>
-                                                    <textarea class="form-control form-control-sm mb-1" id="decline-<%= request.guid %>" name="decline_comment" maxlength="500" rows="2" required></textarea>
-                                                    <button class="btn btn-outline-secondary btn-sm mb-1" type="submit" name="decision" value="decline">Decline</button>
+                                                    <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" <%= locals.refundsEnabled === false ? 'disabled' : '' %> data-confirm="Mark this refund as done and deduct the current remaining credit? The amount may have decreased since this page loaded. This records completion; it does not send a bank transfer.">Mark as done</button>
                                                 </form>
                                             <% } else { %>
-                                                <strong><%= request.status === 'approved' ? 'Accepted ' + money(request.refunded_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
+                                                <strong><%= request.status === 'approved' ? 'Done ' + money(request.refunded_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
                                                 <% if (request.decided_by_name) { %><br><span class="small">By <%= request.decided_by_name %></span><% } %>
-                                                <% if (request.status === 'declined') { %><p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p><% } %>
+                                                <% if (request.status === 'declined') { %>
+                                                    <p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p>
+                                                    <form method="POST" action="/admin/credit-refunds/reopen" class="mt-2">
+                                                        <%- include('partials/request-history-fields', { request }) %>
+                                                        <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Reverse this decline and return the refund request to Pending action? No credit is deducted until it is marked as done.">Reopen request</button>
+                                                    </form>
+                                                <% } %>
                                             <% } %>
                                         </td>
+                                        <% if (!pending) { %><td><%= new Date(request.decided_at).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) %></td><% } %>
                                     </tr>
                                 <% }) %>
                             </tbody>
                         </table>
                     </div>
-                <% } else { %><p class="text-muted"><%= pending ? 'No refunds are waiting for review.' : 'No completed refund requests.' %></p><% } %>
+                <% } else { %><p class="text-muted"><%= pending ? 'No refunds are waiting for action.' : searched ? 'No completed refund requests found for this period.' : 'Select From and To dates to load refund history.' %></p><% } %>
+                <% if (!pending && searched && history.total > history.pageSize) {
+                    const totalPages = Math.ceil(history.total / history.pageSize);
+                    const pageLink = target => '/admin/credit-refunds?' + new URLSearchParams({ ...filters, page: target }).toString() + '#closed-refunds';
+                %>
+                    <nav aria-label="Refund history pages" class="d-flex align-items-center mt-3">
+                        <% if (page > 1) { %><a class="btn btn-outline-secondary btn-sm mr-2" href="<%= pageLink(page - 1) %>">Previous</a><% } %>
+                        <span class="small mr-2">Page <%= page %> of <%= totalPages %></span>
+                        <% if (page < totalPages) { %><a class="btn btn-outline-secondary btn-sm" href="<%= pageLink(page + 1) %>">Next</a><% } %>
+                    </nav>
+                <% } %>
             </section>
         <% } %>
     </main>
     <script>
+        <%- include('partials/profile-search-behaviour') %>
+        const picker = document.querySelector('[data-refund-profile-picker]');
+        if (picker) {
+            const finder = attachProfileSearch(
+                picker.querySelector('#refund-profile-search'),
+                picker.querySelector('[data-refund-profile-choices]'),
+                picker.querySelector('[data-refund-profile-status]'),
+                { guid: picker.dataset.guid, name: picker.dataset.name, email: picker.dataset.email },
+                'refund-profile-choice', profile => { picker.querySelector('[name="profile"]').value = profile.guid; }
+            );
+            picker.querySelector('#refund-profile-search').addEventListener('input', event => {
+                if (!event.target.value.trim()) finder.reset({ guid: '', name: 'All profiles' });
+            });
+        }
         document.querySelectorAll('form').forEach(function (form) {
             form.addEventListener('submit', function (event) {
                 var button = event.submitter;

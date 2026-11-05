@@ -1,6 +1,6 @@
 # ActiveHub work in progress
 
-Last updated: 26 October 2026.
+Last updated: 5 November 2026.
 
 ## Where we left off
 
@@ -49,6 +49,19 @@ Already implemented:
 
 Card payments are simulated: no real money is taken. Course cancellations and
 refunds are not yet supported.
+
+## Credit and refund logic review
+
+- [ ] Rethink and review the end-to-end credit and refund logic before relying on
+      it for real refunds. A refund must never exceed the current available,
+      refundable credit or deduct the same credit twice.
+      Review partial spending, simultaneous checkout/refund actions, stale admin
+      pages, duplicate submissions, reopened declined requests, changes to refund
+      eligibility, mixed card/credit funding, expiry and the system-wide switch.
+      Define how an external bank transfer and marking a request as done stay
+      consistent when the available credit changes between those steps. Agree
+      the intended rules and add regression tests for the resulting limits and
+      balance/ledger invariants; do not assume the current workflow is sufficient.
 
 ## Children's records
 

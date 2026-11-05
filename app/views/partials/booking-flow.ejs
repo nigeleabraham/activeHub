@@ -1,7 +1,7 @@
 <%# Params: facility %>
 <% const visibleBookings = facility.bookings; %>
-<details>
-    <summary class="h5 mb-3">Bookings (<span data-booking-count><%= visibleBookings.length %></span>)</summary>
+<details data-facility-bookings <%= facility.searched ? 'open' : '' %>>
+    <summary class="h5 mb-3">Bookings</summary>
     <% if (facility.options.length) { %>
         <div class="booking-calendar border rounded p-3 mb-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-default-profile-guid="<%= currentProfile.guid %>" data-default-profile-name="<%= currentProfile.name %>" data-default-profile-role="<%= currentProfile.role %>" data-default-profile-email="<%= currentProfile.email %>">
             <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
@@ -35,6 +35,40 @@
     <% } else { %>
         <p class="text-muted">Add a bookable court before creating bookings.</p>
     <% } %>
+    <details id="booking-search-<%= facility.guid %>" class="admin-disclosure border-top pt-3 mt-4">
+        <summary class="admin-card-summary"><h3 class="h6 d-inline mb-0" id="booking-search-heading-<%= facility.guid %>">Search existing bookings</h3></summary>
+        <p class="small text-muted">Enter at least one filter. Only bookings at this facility are searched. Dates use UK time.</p>
+        <% const filters = facility.filters || {}; %>
+        <form method="GET" action="/admin/bookings#booking-search-<%= facility.guid %>" class="mb-3" data-facility-booking-search>
+            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+            <div class="form-row">
+                <div class="form-group col-md-6">
+                    <label for="booking-reference-<%= facility.guid %>">Booking reference</label>
+                    <input class="form-control form-control-sm" id="booking-reference-<%= facility.guid %>" name="reference" maxlength="100" value="<%= filters.reference || '' %>">
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="booking-profile-<%= facility.guid %>">Booked-for name or email</label>
+                    <input class="form-control form-control-sm" id="booking-profile-<%= facility.guid %>" name="profile" maxlength="100" value="<%= filters.profile || '' %>">
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="booking-from-<%= facility.guid %>">From date</label>
+                    <input class="form-control form-control-sm" id="booking-from-<%= facility.guid %>" name="from" type="date" value="<%= filters.from || '' %>">
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="booking-to-<%= facility.guid %>">To date</label>
+                    <input class="form-control form-control-sm" id="booking-to-<%= facility.guid %>" name="to" type="date" value="<%= filters.to || '' %>">
+                </div>
+            </div>
+            <a class="btn btn-outline-secondary btn-sm mr-2" href="/admin/bookings#booking-search-<%= facility.guid %>" data-clear-booking-search>Clear search</a>
+            <button class="btn btn-primary btn-sm" type="submit">Search bookings</button>
+        </form>
+        <p class="alert alert-danger" data-booking-search-error role="alert" hidden></p>
+        <div data-booking-search-results aria-live="polite">
+        <% if (facility.searchError) { %><p class="alert alert-danger" role="alert"><%= facility.searchError %></p><% } %>
+        <% if (facility.searched && !facility.searchError) { %>
+            <p role="status">Search results: <span data-booking-count><%= visibleBookings.length %></span></p>
+            <% if (facility.truncated) { %><p class="alert alert-warning" role="status">Showing the latest 100 matching bookings. Refine your search to see other results.</p><% } %>
+        <% } %>
     <% if (visibleBookings.length) { %>
         <div class="table-responsive" data-bookings-table>
             <table class="table table-sm bg-white">
@@ -70,5 +104,8 @@
             </table>
         </div>
     <% } %>
-    <p class="text-muted" data-no-bookings <%= visibleBookings.length ? 'hidden' : '' %>>No bookings yet.</p>
+    <p class="text-muted" data-no-bookings <%= visibleBookings.length || !facility.searched || facility.searchError ? 'hidden' : '' %>>No matching bookings.</p>
+    <% if (!facility.searched) { %><p class="text-muted">Search to load existing bookings.</p><% } %>
+        </div>
+    </details>
 </details>

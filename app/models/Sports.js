@@ -66,4 +66,46 @@ async function updateCourseDefaults(guid, descriptionSections) {
     return rows[0] || null;
 }
 
-module.exports = { initialize, findAll, create, update, remove, updateCourseDefaults };
+async function changeCourseSection(guid, operation, section) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query('SELECT course_description_sections FROM sports WHERE guid=$1 FOR UPDATE', [guid]);
+        if (!rows.length) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        let sections = rows[0].course_description_sections;
+        const index = sections.findIndex(item => item.id === section.id);
+        if (!['create', 'order'].includes(operation) && index === -1) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        if (operation === 'order') sections = require('../courseDescriptions').orderedItems(sections, section.order);
+        else if (operation === 'create') sections.push(section);
+        else if (operation === 'update') sections[index] = section;
+        else if (operation === 'destroy') sections.splice(index, 1);
+        else if (operation === 'move') {
+            const target = index + (section.direction === 'up' ? -1 : 1);
+            if (target >= 0 && target < sections.length) {
+                [sections[index], sections[target]] = [sections[target], sections[index]];
+            }
+        } else throw new Error('Unknown course section operation');
+        let validated;
+        try {
+            validated = require('../courseDescriptions').sections(sections);
+        } catch (error) {
+            throw new RangeError(error.message);
+        }
+        await client.query('UPDATE sports SET course_description_sections=$2 WHERE guid=$1', [guid, JSON.stringify(validated)]);
+        await client.query('COMMIT');
+        return { guid };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+module.exports = { initialize, findAll, create, update, remove, updateCourseDefaults, changeCourseSection };

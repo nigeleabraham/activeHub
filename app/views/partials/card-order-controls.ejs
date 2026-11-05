@@ -1,0 +1,11 @@
+<div class="card-order-controls" role="group" aria-label="Order: <%= label %>">
+    <button type="button" class="btn btn-outline-secondary btn-sm card-drag-handle" draggable="true" data-card-drag aria-label="Drag to reorder: <%= label %>" title="Drag to reorder; or use the up and down buttons">
+        <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true" focusable="false">
+            <circle cx="3" cy="3" r="1.5"></circle><circle cx="9" cy="3" r="1.5"></circle>
+            <circle cx="3" cy="8" r="1.5"></circle><circle cx="9" cy="8" r="1.5"></circle>
+            <circle cx="3" cy="13" r="1.5"></circle><circle cx="9" cy="13" r="1.5"></circle>
+        </svg>
+    </button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-card-move="up" aria-label="Move up: <%= label %>" title="Move up">&#8593;</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-card-move="down" aria-label="Move down: <%= label %>" title="Move down">&#8595;</button>
+</div>

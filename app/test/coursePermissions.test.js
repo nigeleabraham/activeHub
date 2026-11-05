@@ -24,6 +24,9 @@ test('course permission grants all course actions without opening unrelated admi
     const remove = t.mock.method(Courses, 'remove', async () => ({ facility_guid: GUID }));
     const saveFaq = t.mock.method(Courses, 'saveFaq', async () => ({ guid: GUID }));
     const removeFaq = t.mock.method(Courses, 'removeFaq', async () => true);
+    const moveFaq = t.mock.method(Courses, 'moveFaq', async () => ({ guid: GUID }));
+    t.mock.method(Courses, 'reorderFaqs', async () => ({ guid: GUID }));
+    t.mock.method(Sports, 'changeCourseSection', async () => ({ guid: GUID }));
     const saveRun = t.mock.method(Courses, 'saveRun', async () => ({ guid: GUID }));
     t.mock.method(Courses, 'removeRun', async () => ({ guid: GUID }));
     t.mock.method(AuditLog, 'record', async () => {});
@@ -34,7 +37,8 @@ test('course permission grants all course actions without opening unrelated admi
     app.use((req, res, next) => {
         const role = req.get('test-role');
         req.profile = role ? { guid: GUID, name: 'Test', role,
-            permissions: req.get('test-permission') === 'yes' ? ['courses.manage'] : [] } : null;
+            permissions: req.get('test-permission') === 'sports' ? ['sports.manage']
+                : req.get('test-permission') === 'yes' ? ['courses.manage'] : [] } : null;
         Object.assign(res.locals, { currentProfile: req.profile, isAdmin: role === 'Administrator', canSwitchRole: false,
             canAccessAdmin: path => auth.canAccessAdmin(req.profile, path) });
         next();
@@ -46,7 +50,7 @@ test('course permission grants all course actions without opening unrelated admi
     const base = `http://127.0.0.1:${server.address().port}`;
     const call = (url, role, permission, body) => fetch(base + url, {
         method: body ? 'POST' : 'GET', redirect: 'manual',
-        headers: { ...(role ? { 'test-role': role } : {}), 'test-permission': permission ? 'yes' : 'no',
+        headers: { ...(role ? { 'test-role': role } : {}), 'test-permission': permission === 'sports' ? 'sports' : permission ? 'yes' : 'no',
             'content-type': 'application/x-www-form-urlencoded' },
         ...(body ? { body: new URLSearchParams(body) } : {})
     });
@@ -85,13 +89,33 @@ test('course permission grants all course actions without opening unrelated admi
     assert.equal(invalid.status, 422);
     assert.match((await invalid.json()).error, /capacity/);
     assert.equal(saveRun.mock.callCount(), 2);
-    for (const route of ['/courses/faqs', '/courses/faqs/update', '/courses/faqs/destroy']) {
-        const faqBody = { guid: GUID, sport_guid: GUID, question: 'Question?', answer: 'Answer.' };
+    const sportsPage = await call('/admin/sports', 'Manager', 'sports');
+    assert.equal(sportsPage.status, 200);
+    assert.doesNotMatch(await sportsPage.text(), /<section[^>]*data-sport-faq-card|<form[^>]*action="\/admin\/courses\/faqs/);
+    for (const route of ['/courses/faqs', '/courses/faqs/update', '/courses/faqs/destroy', '/courses/faqs/move']) {
+        const faqBody = { guid: GUID, sport_guid: GUID, question: 'Question?', answer: 'Answer.', direction: 'up' };
         assert.equal((await call('/admin' + route, 'Coach', true, faqBody)).status, 403);
-        assert.equal((await call('/admin' + route, 'Administrator', false, faqBody)).status, 302);
+        assert.equal((await call('/admin' + route, 'Manager', 'sports', faqBody)).status, 403);
+        const saved = await call('/admin' + route, 'Administrator', false, faqBody);
+        assert.equal(saved.status, 302);
+        assert.match(saved.headers.get('location'), /^\/admin\/sports\?admin_saved=1/);
+        if (!route.endsWith('/destroy') && !route.endsWith('/move')) {
+            const invalid = await call('/admin' + route, 'Administrator', false, { ...faqBody, question: '' });
+            assert.equal(invalid.headers.get('location'), '/admin/sports?error=invalid-faq');
+        }
     }
     assert.equal(saveFaq.mock.callCount(), 2);
     assert.equal(removeFaq.mock.callCount(), 1);
+    assert.equal(moveFaq.mock.callCount(), 1);
+    for (const route of ['/courses/faqs/order', '/sports/course-sections/order']) {
+        const orderBody = { sport_guid: GUID, order: JSON.stringify([GUID]) };
+        assert.equal((await call('/admin' + route, 'Coach', true, orderBody)).status, 403);
+        assert.equal((await call('/admin' + route, null, false, orderBody)).status, 401);
+        assert.equal((await call('/admin' + route, 'Manager', 'sports', orderBody)).status,
+            route.includes('/faqs/') ? 403 : 200);
+        const response = await call('/admin' + route, 'Administrator', false, orderBody);
+        assert.deepEqual(await response.json(), { saved: true, order: [GUID] });
+    }
     for (const role of ['Coach', 'Resident']) {
         assert.equal((await call('/admin/courses', role, false)).status, 403);
         for (const action of ['/courses', '/courses/update', '/courses/destroy', '/facilities/courses/destroy']) {

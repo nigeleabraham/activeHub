@@ -1,0 +1,5 @@
+<input type="hidden" name="request_guid" value="<%= request.guid %>">
+<% for (const field of ['from', 'to', 'profile']) { %>
+    <input type="hidden" name="<%= field %>" value="<%= filters[field] || '' %>">
+<% } %>
+<input type="hidden" name="page" value="<%= page %>">

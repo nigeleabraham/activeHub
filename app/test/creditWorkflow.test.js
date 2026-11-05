@@ -73,6 +73,13 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
         assert.equal(html.includes('data-max-selectable="0"'), role === 'Resident');
         assert.equal(html.includes('Your role has no upcoming booking limit.'), role !== 'Resident');
         assert.match(html, /class="form-group court-space-picker mb-2 mr-3"/);
+        assert.match(html, /class="form-group facility-picker"/);
+        assert.match(html, /class="panel booking-form" aria-labelledby="make-booking"/);
+        assert.match(html, /\.booking-form button \{ min-height: 48px; min-width: 48px; \}/);
+        assert.match(html, /\.booking-calendar-slot \{ margin-top: 0 !important; margin-bottom: 0 !important; \}/);
+        assert.match(html, /\.booking-calendar-slot \+ \.booking-calendar-slot \{ border-top-width: 0; \}/);
+        assert.match(html, /<label for="facility-picker"[^>]*>Facility<\/label>/);
+        assert.match(html, /<select id="facility-picker" class="form-control form-control-lg">/);
         assert.match(html, /class="form-control form-control-lg"[^>]*data-calendar-option/);
         for (const url of ['/bookings/checkout', '/bookings/pay']) {
             let location;
@@ -202,12 +209,12 @@ test('credit refund routes require login, enforce administrator access and use t
     assert.equal(decided.mock.callCount(), 0);
     response = await post('/admin/credit-refunds/decide', { request_guid: GUID, decision: 'approve' }, 'Administrator');
     assert.equal(response.headers.get('location'), '/admin/credit-refunds?decision=approved');
-    assert.deepEqual(decided.mock.calls[0].arguments, [GUID, true, profile.name, null]);
+    assert.deepEqual(decided.mock.calls[0].arguments, [GUID, true, profile.name]);
     response = await post('/admin/credit-refunds/decide', { request_guid: GUID, decision: 'invalid' }, 'Administrator');
     assert.equal(response.status, 400);
     decided.mock.mockImplementation(async () => null);
     response = await post('/admin/credit-refunds/decide', { request_guid: GUID, decision: 'decline', decline_comment: 'Not eligible' }, 'Administrator');
-    assert.equal(response.headers.get('location'), '/admin/credit-refunds?error=1');
+    assert.equal(response.status, 400);
 });
 
 test('profile credit panel renders balances, booking references and every refund status', async () => {
@@ -257,6 +264,13 @@ test('profile credit panel renders balances, booking references and every refund
             assert.equal((html.match(/Refund requested &mdash; pending review/g) || []).length, 1);
         }
     }
+    const disabled = await ejs.renderFile(path.join(__dirname, '../views/resident-credits.ejs'), {
+        ...defaults, refundsEnabled: false, credits: [baseCredit]
+    });
+    assert.doesNotMatch(disabled, /action="\/credits-and-refunds\/credit-refunds"/);
+    assert.match(disabled, /Bank refunds are currently disabled/);
+    assert.match(disabled, /Total available: £12\.00/);
+    assert.doesNotMatch(disabled, /a bank refund can then be requested/);
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-credits.ejs'), {
         ...defaults, credits: [{ ...baseCredit, refundable: false }]
     });
@@ -283,7 +297,7 @@ test('profile credit panel renders balances, booking references and every refund
     assert.ok(!html.includes('Automatically approved'));
 });
 
-test('both administrator decision routes reject missing decline comments and pass trimmed comments', async t => {
+test('credit declines require comments and refund declines are rejected regardless of comment', async t => {
         const creditDecision = t.mock.method(Bookings, 'decideCreditRequest', async () => ({
             booking_guid: GUID, booking_ref: 'AH-TEST', reason: 'weather'
         }));
@@ -293,8 +307,7 @@ test('both administrator decision routes reject missing decline comments and pas
         const audit = t.mock.method(AuditLog, 'record', async () => {});
         const admin = router.stack.find(layer => layer.handle.stack).handle;
         for (const [route, mock, args] of [
-            ['/credit-requests/decide', creditDecision, [GUID, false, profile.name, false, 'Not eligible', false]],
-            ['/credit-refunds/decide', refundDecision, [GUID, false, profile.name, 'Not eligible']]
+            ['/credit-requests/decide', creditDecision, [GUID, false, profile.name, false, 'Not eligible', false]]
         ]) {
             const handler = admin.stack.find(layer => layer.route?.path === route).route.stack[0].handle;
             for (const comment of [undefined, ' ', 'x'.repeat(501), '  Not eligible  ']) {
@@ -304,13 +317,21 @@ test('both administrator decision routes reject missing decline comments and pas
                 }, { redirect(value) { location = value; } });
                 assert.equal(location.includes('error=comment'), comment !== '  Not eligible  ');
             }
+            const refundHandler = admin.stack.find(layer => layer.route?.path === '/credit-refunds/decide').route.stack[0].handle;
+            for (const comment of [undefined, 'Not eligible']) {
+                const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; } };
+                await refundHandler({ profile, body: { request_guid: GUID, decision: 'decline', decline_comment: comment } }, res);
+                assert.equal(res.code, 400);
+                assert.match(res.message, /cannot be declined/);
+            }
+            assert.equal(refundDecision.mock.callCount(), 0);
             assert.equal(mock.mock.callCount(), 1);
             assert.deepEqual(mock.mock.calls[0].arguments, args);
         }
         assert.ok(audit.mock.calls.every(call => call.arguments[1].details.decline_comment === 'Not eligible'));
 });
 
-test('administrator queue shows only pending requests as actionable and records accepted amounts', async () => {
+test('administrator queue only allows marking pending refunds done and preserves legacy history', async () => {
     const baseRequest = {
         guid: GUID, booking_ref: 'AH-SOURCE', facility_name: 'Hall', profile_name: 'Resident',
         profile_email: 'resident@example.test', requested_pence: 1000, remaining_pence: 600
@@ -318,16 +339,22 @@ test('administrator queue shows only pending requests as actionable and records 
     const html = await ejs.renderFile(path.join(__dirname, '../views/credit-refunds.ejs'), {
         currentProfile: { ...profile, role: 'Administrator' }, isAdmin: true, canSwitchRole: false,
         activePage: 'credit-refunds', area: 'admin', decision: '', error: false, declineError: false,
-        requests: [
-            { ...baseRequest, status: 'pending' },
-            { ...baseRequest, status: 'approved', refunded_pence: 600, decided_by_name: 'Admin' },
-            { ...baseRequest, status: 'declined' },
-            { ...baseRequest, status: 'spent' }
-        ]
+        requests: [{ ...baseRequest, status: 'pending' }],
+        filters: { from: '2026-11-01', to: '2026-11-05' }, searched: true, page: 1,
+        history: { total: 3, pageSize: 50, entries: [
+            { ...baseRequest, status: 'approved', refunded_pence: 600, decided_by_name: 'Admin', decided_at: '2026-11-05' },
+            { ...baseRequest, status: 'declined', decided_at: '2026-11-05' },
+            { ...baseRequest, status: 'spent', decided_at: '2026-11-05' }
+        ] }
     });
 
-    assert.equal((html.match(/action="\/admin\/credit-refunds\/decide"/g) || []).length, 2);
-    assert.ok(html.includes('Accepted £6.00'));
+    assert.equal((html.match(/action="\/admin\/credit-refunds\/decide"/g) || []).length, 1);
+    assert.ok(html.includes('Done £6.00'));
+    assert.match(html, />Mark as done<\/button>/);
+    assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
+    assert.match(html, /Declined/);
+    assert.match(html, /action="\/admin\/credit-refunds\/reopen"/);
+    assert.match(html, />Reopen request<\/button>/);
     assert.ok(html.includes('Closed: credit fully spent'));
 });
 
@@ -390,11 +417,13 @@ test('weather slot controls and history render only as appropriate', async () =>
             currentProfile: profile, isAdmin: true, canSwitchRole: false, area: 'admin', activePage: 'credit-requests',
             declineError: false, decision: '', error: false, autoApprovalEnabled: enabled, creditRequestDays: 7,
             autoApprovalSlots: [{ ...request, refundable: true, approved_by_name: '<Admin>' }],
+            filters: { from: '2026-11-01', to: '2026-11-05' }, searched: true, page: 1,
+            history: { entries: [{ ...request, status: 'approved', auto_approved: true, decided_at: new Date() }], total: 1, pageSize: 50 },
             requests: [request, { ...request, reason: 'discretionary', note: 'Court closed' },
                 { ...request, status: 'approved', auto_approved: true }]
         });
         assert.equal((html.match(/name="approve_slot"/g) || []).length, enabled ? 1 : 0);
-        assert.equal((html.match(/name="refundable"/g) || []).length, 2);
+        assert.equal((html.match(/name="refundable"/g) || []).length, 3);
         assert.doesNotMatch(html, /type="checkbox" name="refundable"/);
         const approvalForm = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/g)
             .find(form => form.includes('<input type="hidden" name="decision" value="approve">'));
@@ -408,6 +437,8 @@ test('weather slot controls and history render only as appropriate', async () =>
         assert.ok(html.includes('last 7 days'));
         assert.ok(html.includes('&lt;Admin&gt;'));
         assert.ok(html.includes('Auto-approved weather slot'));
+        assert.match(html, /action="\/admin\/credit-requests\/refundability"/);
+        assert.match(html, />Update refund eligibility<\/button>/);
         const slotsTable = html.match(/<section[^>]*aria-labelledby="auto-slots-heading"[\s\S]*?<\/section>/)[0];
         assert.deepEqual([...slotsTable.matchAll(/<th>(.*?)<\/th>/g)].map(match => match[1]), [
             'Start', 'End', 'Approved by'

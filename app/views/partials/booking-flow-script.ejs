@@ -1,4 +1,56 @@
 <script>
+    document.querySelectorAll('[data-facility-booking-search]').forEach(form => {
+        const panel = form.closest('details');
+        const error = panel.querySelector('[data-booking-search-error]');
+        let busy = false;
+        async function search(clear) {
+            if (busy) return;
+            busy = true;
+            error.hidden = true;
+            form.setAttribute('aria-busy', 'true');
+            const submit = form.querySelector('button[type="submit"]');
+            submit.disabled = true;
+            try {
+                const url = new URL(form.action);
+                url.hash = '';
+                url.search = clear ? '' : new URLSearchParams(new FormData(form)).toString();
+                const response = await fetch(url);
+                if (!response.ok || new URL(response.url).pathname !== '/admin/bookings') {
+                    throw new Error('The booking search could not be completed. Check your session and try again.');
+                }
+                const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+                const results = html.getElementById(panel.id)?.querySelector('[data-booking-search-results]');
+                if (!results) throw new Error('The booking search results could not be confirmed. Please try again.');
+                panel.querySelector('[data-booking-search-results]').replaceWith(results);
+                if (clear) {
+                    for (const field of form.querySelectorAll('input:not([type="hidden"])')) field.value = '';
+                }
+                initializeBookingCancellations();
+                results.querySelectorAll('[data-local-booking-time]').forEach(time => {
+                    time.textContent = formatCalendarDateTime(new Date(time.dateTime));
+                });
+                window.history.replaceState(window.history.state, '', url);
+            } catch (problem) {
+                console.error('Unable to search bookings', problem);
+                error.textContent = problem.message;
+                error.hidden = false;
+            } finally {
+                busy = false;
+                submit.disabled = false;
+                form.removeAttribute('aria-busy');
+            }
+        }
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            search(false);
+        });
+        form.querySelector('[data-clear-booking-search]').addEventListener('click', event => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            search(true);
+        });
+    });
+
     const resourceFormScrollKey = 'activeHub-bookings-scroll-y';
     const savedResourceFormScroll = sessionStorage.getItem(resourceFormScrollKey);
     if (savedResourceFormScroll !== null) {
@@ -79,95 +131,7 @@
         }
     });
 
-    function attachProfileSearch(search, choices, status, initialProfile, groupName, onSelect) {
-        let timer;
-        let activeRequest;
-        let requestId = 0;
-        let currentProfile = initialProfile;
-
-        function renderChoices(profiles, bestMatchGuid = null) {
-            choices.replaceChildren();
-            for (const profile of profiles) {
-                const label = document.createElement('label');
-                label.className = 'profile-choice';
-                const radio = document.createElement('input');
-                radio.type = 'radio';
-                radio.name = groupName;
-                radio.value = profile.guid;
-                radio.checked = currentProfile.guid === radio.value;
-                const text = document.createElement('span');
-                text.className = 'flex-grow-1';
-                const roleLabel = (profile.roles || [profile.role]).filter(Boolean).join(', ');
-                text.textContent = profile.email
-                    ? `${profile.name} (${roleLabel}) · ${profile.email}`
-                    : roleLabel ? `${profile.name} (${roleLabel})` : profile.name;
-                label.append(radio, text);
-                if (profile.guid === bestMatchGuid) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge badge-success';
-                    badge.textContent = 'Best match';
-                    label.append(badge);
-                }
-                if (radio.checked) label.classList.add('is-selected');
-                radio.addEventListener('change', () => {
-                    currentProfile = { guid: profile.guid, name: profile.name, role: profile.role, roles: profile.roles, email: profile.email };
-                    for (const choice of choices.querySelectorAll('.profile-choice')) {
-                        choice.classList.toggle('is-selected', choice.contains(radio));
-                    }
-                    status.textContent = `Selected profile: ${currentProfile.name}.`;
-                    onSelect(currentProfile);
-                });
-                choices.append(label);
-            }
-        }
-
-        renderChoices([currentProfile]);
-        status.textContent = `Currently selected: ${currentProfile.name}. Search to change the assignee.`;
-
-        search.addEventListener('input', () => {
-            clearTimeout(timer);
-            if (activeRequest) activeRequest.abort();
-            const query = search.value.trim();
-            const currentRequestId = ++requestId;
-            if (query.length < 2) {
-                renderChoices([currentProfile]);
-                status.textContent = `Currently selected: ${currentProfile.name}. Type at least 2 characters to find another profile.`;
-                return;
-            }
-
-            status.textContent = 'Searching profiles…';
-            choices.replaceChildren();
-            timer = setTimeout(async () => {
-                activeRequest = new AbortController();
-                try {
-                    const response = await fetch(`/admin/profiles/search?q=${encodeURIComponent(query)}`, {
-                        signal: activeRequest.signal
-                    });
-                    if (!response.ok) throw new Error('Profile search failed.');
-                    const data = await response.json();
-                    if (currentRequestId !== requestId) return;
-
-                    const profiles = data.profiles;
-                    if (profiles.length) {
-                        currentProfile = profiles[0];
-                        renderChoices(profiles, currentProfile.guid);
-                        onSelect(currentProfile);
-                        status.textContent = `${profiles.length} match${profiles.length === 1 ? '' : 'es'}. Best match selected: ${currentProfile.name}. Choose a different result if needed.`;
-                    } else {
-                        const empty = document.createElement('p');
-                        empty.className = 'small text-muted mb-0';
-                        empty.textContent = 'No matching profiles found.';
-                        choices.replaceChildren(empty);
-                        status.textContent = `No profiles match “${query}”. Current selection remains ${currentProfile.name}.`;
-                    }
-                } catch (error) {
-                    if (error.name === 'AbortError' || currentRequestId !== requestId) return;
-                    console.error('Unable to search profiles', error);
-                    status.textContent = 'Profile search failed. Please try again.';
-                }
-            }, 250);
-        });
-    }
+<%- include('profile-search-behaviour') %>
 
     const calendarTimeFormatter = new Intl.DateTimeFormat(undefined, {
         hour: '2-digit',
@@ -198,7 +162,10 @@
 
 <%- include('deletion-animation') %>
 
+    function initializeBookingCancellations() {
     document.querySelectorAll('form[data-cancel-booking]').forEach(form => {
+        if (form.dataset.cancelInitialized) return;
+        form.dataset.cancelInitialized = 'true';
         form.addEventListener('submit', async event => {
             if (event.defaultPrevented) return;
             event.preventDefault();
@@ -216,7 +183,7 @@
                     body
                 });
                 if (response.status !== 204 && response.status !== 404) throw new Error('The booking cancellation could not be confirmed.');
-                const details = form.closest('details');
+                const details = form.closest('[data-facility-bookings]');
                 const row = form.closest('tr');
                 const rows = Array.from(details.querySelectorAll('[data-bookings-table] tbody tr'));
                 const index = rows.indexOf(row);
@@ -243,6 +210,8 @@
             }
         });
     });
+    }
+    initializeBookingCancellations();
 
     document.querySelectorAll('form[method="POST"]').forEach(form => {
         form.addEventListener('submit', () => {
@@ -313,13 +282,13 @@
             const search = document.createElement('input');
             search.type = 'search';
             search.className = 'form-control form-control-sm';
-            search.placeholder = 'Search by profile name or email';
+            search.placeholder = 'Search by first name, surname or email';
             search.autocomplete = 'off';
             search.setAttribute('aria-label', 'Search profiles for all selected bookings');
             const hint = document.createElement('span');
             hint.id = `profile-search-hint-${facilityGuid}`;
             hint.className = 'small text-muted';
-            hint.textContent = 'Applies to every slot in your selection. The best match is selected automatically; choose another result if needed.';
+            hint.textContent = 'Enter a first name, surname, or both in either order. Applies to every slot in your selection. The best match is selected automatically; choose another result if needed.';
             search.setAttribute('aria-describedby', hint.id);
             const choices = document.createElement('div');
             choices.className = 'profile-choice-list';

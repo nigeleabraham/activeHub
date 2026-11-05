@@ -71,6 +71,56 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         return row;
     }
 
+    async function masterRefundSwitch() {
+        const Settings = require('../models/Settings');
+        const resident = await person();
+        const first = await granted(resident);
+        const second = await granted(resident);
+        const pending = await Credits.requestRefund(resident.guid, first.credit.guid);
+        const decline = await Credits.requestRefund(resident.guid, second.credit.guid);
+        const external = await Bookings.createBooking(bookingInput(resident));
+        await Settings.set('refunds_enabled', '0');
+        try {
+            await assert.rejects(Credits.decideRefund(pending.guid, true, 'Admin'), { code: 'REFUNDS_DISABLED' });
+            await assert.rejects(Bookings.cancelWithExternalRefund(facility.guid, external.guid, 1000, 'Admin'), { code: 'REFUNDS_DISABLED' });
+            assert.ok(await Bookings.findBooking(facility.guid, external.guid));
+            assert.equal((await db.query('SELECT 1 FROM booking_refunds WHERE guid = $1', [external.guid])).rowCount, 0);
+            assert.equal((await requestRow(pending.guid)).status, 'pending');
+            await assert.rejects(Credits.decideRefund(decline.guid, false, 'Admin', 'Bank transfer not available'), /cannot be declined/);
+            assert.equal((await requestRow(decline.guid)).status, 'pending');
+            assert.equal(await balance(resident), 2000);
+            const third = await granted(resident);
+            await assert.rejects(Credits.requestRefund(resident.guid, third.credit.guid), { code: 'REFUNDS_DISABLED' });
+            assert.equal(await balance(resident), 3000);
+            await spend(resident, 100);
+            assert.equal(await balance(resident), 2900);
+        } finally {
+            await Settings.set('refunds_enabled', '1');
+        }
+        assert.equal((await Credits.decideRefund(pending.guid, true, 'Admin')).refunded_pence, 900);
+        assert.equal(await balance(resident), 2000);
+        assert.equal(await Bookings.cancelWithExternalRefund(facility.guid, external.guid, 1000, 'Admin'), true);
+    }
+
+    await t.test('disabling refunds cannot overtake an in-flight refund transaction', async () => {
+        const Settings = require('../models/Settings');
+        const refund = await db.connect();
+        const disable = await db.connect();
+        try {
+            await refund.query('BEGIN');
+            await Settings.assertRefundsEnabled(refund);
+            await disable.query('BEGIN');
+            await disable.query("SET LOCAL lock_timeout = '100ms'");
+            await assert.rejects(disable.query("UPDATE site_settings SET value = '0' WHERE key = 'refunds_enabled'"), { code: '55P03' });
+        } finally {
+            await disable.query('ROLLBACK');
+            await refund.query('ROLLBACK');
+            disable.release();
+            refund.release();
+        }
+        assert.equal(Settings.refundsEnabled(await Settings.getAll()), true);
+    });
+
     async function profileDeletion() {
         const Profiles = require('../models/Profiles');
         const resident = await person();
@@ -242,6 +292,74 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         await Credits.initialize();
         assert.equal((await Credits.findForProfile(profile.guid)).length, 2);
         assert.equal(await balance(profile), 1300);
+    });
+
+    await t.test('master refund switch overrides eligibility but preserves credit awards and spending', masterRefundSwitch);
+
+    await t.test('declines can be reopened and issued card credit eligibility can change without altering reused funding', async () => {
+        const resident = await person();
+        const booking = await Bookings.createBooking(bookingInput(resident));
+        await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [booking.guid]);
+        const request = await Bookings.requestCredit(resident.guid, booking.guid, 'discretionary', 'Court closed');
+        await Bookings.decideCreditRequest(request.guid, false, 'Admin', false, 'Initial decline');
+        assert.equal((await Bookings.reopenCreditRequest(request.guid)).decline_comment, 'Initial decline');
+        await assert.rejects(Bookings.reopenCreditRequest(request.guid), { code: 'CREDIT_CORRECTION_CONFLICT' });
+        await Bookings.decideCreditRequest(request.guid, true, 'Admin', false);
+        assert.equal(await balance(resident), 1000);
+        assert.equal((await Credits.changeRequestRefundability(request.guid, true)).changed_pence, 1000);
+        const [credit] = await Credits.findForProfile(resident.guid);
+        assert.equal(credit.refundable, true);
+        const refund = await Credits.requestRefund(resident.guid, credit.guid);
+        await assert.rejects(Credits.changeRequestRefundability(request.guid, false), /pending bank refund/);
+        // Legacy declined refunds remain recoverable, although new declines are not permitted.
+        await db.query("UPDATE credit_refund_requests SET status = 'declined', decided_at = now(), decline_comment = 'Legacy decline' WHERE guid = $1", [refund.guid]);
+        assert.equal((await Credits.reopenRefund(refund.guid)).decline_comment, 'Legacy decline');
+        await assert.rejects(Credits.reopenRefund(refund.guid), { code: 'CREDIT_CORRECTION_CONFLICT' });
+        assert.equal(await balance(resident), 1000);
+        await Credits.decideRefund(refund.guid, true, 'Admin');
+        assert.equal(await balance(resident), 0);
+        await assert.rejects(Credits.reopenRefund(refund.guid), { code: 'CREDIT_CORRECTION_CONFLICT' });
+
+        for (const reusedRefundable of [true, false]) {
+            const mixed = await person();
+            const source = await granted(mixed, reusedRefundable);
+            const [paid] = await Bookings.createBookings([{ ...bookingInput(mixed), credit_applied_pence: 600 }],
+                { profile_guid: mixed.guid, pence: 600 });
+            await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [paid.guid]);
+            const claim = await Bookings.requestCredit(mixed.guid, paid.guid, 'weather', null);
+            await Bookings.decideCreditRequest(claim.guid, true, 'Admin');
+            const before = await balance(mixed);
+            // Exercise the migration path for previously issued, grouped credits.
+            await db.query('UPDATE credits SET card_paid_pence = NULL WHERE booking_guid = $1', [paid.guid]);
+            assert.equal((await Credits.changeRequestRefundability(claim.guid, false)).changed_pence, 400);
+            let award = (await Credits.findForProfile(mixed.guid)).filter(row => row.booking_guid === paid.guid);
+            assert.equal(award.filter(row => row.refundable).reduce((sum, row) => sum + row.remaining_pence, 0), reusedRefundable ? 600 : 0);
+            assert.equal(await balance(mixed), before);
+            assert.equal((await Credits.changeRequestRefundability(claim.guid, true)).changed_pence, 400);
+            award = (await Credits.findForProfile(mixed.guid)).filter(row => row.booking_guid === paid.guid);
+            assert.equal(award.filter(row => row.refundable).reduce((sum, row) => sum + row.remaining_pence, 0), reusedRefundable ? 1000 : 400);
+            assert.equal((await db.query('SELECT refundable FROM credits WHERE guid = $1', [source.credit.guid])).rows[0].refundable, reusedRefundable);
+            assert.equal(await balance(mixed), before);
+            await db.query("UPDATE credits SET expires_at = now() - INTERVAL '1 second' WHERE booking_guid = $1", [paid.guid]);
+            await assert.rejects(Credits.changeRequestRefundability(claim.guid, false), /No unexpired/);
+        }
+        const partial = await person();
+        const partialBooking = await Bookings.createBooking(bookingInput(partial));
+        await db.query("UPDATE bookings SET starts_at = now() - INTERVAL '2 hours', ends_at = now() - INTERVAL '1 hour' WHERE guid = $1", [partialBooking.guid]);
+        const partialClaim = await Bookings.requestCredit(partial.guid, partialBooking.guid, 'weather', null);
+        await Bookings.decideCreditRequest(partialClaim.guid, true, 'Admin');
+        await spend(partial, 200);
+        assert.equal((await Credits.changeRequestRefundability(partialClaim.guid, false)).changed_pence, 800);
+        assert.equal(await balance(partial), 800);
+        const [remaining] = await Credits.findForProfile(partial.guid);
+        assert.equal(remaining.refundable, false);
+        assert.equal(remaining.amount_pence, 800);
+        const concurrent = await Promise.allSettled([
+            Credits.changeRequestRefundability(partialClaim.guid, true),
+            Credits.changeRequestRefundability(partialClaim.guid, true)
+        ]);
+        assert.equal(concurrent.filter(result => result.status === 'fulfilled').length, 1);
+        assert.equal(await balance(partial), 800);
     });
 
     await t.test('course section inheritance persists live defaults, independent overrides and appended sections', async () => {
@@ -831,17 +949,18 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(await balance(profile), 0);
     });
 
-    await t.test('declining leaves credit spendable and retains the decision', async () => {
+    await t.test('refund requests cannot be declined and stay pending until completed or spent', async () => {
         const profile = await person();
         const { credit } = await granted(profile);
         const request = await Credits.requestRefund(profile.guid, credit.guid);
-        await assert.rejects(Credits.decideRefund(request.guid, false, 'Admin'), /decline comment/);
-        assert.equal((await Credits.decideRefund(request.guid, false, 'Admin', 'Not eligible for a bank transfer')).refunded_pence, 0);
-        assert.equal((await Credits.findForProfile(profile.guid))[0].decline_comment, 'Not eligible for a bank transfer');
+        await assert.rejects(Credits.decideRefund(request.guid, false, 'Admin'), /cannot be declined/);
+        await assert.rejects(Credits.decideRefund(request.guid, false, 'Admin', 'Not eligible for a bank transfer'), /cannot be declined/);
         assert.equal(await balance(profile), 1000);
         await spend(profile, 300);
         assert.equal(await balance(profile), 700);
-        assert.equal((await requestRow(request.guid)).status, 'declined');
+        assert.equal((await requestRow(request.guid)).status, 'pending');
+        assert.equal((await Credits.decideRefund(request.guid, true, 'Admin')).refunded_pence, 700);
+        assert.equal(await balance(profile), 0);
     });
 
     await t.test('oldest credits fund bookings first and allocations retain both booking references', async () => {

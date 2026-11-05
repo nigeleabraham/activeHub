@@ -24,8 +24,20 @@
         .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
         .text-muted { color: #505a5f !important; }
         .court-space-picker { flex: 1 1 20rem; min-width: 0; }
-        .court-space-picker label { display: block; font-size: 1.25rem; font-weight: 700; }
-        .court-space-picker select { font-weight: 600; border: 2px solid #113255; }
+        .facility-picker label, .court-space-picker label { display: block; font-size: 1.25rem; font-weight: 700; }
+        .facility-picker select, .court-space-picker select { font-weight: 600; border: 2px solid #113255; }
+        .booking-calendar-slot { margin-top: 0 !important; margin-bottom: 0 !important; }
+        .booking-calendar-slot + .booking-calendar-slot { border-top-width: 0; }
+        .booking-form { padding: 1rem; }
+        .booking-form > h2, .booking-form > p, .booking-form .facility-picker,
+        .booking-form [data-facility-panel] > p { margin-bottom: 0.5rem !important; }
+        .booking-form label { margin-bottom: 0.25rem; }
+        .booking-form .booking-calendar { padding: 0.75rem !important; }
+        .booking-form .booking-calendar-header { margin-bottom: 0.5rem !important; }
+        .booking-form .booking-calendar-day > h3 { margin-bottom: 0.5rem !important; }
+        .booking-form [data-calendar-slots], .booking-form [data-pending-list] { margin-bottom: 0.5rem !important; }
+        .booking-form [data-pending-list] .list-group-item { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+        .booking-form button { min-height: 48px; min-width: 48px; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -99,16 +111,16 @@
             <% } %>
         </details>
 
-        <section class="panel" aria-labelledby="make-booking">
+        <section class="panel booking-form" aria-labelledby="make-booking">
             <h2 id="make-booking" class="h4 mb-3">Make a booking</h2>
             <% if (creditBalance > 0) { %>
                 <p class="font-weight-bold">You have £<%= (creditBalance / 100).toFixed(2) %> of booking credit. It is used automatically at checkout.</p>
             <% } %>
             <% if (facilities.length) { %>
                 <p class="text-muted">Bookings are for you only and you can book up to one month in advance. Upcoming booking limits apply only to the Resident role. Pick several slots to book them together.</p>
-                <div class="form-group">
+                <div class="form-group facility-picker">
                     <label for="facility-picker" class="font-weight-bold">Facility</label>
-                    <select id="facility-picker" class="form-control">
+                    <select id="facility-picker" class="form-control form-control-lg">
                         <% facilities.forEach(facility => { %>
                             <option value="<%= facility.guid %>" <%= facility.guid === selectedFacilityGuid ? 'selected' : '' %>><%= facility.name %></option>
                         <% }) %>
@@ -123,7 +135,7 @@
                             <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> upcoming bookings at this facility. Your role has no upcoming booking limit.</p>
                         <% } %>
                         <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" <% if (facility.limit !== null) { %>data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>"<% } %>>
-                            <div class="d-flex flex-wrap align-items-end justify-content-between mb-3">
+                            <div class="booking-calendar-header d-flex flex-wrap align-items-end justify-content-between mb-3">
                                 <div class="form-group court-space-picker mb-2 mr-3">
                                     <label for="calendar-option-<%= facility.guid %>">Court or space</label>
                                     <select class="form-control form-control-lg" id="calendar-option-<%= facility.guid %>" data-calendar-option>

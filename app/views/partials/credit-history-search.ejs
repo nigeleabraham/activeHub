@@ -1,0 +1,27 @@
+<p class="small text-muted">Search by completion date (Europe/London), including both dates. Maximum 62 days; 50 results per page.</p>
+<form class="form-row align-items-end mb-3" method="GET" action="/admin/credit-requests#decided-heading">
+    <% const chosen = locals.selectedProfile; %>
+    <div class="form-group col-12" data-credit-profile-picker data-guid="<%= chosen ? chosen.guid : '' %>" data-name="<%= chosen ? chosen.name : 'All profiles' %>" data-email="<%= chosen ? chosen.email : '' %>">
+        <input type="hidden" name="profile" value="<%= chosen ? chosen.guid : '' %>">
+        <label for="credit-profile-search">Username</label>
+        <input class="form-control" id="credit-profile-search" type="search" value="<%= chosen ? chosen.name : '' %>" placeholder="Search by first name, surname or email" autocomplete="off" aria-describedby="credit-profile-help">
+        <small class="form-text text-muted" id="credit-profile-help">Enter at least 2 characters. Names work in either order. The best match is selected automatically; check the selection before searching history.</small>
+        <div class="profile-choice-list" data-credit-profile-choices role="radiogroup" aria-label="Credit history profile">
+            <label><input type="radio" name="credit-profile-choice" value="<%= chosen ? chosen.guid : '' %>" checked> <%= chosen ? chosen.name : 'All profiles' %></label>
+        </div>
+        <p class="sr-only" data-credit-profile-status role="status" aria-live="polite"></p>
+    </div>
+    <div class="form-group col-md">
+        <label for="credit-from">From date</label>
+        <input class="form-control" id="credit-from" name="from" type="date" value="<%= filters.from %>" required>
+    </div>
+    <div class="form-group col-md">
+        <label for="credit-to">To date</label>
+        <input class="form-control" id="credit-to" name="to" type="date" value="<%= filters.to %>" required>
+    </div>
+    <div class="form-group col-md-auto">
+        <a class="btn btn-outline-secondary mr-2" href="/admin/credit-requests">Clear</a>
+        <button class="btn btn-primary" type="submit">Search history</button>
+    </div>
+</form>
+<% if (searched) { %><p role="status"><%= history.total %> matching this period</p><% } %>

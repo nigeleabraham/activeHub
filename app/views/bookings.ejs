@@ -35,173 +35,177 @@
 
         <% if (facilities.length) { %>
             <% facilities.forEach(facility => { %>
+                <% if (configuring) { %>
+                <article id="court-facility-<%= facility.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3" data-court-facility>
+                    <details class="admin-disclosure">
+                        <summary class="admin-card-summary"><h2 id="facility-<%= facility.guid %>" class="h5 d-inline mb-0 text-break"><%= facility.name %></h2></summary>
+
+                        <section class="admin-form-section" aria-labelledby="sport-months-heading-<%= facility.guid %>">
+                            <h3 id="sport-months-heading-<%= facility.guid %>" class="admin-form-section-title">Sport booking months</h3>
+                            <p class="small text-muted">Set the allowed booking months for each sport at this site. Applies every year to all courts for that sport, using UK booking dates. Other sites are unaffected. Existing bookings are not cancelled.</p>
+                            <% facility.sports.forEach(sport => { %>
+                                <div class="bg-white border rounded p-3 mb-2">
+                                    <details class="admin-disclosure" data-editor-disclosure>
+                                        <summary class="admin-card-summary"><h4 class="h6 d-inline mb-0"><%= sport.name %></h4></summary>
+                                        <form method="POST" action="/admin/bookings/sports/months" data-editor-preview="false" data-editor-label="<%= sport.name %> booking months">
+                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                            <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                                            <fieldset>
+                                                <legend class="h6">Allowed booking months for <%= sport.name %></legend>
+                                                <% ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].forEach((month, index) => { %>
+                                                    <label class="mr-3"><input type="checkbox" name="allowed_months" value="<%= index + 1 %>" <%= sport.allowed_months.includes(index + 1) ? 'checked' : '' %>> <%= month %></label>
+                                                <% }) %>
+                                            </fieldset>
+                                            <p class="small text-muted">All months are enabled by default. Clear all to disable new bookings for this sport at this site year-round.</p>
+                                            <button class="btn btn-primary btn-sm" type="submit">Save months</button>
+                                            <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                        </form>
+                                    </details>
+                                </div>
+                            <% }) %>
+                            <% if (!facility.sports.length) { %>
+                                <p class="text-muted mb-0">Assign sports to this facility to configure their booking months.</p>
+                            <% } %>
+                        </section>
+
+                        <section class="admin-form-section" aria-labelledby="resources-heading-<%= facility.guid %>">
+                            <h3 id="resources-heading-<%= facility.guid %>" class="admin-form-section-title">Resources (<%= facility.resources.length %>)</h3>
+                            <p class="text-muted small">Resources are exclusive booking claims. Courts sharing a resource block each other. Use a separate resource for each court-pair conflict so unrelated courts remain available.</p>
+                            <div class="bg-white border rounded p-3 mb-3">
+                                <details class="admin-disclosure" data-editor-disclosure>
+                                    <summary class="admin-card-summary"><h4 class="h6 d-inline mb-0">Add resource</h4></summary>
+                                    <form method="POST" action="/admin/bookings/resources" data-editor-label="New resource at <%= facility.name %>">
+                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                        <div class="form-group">
+                                            <label for="new-resource-<%= facility.guid %>">Resource name</label>
+                                            <input class="form-control form-control-sm" id="new-resource-<%= facility.guid %>" name="name" type="text" maxlength="120" required>
+                                        </div>
+                                        <button class="btn btn-primary btn-sm" type="submit">Add resource</button>
+                                        <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                    </form>
+                                </details>
+                            </div>
+                            <% if (facility.resources.length) { %>
+                                <% facility.resources.forEach(resource => { %>
+                                    <div class="bg-white border rounded p-3 mb-2 position-relative">
+                                        <details class="admin-disclosure" data-editor-disclosure>
+                                            <summary class="admin-card-summary" style="padding-right: 5rem;"><h4 class="h6 d-inline mb-0 text-break"><%= resource.name %></h4> <small class="text-muted ml-2">Claimed by <%= resource.claim_count %></small></summary>
+                                            <form method="POST" action="/admin/bookings/resources/update" data-editor-preview="false" data-editor-label="Edit <%= resource.name %>">
+                                                <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                                <input type="hidden" name="guid" value="<%= resource.guid %>">
+                                                <div class="form-group">
+                                                    <label for="resource-name-<%= resource.guid %>">Resource name</label>
+                                                    <input class="form-control form-control-sm" id="resource-name-<%= resource.guid %>" name="name" type="text" maxlength="120" value="<%= resource.name %>" required>
+                                                </div>
+                                                <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+                                                <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                            </form>
+                                        </details>
+                                        <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                                        <form class="position-absolute" style="top: 1rem; right: 1rem;" method="POST" action="/admin/bookings/resources/destroy">
+                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                            <input type="hidden" name="resource_guid" value="<%= resource.guid %>">
+                                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= resource.name %>">Delete</button>
+                                        </form>
+                                    </div>
+                                <% }); %>
+                            <% } else { %>
+                                <p class="text-muted mb-0">No resources defined yet.</p>
+                            <% } %>
+                        </section>
+
+                        <section class="admin-form-section mb-0" aria-labelledby="courts-heading-<%= facility.guid %>">
+                            <h3 id="courts-heading-<%= facility.guid %>" class="admin-form-section-title">Bookable courts (<%= facility.options.length %>)</h3>
+                            <% if (facility.sports.length && facility.resources.length) { %>
+                                <div class="bg-white border rounded p-3 mb-3">
+                                    <details class="admin-disclosure" data-editor-disclosure>
+                                        <summary class="admin-card-summary"><h4 class="h6 d-inline mb-0">Add bookable court</h4></summary>
+                                        <form method="POST" action="/admin/bookings/options" data-editor-label="New court at <%= facility.name %>">
+                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                            <div class="form-group">
+                                                <label for="option-name-<%= facility.guid %>">Court name</label>
+                                                <input class="form-control form-control-sm" id="option-name-<%= facility.guid %>" name="name" type="text" maxlength="120" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="option-sport-<%= facility.guid %>">Sport</label>
+                                                <select class="form-control form-control-sm" id="option-sport-<%= facility.guid %>" name="sport_guid" required>
+                                                    <% facility.sports.forEach(sport => { %>
+                                                        <option value="<%= sport.guid %>"><%= sport.name %></option>
+                                                    <% }); %>
+                                                </select>
+                                            </div>
+                                            <fieldset class="form-group">
+                                                <legend class="col-form-label">Resources this court occupies</legend>
+                                                <% facility.resources.forEach(resource => { %>
+                                                    <div class="custom-control custom-checkbox">
+                                                        <input class="custom-control-input" id="new-option-<%= facility.guid %>-<%= resource.guid %>" name="resource_guids" type="checkbox" value="<%= resource.guid %>">
+                                                        <label class="custom-control-label" for="new-option-<%= facility.guid %>-<%= resource.guid %>"><%= resource.name %></label>
+                                                    </div>
+                                                <% }); %>
+                                            </fieldset>
+                                            <p class="small text-muted">This court uses the selected sport's allowed booking months at this site. Configure these under Sport booking months.</p>
+                                            <button class="btn btn-primary btn-sm" type="submit">Add court</button>
+                                            <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                        </form>
+                                    </details>
+                                </div>
+                            <% } else if (!facility.sports.length) { %>
+                                <p class="text-muted">Assign at least one sport to this facility before adding bookable courts.</p>
+                            <% } else { %>
+                                <p class="text-muted">Add resources before configuring bookable courts.</p>
+                            <% } %>
+                            <% facility.options.forEach(option => { %>
+                                <article class="bg-white border rounded p-3 mb-2 position-relative">
+                                    <details class="admin-disclosure" data-editor-disclosure>
+                                        <summary class="admin-card-summary" style="padding-right: 5rem;"><h4 class="h6 d-inline mb-0 text-break"><%= option.name %> <span class="text-muted font-weight-normal">· <%= option.sport_name %></span></h4></summary>
+                                        <form method="POST" action="/admin/bookings/options/update" data-editor-preview="false" data-editor-label="Edit <%= option.name %>">
+                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                            <input type="hidden" name="guid" value="<%= option.guid %>">
+                                            <div class="form-group">
+                                                <label for="edit-option-name-<%= option.guid %>">Court name</label>
+                                                <input class="form-control form-control-sm" id="edit-option-name-<%= option.guid %>" name="name" type="text" maxlength="120" value="<%= option.name %>" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit-option-sport-<%= option.guid %>">Sport</label>
+                                                <select class="form-control form-control-sm" id="edit-option-sport-<%= option.guid %>" name="sport_guid" required>
+                                                    <% facility.sports.forEach(sport => { %>
+                                                        <option value="<%= sport.guid %>" <%= sport.guid === option.sport_guid ? 'selected' : '' %>><%= sport.name %></option>
+                                                    <% }); %>
+                                                </select>
+                                            </div>
+                                            <fieldset class="form-group">
+                                                <legend class="col-form-label">Resources this court occupies</legend>
+                                                <% facility.resources.forEach(resource => { %>
+                                                    <div class="custom-control custom-checkbox">
+                                                        <input class="custom-control-input" id="edit-option-<%= option.guid %>-<%= resource.guid %>" name="resource_guids" type="checkbox" value="<%= resource.guid %>" <%= option.resources.some(claimed => claimed.guid === resource.guid) ? 'checked' : '' %>>
+                                                        <label class="custom-control-label" for="edit-option-<%= option.guid %>-<%= resource.guid %>"><%= resource.name %></label>
+                                                    </div>
+                                                <% }); %>
+                                            </fieldset>
+                                            <button class="btn btn-primary btn-sm" type="submit">Save court</button>
+                                            <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
+                                        </form>
+                                    </details>
+                                    <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                                    <form class="position-absolute" style="top: 1rem; right: 1rem;" method="POST" action="/admin/bookings/options/destroy">
+                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
+                                        <input type="hidden" name="option_guid" value="<%= option.guid %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= option.name %>">Delete</button>
+                                    </form>
+                                </article>
+                            <% }); %>
+                        </section>
+                    </details>
+                </article>
+                <% } else { %>
                 <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="facility-<%= facility.guid %>">
                     <header class="mb-4">
                         <h2 id="facility-<%= facility.guid %>" class="h4 mb-1"><%= facility.name %></h2>
                         <p class="text-muted mb-0"><%= facility.address %>, <%= facility.postcode %></p>
                     </header>
-
-                    <% if (configuring) { %>
-                    <div>
-                        <div class="mb-4">
-                            <details>
-                                <summary class="h5 mb-3">Sport booking months</summary>
-                                <p class="small text-muted">Set the allowed booking months for each sport at this site. Applies every year to all courts for that sport, using UK booking dates. Other sites are unaffected. Existing bookings are not cancelled.</p>
-                                <% facility.sports.forEach(sport => { %>
-                                    <form class="border rounded p-3 mb-3" method="POST" action="/admin/bookings/sports/months">
-                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                        <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
-                                        <fieldset>
-                                            <legend class="h6">Allowed booking months for <%= sport.name %></legend>
-                                            <% ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].forEach((month, index) => { %>
-                                                <label class="mr-3"><input type="checkbox" name="allowed_months" value="<%= index + 1 %>" <%= sport.allowed_months.includes(index + 1) ? 'checked' : '' %>> <%= month %></label>
-                                            <% }) %>
-                                        </fieldset>
-                                        <p class="small text-muted">All months are enabled by default. Clear all to disable new bookings for this sport at this site year-round.</p>
-                                        <button class="btn btn-primary btn-sm" type="submit">Save months</button>
-                                    </form>
-                                <% }) %>
-                                <% if (!facility.sports.length) { %>
-                                    <p class="text-muted">Assign sports to this facility to configure their booking months.</p>
-                                <% } %>
-                            </details>
-                        </div>
-                        <div class="mb-4">
-                            <details>
-                                <summary class="h5 mb-3">Resources (<%= facility.resources.length %>)</summary>
-                                <p class="text-muted small">Resources are exclusive booking claims. Courts sharing a resource block each other. Use a separate resource for each court-pair conflict so unrelated courts remain available.</p>
-                                <form class="form-inline mb-3" method="POST" action="/admin/bookings/resources">
-                                    <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                    <label class="sr-only" for="new-resource-<%= facility.guid %>">Resource name</label>
-                                    <input class="form-control form-control-sm mr-2 mb-2" id="new-resource-<%= facility.guid %>" name="name" type="text" maxlength="120" placeholder="Resource name" required>
-                                    <button class="btn btn-primary btn-sm mb-2" type="submit">Add resource</button>
-                                </form>
-                                <% if (facility.resources.length) { %>
-                                    <ul class="list-group list-group-flush">
-                                        <% facility.resources.forEach(resource => { %>
-                                            <li class="list-group-item px-0">
-                                                <div class="d-flex justify-content-between align-items-center">
-                                                    <span><%= resource.name %> <small class="text-muted">Claimed by <%= resource.claim_count %></small></span>
-                                                    <div class="d-flex">
-                                                        <details class="mr-2">
-                                                            <summary class="btn btn-outline-secondary btn-sm">Edit</summary>
-                                                            <form class="mt-2" method="POST" action="/admin/bookings/resources/update">
-                                                                <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                                <input type="hidden" name="guid" value="<%= resource.guid %>">
-                                                                <label class="sr-only" for="resource-name-<%= resource.guid %>">Resource name</label>
-                                                                <input class="form-control form-control-sm mb-2" id="resource-name-<%= resource.guid %>" name="name" type="text" maxlength="120" value="<%= resource.name %>" required>
-                                                                <button class="btn btn-primary btn-sm" type="submit">Save</button>
-                                                                <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
-                                                            </form>
-                                                        </details>
-                                                        <form method="POST" action="/admin/bookings/resources/destroy">
-                                                            <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                            <input type="hidden" name="resource_guid" value="<%= resource.guid %>">
-                                                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= resource.name %>">Delete</button>
-                                                        </form>
-                                                    </div>
-                                                </div>
-                                            </li>
-                                        <% }); %>
-                                    </ul>
-                                <% } else { %>
-                                    <p class="text-muted">No resources defined yet.</p>
-                                <% } %>
-                            </details>
-                        </div>
-
-                        <div class="mb-4">
-                            <details>
-                                <summary class="h5 mb-3">Bookable courts (<%= facility.options.length %>)</summary>
-                                <% if (facility.sports.length && facility.resources.length) { %>
-                                    <form class="border rounded p-3 mb-4" method="POST" action="/admin/bookings/options">
-                                        <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                        <h3 class="h6">Add bookable court</h3>
-                                        <div class="form-group">
-                                            <label for="option-name-<%= facility.guid %>">Court name</label>
-                                            <input class="form-control form-control-sm" id="option-name-<%= facility.guid %>" name="name" type="text" maxlength="120" required>
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="option-sport-<%= facility.guid %>">Sport</label>
-                                            <select class="form-control form-control-sm" id="option-sport-<%= facility.guid %>" name="sport_guid" required>
-                                                <% facility.sports.forEach(sport => { %>
-                                                    <option value="<%= sport.guid %>"><%= sport.name %></option>
-                                                <% }); %>
-                                            </select>
-                                        </div>
-                                        <fieldset class="form-group">
-                                            <legend class="col-form-label">Resources this court occupies</legend>
-                                            <% facility.resources.forEach(resource => { %>
-                                                <div class="custom-control custom-checkbox">
-                                                    <input class="custom-control-input" id="new-option-<%= facility.guid %>-<%= resource.guid %>" name="resource_guids" type="checkbox" value="<%= resource.guid %>">
-                                                    <label class="custom-control-label" for="new-option-<%= facility.guid %>-<%= resource.guid %>"><%= resource.name %></label>
-                                                </div>
-                                            <% }); %>
-                                        </fieldset>
-                                        <p class="small text-muted">This court uses the selected sport's allowed booking months at this site. Configure these under Sport booking months.</p>
-                                        <button class="btn btn-primary btn-sm" type="submit">Add court</button>
-                                    </form>
-                                <% } else if (!facility.sports.length) { %>
-                                    <p class="text-muted">Assign at least one sport to this facility before adding bookable courts.</p>
-                                <% } else { %>
-                                    <p class="text-muted">Add resources before configuring bookable courts.</p>
-                                <% } %>
-
-                                <% if (facility.options.length) { %>
-                                    <% facility.options.forEach(option => { %>
-                                        <article class="border-top py-3">
-                                            <div class="d-flex flex-wrap justify-content-between align-items-start">
-                                                <div>
-                                                    <h3 class="h6 mb-1"><%= option.name %> <span class="text-muted font-weight-normal">· <%= option.sport_name %></span></h3>
-                                                    <p class="small text-muted mb-2">Uses: <%= option.resources.map(resource => resource.name).join(', ') %></p>
-                                                </div>
-                                                <form method="POST" action="/admin/bookings/options/destroy">
-                                                    <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                    <input type="hidden" name="option_guid" value="<%= option.guid %>">
-                                                    <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= option.name %>">Delete</button>
-                                                </form>
-                                            </div>
-                                            <details>
-                                                <summary class="btn btn-outline-secondary btn-sm">Edit court claims</summary>
-                                                <form class="mt-3 p-3 border rounded" method="POST" action="/admin/bookings/options/update">
-                                                    <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                                    <input type="hidden" name="guid" value="<%= option.guid %>">
-                                                    <div class="form-group">
-                                                        <label for="edit-option-name-<%= option.guid %>">Court name</label>
-                                                        <input class="form-control form-control-sm" id="edit-option-name-<%= option.guid %>" name="name" type="text" maxlength="120" value="<%= option.name %>" required>
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="edit-option-sport-<%= option.guid %>">Sport</label>
-                                                        <select class="form-control form-control-sm" id="edit-option-sport-<%= option.guid %>" name="sport_guid" required>
-                                                            <% facility.sports.forEach(sport => { %>
-                                                                <option value="<%= sport.guid %>" <%= sport.guid === option.sport_guid ? 'selected' : '' %>><%= sport.name %></option>
-                                                            <% }); %>
-                                                        </select>
-                                                    </div>
-                                                    <fieldset class="form-group">
-                                                        <legend class="col-form-label">Resources this court occupies</legend>
-                                                        <% facility.resources.forEach(resource => { %>
-                                                            <div class="custom-control custom-checkbox">
-                                                                <input class="custom-control-input" id="edit-option-<%= option.guid %>-<%= resource.guid %>" name="resource_guids" type="checkbox" value="<%= resource.guid %>" <%= option.resources.some(claimed => claimed.guid === resource.guid) ? 'checked' : '' %>>
-                                                                <label class="custom-control-label" for="edit-option-<%= option.guid %>-<%= resource.guid %>"><%= resource.name %></label>
-                                                            </div>
-                                                        <% }); %>
-                                                    </fieldset>
-                                                    <button class="btn btn-primary btn-sm" type="submit">Save court</button>
-                                                    <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
-                                                </form>
-                                            </details>
-                                        </article>
-                                    <% }); %>
-                                <% } %>
-                            </details>
-                        </div>
-                    </div>
-
-                    <% } else { %>
-                        <%- include('partials/booking-flow', { facility }) %>
-                    <% } %>
+                    <%- include('partials/booking-flow', { facility }) %>
                 </section>
+                <% } %>
             <% }); %>
         <% } else { %>
             <p class="text-muted border-top pt-3">No in-app-managed facilities are available.</p>

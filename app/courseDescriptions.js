@@ -33,4 +33,13 @@ function resolveDescription(course, defaults) {
         ...(course.description_sections || [])];
 }
 
-module.exports = { sections, descriptionConfig, resolveDescription };
+function orderedItems(items, order, key = 'id') {
+    if (!Array.isArray(order) || order.length !== items.length || new Set(order).size !== order.length) {
+        throw new RangeError('The list has changed. Refresh the page before reordering.');
+    }
+    const byId = new Map(items.map(item => [item[key], item]));
+    if (order.some(id => !byId.has(id))) throw new RangeError('The list has changed. Refresh the page before reordering.');
+    return order.map(id => byId.get(id));
+}
+
+module.exports = { sections, descriptionConfig, resolveDescription, orderedItems };

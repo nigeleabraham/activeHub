@@ -34,7 +34,7 @@ test('booking management and court configuration load and render only their own 
         assert.equal(data.activePage, configuring ? 'court-configuration' : 'bookings');
         assert.equal(sportQuery.mock.callCount() - before[0], configuring ? 1 : 0);
         assert.equal(resourceQuery.mock.callCount() - before[1], configuring ? 1 : 0);
-        assert.equal(bookingQuery.mock.callCount() - before[2], configuring ? 0 : 1);
+        assert.equal(bookingQuery.mock.callCount() - before[2], 0);
         const html = await ejs.renderFile(path.join(__dirname, `../views/${view}.ejs`), {
             ...data, currentProfile: profile, isAdmin: true, area: 'admin',
             canSwitchRole: false, viewingAs: null, switchableRoles: []

@@ -60,7 +60,7 @@ Facilities.initialize()
     .then(() => require('./models/CourseOrders').initialize())
     .then(() => {
         console.log('PostgreSQL connected');
-        AuditLog.startPurgeSchedule();
+        void AuditLog.purgeOnStartup();
         app.listen(PORT, () => {
             console.log(`Server listening on port ${PORT}`);
         });

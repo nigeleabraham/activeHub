@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <%- include('partials/booking-flow-styles') %>
 </head>
 
 <body class="bg-light">
@@ -22,6 +23,7 @@
         </header>
 
         <% if (declineError) { %><div class="alert alert-danger" role="alert">Enter a decline comment of 1 to 500 characters. This will be visible to the requestor.</div><% } %>
+        <% if (locals.corrected) { %><div class="alert alert-success" role="status">Request updated. Reopened requests are in Pending review.</div><% } %>
         <% if (decision) { %>
             <div class="alert alert-success" role="status">Request for booking <strong><%= decisionRef %></strong> was <%= decision %>.<%= decision === 'approved' ? ' The amount paid has been added to the profile\'s credit.' : '' %></div>
         <% } else if (error) { %>
@@ -30,9 +32,9 @@
 
         <% const money = pence => '£' + (pence / 100).toFixed(2); %>
         <% const pending = requests.filter(request => request.status === 'pending'); %>
-        <% const decided = requests.filter(request => request.status !== 'pending'); %>
+        <% const decided = history.entries; %>
 
-        <section class="mb-4" aria-labelledby="auto-slots-heading">
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="auto-slots-heading">
             <h2 id="auto-slots-heading" class="h5">Auto-approved weather time slots (last <%= creditRequestDays %> days)</h2>
             <p><%= autoApprovalEnabled ? 'Enabled' : 'Disabled - saved slots are paused' %>. Matches exact start and end times across all facilities. <a href="/admin/settings#auto-approval-heading">Change in Settings</a>.</p>
             <% if (autoApprovalSlots.length) { %>
@@ -51,8 +53,14 @@
             <% } else { %><p class="text-muted">No auto-approved slots in this period.</p><% } %>
         </section>
 
-        <section class="mb-4" aria-labelledby="pending-heading">
-            <h2 id="pending-heading" class="h5 mb-3">Waiting for a decision (<%= pending.length %>)</h2>
+        <section class="bg-white border rounded shadow-sm p-4 mb-5" aria-labelledby="pending-heading">
+            <header class="border-bottom pb-3 mb-4">
+                <div class="d-flex flex-wrap align-items-center justify-content-between">
+                    <h2 id="pending-heading" class="h5 mb-0">Pending review</h2>
+                    <span class="badge <%= pending.length ? 'badge-warning' : 'badge-light text-muted' %>"><%= pending.length %> awaiting review</span>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Action needed: approve or decline the credit requests below.</p>
+            </header>
             <% if (pending.length) { %>
                 <div class="table-responsive bg-white border rounded shadow-sm">
                     <table class="table table-sm mb-0">
@@ -105,12 +113,19 @@
             <% } %>
         </section>
 
-        <% if (decided.length) { %>
-            <section aria-labelledby="decided-heading">
-                <h2 id="decided-heading" class="h5 mb-3">Decided</h2>
+            <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="decided-heading">
+                <header class="border-bottom pb-3 mb-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between">
+                        <h2 id="decided-heading" class="h5 mb-0">History</h2>
+                        <% if (searched) { %><span class="badge badge-info"><%= history.total %> matching this period</span><% } %>
+                    </div>
+                    <p class="small text-muted mt-2 mb-0">Completed requests are kept separate from the review queue. Choose a date range to search them.</p>
+                </header>
+                <%- include('partials/credit-history-search') %>
+                <% if (decided.length) { %>
                 <div class="table-responsive bg-white border rounded shadow-sm">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Outcome</th></tr></thead>
+                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Outcome</th><th>Completed (UK)</th></tr></thead>
                         <tbody>
                             <% decided.forEach(request => { %>
                                 <tr>
@@ -120,17 +135,61 @@
                                     <td><span class="badge badge-<%= request.status === 'approved' ? 'success' : 'secondary' %>"><%= request.status === 'approved' ? 'Credited ' + money(request.amount_paid_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : 'Declined' %></span>
                                         <span class="small text-muted"><%= request.decided_by_name ? 'by ' + request.decided_by_name : '' %></span>
                                         <% if (request.auto_approved) { %><span class="badge badge-info">Auto-approved weather slot</span><% } %>
-                                        <% if (request.status === 'declined') { %><p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p><% } %></td>
+                                        <% if (request.status === 'declined') { %>
+                                            <p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p>
+                                            <form method="POST" action="/admin/credit-requests/reopen" class="mt-2">
+                                                <%- include('partials/request-history-fields', { request }) %>
+                                                <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Reverse this decline and return the request to Pending review? No credit is issued until it is approved.">Reopen request</button>
+                                            </form>
+                                        <% } %>
+                                        <% if (request.status === 'approved') { %>
+                                            <p class="small mt-2 mb-1">Available credit: <%= money(request.available_refundable_pence || 0) %> refundable / <%= money(request.available_non_refundable_pence || 0) %> non-refundable.</p>
+                                            <form method="POST" action="/admin/credit-requests/refundability" class="mt-2">
+                                                <%- include('partials/request-history-fields', { request }) %>
+                                                <label class="small d-block" for="refundability-<%= request.guid %>">Remaining card-paid credit</label>
+                                                <select class="form-control form-control-sm mb-1" id="refundability-<%= request.guid %>" name="refundable">
+                                                    <option value="1">Make refundable</option>
+                                                    <option value="0">Make non-refundable</option>
+                                                </select>
+                                                <p class="small text-muted mb-1">Reused credit keeps its eligibility. Pending bank refund requests block changes. Only unspent, unexpired card-paid credit can change.</p>
+                                                <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Change refund eligibility for the remaining card-paid credit only? The total credit balance will not change.">Update refund eligibility</button>
+                                            </form>
+                                        <% } %></td>
+                                    <td><%= new Date(request.decided_at).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) %></td>
                                 </tr>
                             <% }) %>
                         </tbody>
                     </table>
                 </div>
+                <% } else { %><p class="text-muted"><%= searched ? 'No completed credit requests found for this period.' : 'Select From and To dates to load credit history.' %></p><% } %>
+                <% if (searched && history.total > history.pageSize) {
+                    const totalPages = Math.ceil(history.total / history.pageSize);
+                    const pageLink = target => '/admin/credit-requests?' + new URLSearchParams({ ...filters, page: target }).toString() + '#decided-heading';
+                %>
+                    <nav aria-label="Credit history pages" class="d-flex align-items-center mt-3">
+                        <% if (page > 1) { %><a class="btn btn-outline-secondary btn-sm mr-2" href="<%= pageLink(page - 1) %>">Previous</a><% } %>
+                        <span class="small mr-2">Page <%= page %> of <%= totalPages %></span>
+                        <% if (page < totalPages) { %><a class="btn btn-outline-secondary btn-sm" href="<%= pageLink(page + 1) %>">Next</a><% } %>
+                    </nav>
+                <% } %>
             </section>
-        <% } %>
     </main>
 
     <script>
+        <%- include('partials/profile-search-behaviour') %>
+        const picker = document.querySelector('[data-credit-profile-picker]');
+        if (picker) {
+            const finder = attachProfileSearch(
+                picker.querySelector('#credit-profile-search'),
+                picker.querySelector('[data-credit-profile-choices]'),
+                picker.querySelector('[data-credit-profile-status]'),
+                { guid: picker.dataset.guid, name: picker.dataset.name, email: picker.dataset.email },
+                'credit-profile-choice', profile => { picker.querySelector('[name="profile"]').value = profile.guid; }
+            );
+            picker.querySelector('#credit-profile-search').addEventListener('input', event => {
+                if (!event.target.value.trim()) finder.reset({ guid: '', name: 'All profiles' });
+            });
+        }
         var timeFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
         document.querySelectorAll('[data-local-time]').forEach(function (time) {
             var instant = new Date(time.dateTime);

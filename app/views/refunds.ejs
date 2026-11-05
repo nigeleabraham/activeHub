@@ -20,6 +20,9 @@
                 <p class="text-muted mb-0">Find a booking and refund it as account credit</p>
             </div>
         </header>
+        <% if (locals.refundsEnabled === false) { %>
+            <div class="alert alert-warning" role="status">Bank and external refunds are disabled system-wide. You can still award account credit; saved bank-refund eligibility only applies if refunds are re-enabled.</div>
+        <% } %>
 
         <% if (done === 'credit') { %>
             <div class="alert alert-success" role="status">

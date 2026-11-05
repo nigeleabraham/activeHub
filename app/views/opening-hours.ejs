@@ -25,48 +25,47 @@
             <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit opening hours templates here. These can then be assigned to facilities.</p>
         </div>
 
-        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="new-template-heading">
-            <h2 id="new-template-heading" class="h5 mb-2">Add template</h2>
-            <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-template-panel">Add template</button>
-            <div id="add-template-panel" data-edit-panel hidden>
-            <form method="POST" action="/admin/opening-hours" data-hours-form>
-                <div class="form-group">
-                    <label for="new-template-name">Template name</label>
-                    <input class="form-control" id="new-template-name" name="name" type="text" maxlength="120" required>
-                </div>
-                <fieldset class="form-group">
-                    <legend class="h6">Daylight overrides</legend>
-                    <label class="d-block"><input type="checkbox" name="dawn_override"> Dawn: no booking may start before sunrise</label>
-                    <label class="d-block"><input type="checkbox" name="dusk_override"> Dusk: bookings must end by civil dusk + 20 minutes</label>
-                    <small class="form-text text-muted">Calculated for each facility's coordinates and booking date. These limits never extend the weekly hours below. Opening rounds up to the nearest minute. When dusk limits closing, closing rounds down to the hour to reflect the last possible booking.</small>
-                </fieldset>
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>
-                        <tbody>
-                            <% weekdays.forEach((weekday, index) => { %>
-                                <tr data-day-rule>
-                                    <th scope="row"><%= weekday %><input type="hidden" name="day_<%= index %>" value="<%= index %>"></th>
-                                    <td>
-                                        <label class="sr-only" for="new-day-<%= index %>-opens-at"><%= weekday %> opening time</label>
-                                        <input class="form-control form-control-sm" id="new-day-<%= index %>-opens-at" type="time" name="day_<%= index %>_opens_at" value="08:00" required>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex">
-                                            <label class="sr-only" for="new-day-<%= index %>-closes-at"><%= weekday %> closing time</label>
-                                            <input class="form-control form-control-sm" id="new-day-<%= index %>-closes-at" type="time" name="day_<%= index %>_closes_at" value="16:30">
-                                        </div>
-                                    </td>
-                                    <td><input type="checkbox" name="day_<%= index %>_closed" aria-label="Closed <%= weekday %>"></td>
-                                </tr>
-                            <% }); %>
-                        </tbody>
-                    </table>
-                </div>
-                <button class="btn btn-primary" type="submit">Create template</button>
-                <button class="btn btn-outline-secondary ml-1" type="button" data-cancel-edit>Cancel</button>
-            </form>
-            </div>
+        <section id="add-template-section" class="mb-4" aria-labelledby="new-template-heading">
+            <details id="add-template-panel" class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
+                <summary class="h5 mb-0"><h2 id="new-template-heading" class="h5 d-inline mb-0">Add template</h2></summary>
+                <form method="POST" action="/admin/opening-hours" data-hours-form>
+                    <div class="form-group">
+                        <label for="new-template-name">Template name</label>
+                        <input class="form-control" id="new-template-name" name="name" type="text" maxlength="120" required>
+                    </div>
+                    <fieldset class="form-group">
+                        <legend class="h6">Daylight overrides</legend>
+                        <label class="d-block"><input type="checkbox" name="dawn_override"> Dawn: no booking may start before sunrise</label>
+                        <label class="d-block"><input type="checkbox" name="dusk_override"> Dusk: bookings must end by civil dusk + 20 minutes</label>
+                        <small class="form-text text-muted">Calculated for each facility's coordinates and booking date. These limits never extend the weekly hours below. Opening rounds up to the nearest minute. When dusk limits closing, closing rounds down to the hour to reflect the last possible booking.</small>
+                    </fieldset>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>
+                            <tbody>
+                                <% weekdays.forEach((weekday, index) => { %>
+                                    <tr data-day-rule>
+                                        <th scope="row"><%= weekday %><input type="hidden" name="day_<%= index %>" value="<%= index %>"></th>
+                                        <td>
+                                            <label class="sr-only" for="new-day-<%= index %>-opens-at"><%= weekday %> opening time</label>
+                                            <input class="form-control form-control-sm" id="new-day-<%= index %>-opens-at" type="time" name="day_<%= index %>_opens_at" value="08:00" required>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex">
+                                                <label class="sr-only" for="new-day-<%= index %>-closes-at"><%= weekday %> closing time</label>
+                                                <input class="form-control form-control-sm" id="new-day-<%= index %>-closes-at" type="time" name="day_<%= index %>_closes_at" value="16:30">
+                                            </div>
+                                        </td>
+                                        <td><input type="checkbox" name="day_<%= index %>_closed" aria-label="Closed <%= weekday %>"></td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button class="btn btn-primary" type="submit">Create template</button>
+                    <button class="btn btn-outline-secondary ml-1" type="button" data-cancel-edit>Cancel</button>
+                </form>
+            </details>
         </section>
 
         <section aria-labelledby="templates-heading" data-templates-directory>
@@ -79,37 +78,13 @@
             <div data-template-list>
             <% if (templates.length) { %>
                 <% templates.forEach(template => { %>
-                    <article id="template-<%= template.guid %>" data-template-guid="<%= template.guid %>" data-template-name="<%= template.name %>" class="bg-white border rounded shadow-sm p-4 mb-3">
-                        <div>
-                            <div>
-                                <div class="d-flex align-items-center mb-1" style="min-width: 0;">
-                                    <h3 class="h5 mb-0 mr-3 text-break"><%= template.name %></h3>
-                                    <div data-template-edit-feedback class="d-flex align-items-center flex-grow-1" style="height: 4.5rem; min-width: 0; overflow: auto;"></div>
-                                </div>
-                                <p class="text-muted mb-2">
-                                    <% if (template.rules.length) { %>
-                                        <%= template.rules.map(rule => `${weekdays[rule.day_of_week]} ${String(rule.opens_at).slice(0, 5)}–${String(rule.closes_at).slice(0, 5)}`).join(' · ') %>
-                                    <% } else { %>
-                                        Closed all week
-                                    <% } %>
-                                </p>
-                                <% if (template.dawn_override || template.dusk_override) { %>
-                                    <div class="mt-2">
-                                        <% if (template.dawn_override) { %><span class="badge badge-info">Dawn limit</span><% } %>
-                                        <% if (template.dusk_override) { %><span class="badge badge-info">Dusk + 20 min limit</span><% } %>
-                                    </div>
-                                <% } %>
-                            </div>
-                            <div class="d-flex align-items-center mt-3" data-template-actions>
-                                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-template-<%= template.guid %>">Edit template</button>
-                                <form method="POST" action="/admin/opening-hours/destroy">
-                                    <input type="hidden" name="guid" value="<%= template.guid %>">
-                                    <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= template.name %>">Delete template</button>
-                                </form>
-                            </div>
-                        </div>
-                        <div id="edit-template-<%= template.guid %>" data-edit-panel hidden>
-                            <form class="mt-3" method="POST" action="/admin/opening-hours/update" data-hours-form>
+                    <article id="template-<%= template.guid %>" data-template-guid="<%= template.guid %>" data-template-name="<%= template.name %>" class="bg-white border rounded shadow-sm p-4 mb-3 position-relative">
+                        <details class="admin-disclosure" data-template-edit data-editor-disclosure>
+                            <summary class="admin-card-summary" style="padding-right: 6rem;">
+                                <h3 class="h5 d-inline mb-0 text-break"><%= template.name %></h3>
+                                <span data-template-edit-feedback class="d-inline-block align-middle ml-3" style="height: 2.5rem; max-width: 65%; overflow: auto; vertical-align: middle;"></span>
+                            </summary>
+                            <form method="POST" action="/admin/opening-hours/update" data-hours-form data-editor-preview="false" data-editor-label="Edit <%= template.name %>">
                                 <input type="hidden" name="guid" value="<%= template.guid %>">
                                 <div class="form-group">
                                     <label for="template-name-<%= template.guid %>">Template name</label>
@@ -147,7 +122,12 @@
                                 <button class="btn btn-primary" type="submit">Save changes</button>
                                 <button class="btn btn-outline-secondary ml-1" type="button" data-cancel-edit>Cancel</button>
                             </form>
-                        </div>
+                        </details>
+                        <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                        <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/opening-hours/destroy">
+                            <input type="hidden" name="guid" value="<%= template.guid %>">
+                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= template.name %>">Delete</button>
+                        </form>
                     </article>
                 <% }); %>
             <% } else { %>

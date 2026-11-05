@@ -32,4 +32,12 @@ function isValidCourseDates(startDate, endDate) {
     return validDate(startDate) && validDate(endDate) && endDate >= startDate;
 }
 
-module.exports = { isValidEmail, parseDeclineComment, parseBookingMonths, isValidCourseDates };
+function isValidDateRange(from, to, maxDays = 62) {
+    const valid = value => typeof value === 'string' && /^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value) &&
+        Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+    if (!valid(from) || !valid(to)) return false;
+    const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
+    return days >= 1 && days <= maxDays;
+}
+
+module.exports = { isValidEmail, parseDeclineComment, parseBookingMonths, isValidCourseDates, isValidDateRange };

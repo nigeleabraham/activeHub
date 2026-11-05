@@ -4,45 +4,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sports | ActiveHub</title>
+    <title>Sports and Course Descriptions | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
     <style>
-        [data-editor-inline] { position: relative; }
-        [data-editor-inline] input[name="name"] { height: 2.5rem; }
-        [data-editor-inline] .admin-editor-status { position: absolute; top: 100%; margin: 0.5rem 0 0; }
+        .sports-admin [data-sport-guid]:has(> details:not([open])) {
+            padding: 0.75rem 1rem !important;
+        }
+        .sports-admin [data-sport-details] > summary { padding-right: 7rem; }
+        .sports-admin [data-sport-delete] { position: absolute; top: 1.5rem; right: 1rem; }
+        .sports-admin [data-sport-guid]:has(> details:not([open])) > [data-sport-delete] { top: 0.625rem; }
+        .sports-admin main details:not([open]) > summary {
+            min-height: 1.5rem;
+            margin-bottom: 0 !important;
+        }
+        .sports-admin main details:not([open]):not([data-sport-details]) {
+            padding-top: 0.625rem !important;
+            padding-bottom: 0.625rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+        .sports-admin [data-sport-details]:not([open]) [data-sport-edit-feedback] {
+            height: 1.5rem !important;
+        }
+        .sports-admin [data-course-section-card]:has(> details:not([open])) > button,
+        .sports-admin [data-faq-card]:has(> details:not([open])) > button {
+            top: 0.5rem !important;
+        }
+        .sports-admin .card-order-summary { padding-left: 6.75rem; padding-right: 3rem; }
+        .sports-admin .card-order-controls { position: absolute; top: 1rem; left: 0.5rem; display: flex; gap: 0.125rem; }
+        .sports-admin [data-order-id]:has(> details:not([open])) .card-order-controls { top: 0.5rem; }
+        .sports-admin .card-order-controls button { min-width: 1.875rem; min-height: 1.875rem; padding: 0.125rem 0.25rem; }
+        .sports-admin .card-drag-handle { cursor: grab; }
+        .sports-admin .card-order-controls { user-select: none; }
+        .sports-admin .card-being-dragged { opacity: 0.5; outline: 2px dashed var(--camden-navy); }
+        .sports-admin .card-drag-preview {
+            position: fixed;
+            top: -10000px;
+            left: 0;
+            z-index: 1000;
+            pointer-events: none;
+            background: #fff;
+            border: 2px solid var(--camden-navy);
+            border-radius: 0.25rem;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            box-shadow: 0 4px 12px #0003;
+        }
+        .sports-admin .card-drop-before { box-shadow: 0 -3px var(--camden-navy); }
+        .sports-admin .card-drop-after { box-shadow: 0 3px var(--camden-navy); }
+        .sports-admin [data-order-feedback]:empty { display: none; }
+        .sports-admin .section-added-highlight > details {
+            animation: section-added-highlight 2.5s ease-out;
+        }
+        @keyframes section-added-highlight {
+            0%, 35% { background-color: #d4edda; border-color: #28a745; }
+            100% { background-color: transparent; border-color: #dee2e6; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .sports-admin .section-added-highlight > details { animation: none; background-color: #d4edda; }
+        }
     </style>
 </head>
 
-<body class="bg-light">
+<body class="bg-light sports-admin">
     <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1">Sports</h1>
-                <p class="text-muted mb-0">Manage the sports available for facilities</p>
+                <h1 class="h2 mb-1">Sports and Course Descriptions</h1>
+                <p class="text-muted mb-0">Manage sports and their standard course descriptions</p>
             </div>
         </header>
+        <% if (error) { %><div class="alert alert-danger" role="alert">The FAQ could not be saved. Enter a question (up to 300 characters), an answer (up to 10,000 characters) and choose an existing sport.</div><% } %>
 
         <div class="admin-save-feedback mb-4">
             <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit sports here. These can then be assigned to the sports facilities.</p>
         </div>
 
-        <section class="mb-3" aria-labelledby="add-sport-heading">
-            <div class="bg-white border rounded shadow-sm p-3">
-                <h2 id="add-sport-heading" class="h5 mb-2">Add sport</h2>
-                <form class="form-row align-items-end" method="POST" action="/admin/sports">
-                    <div class="form-group col-md mb-md-0">
+        <section id="add-sport-section" class="mb-4" aria-labelledby="add-sport-heading">
+            <details id="add-sport-panel" class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
+                <summary class="h5 mb-0"><h2 id="add-sport-heading" class="h5 d-inline mb-0">Add sport</h2></summary>
+                <form method="POST" action="/admin/sports" data-editor-label="New sport">
+                    <div class="form-group">
                         <label for="sport-name">Sport name</label>
                         <input class="form-control" id="sport-name" name="name" type="text" maxlength="120" required>
                     </div>
-                    <div class="col-md-auto">
-                        <button class="btn btn-primary" type="submit">Add sport</button>
-                    </div>
+                    <button class="btn btn-primary" type="submit">Add sport</button>
                 </form>
-            </div>
+            </details>
         </section>
 
         <section aria-labelledby="sports-list-heading" data-sports-directory>
@@ -54,54 +105,93 @@
             <div class="alert alert-danger" data-sport-error role="alert" tabindex="-1" hidden></div>
             <div data-sport-list>
             <% if (sports.length) { %>
-                <article class="bg-white border rounded shadow-sm p-4 mb-3">
-                    <ul class="list-group list-group-flush">
-                        <% sports.forEach(sport => { %>
-                            <li id="sport-<%= sport.guid %>" class="list-group-item px-0" data-sport-guid="<%= sport.guid %>" data-sport-name="<%= sport.name %>">
-                                <details data-sport-details>
-                                    <summary class="h5 mb-0" style="min-height: 2.5rem;">
-                                        <span><%= sport.name %></span>
-                                        <span data-sport-edit-feedback class="d-inline-block align-middle ml-3" style="height: 2.5rem; max-width: 65%; overflow: auto; vertical-align: middle;"></span>
-                                    </summary>
-                                <div class="pt-3">
-                                <div class="d-flex justify-content-between align-items-end">
-                                    <div class="flex-grow-1 mr-2" style="min-width: 0;">
-                                        <form class="form-row align-items-end" method="POST" action="/admin/sports/update" data-editor-inline data-editor-label="Update <%= sport.name %> sport title">
-                                            <input type="hidden" name="guid" value="<%= sport.guid %>">
-                                            <div class="form-group col mb-0">
-                                                <label class="sr-only" for="edit-sport-name-<%= sport.guid %>">Sport title</label>
-                                                <input class="form-control" id="edit-sport-name-<%= sport.guid %>" name="name" type="text" maxlength="120" value="<%= sport.name %>" required>
+                <% sports.forEach(sport => { %>
+                    <article id="sport-<%= sport.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3 position-relative" data-sport-guid="<%= sport.guid %>" data-sport-name="<%= sport.name %>">
+                        <details class="admin-disclosure" data-sport-details>
+                            <summary class="admin-card-summary">
+                                <h3 class="h5 d-inline mb-0 text-break"><%= sport.name %></h3>
+                                <span data-sport-edit-feedback class="d-inline-block align-middle ml-3" style="height: 2.5rem; max-width: 65%; overflow: auto; vertical-align: middle;"></span>
+                            </summary>
+                            <details class="admin-disclosure admin-form-section" data-editor-disclosure>
+                                <summary class="admin-card-summary"><h4 id="sport-details-heading-<%= sport.guid %>" class="h6 d-inline mb-0">Sport details</h4></summary>
+                                <form class="form-row align-items-end mt-3" method="POST" action="/admin/sports/update" data-editor-label="Update <%= sport.name %> sport title">
+                                    <input type="hidden" name="guid" value="<%= sport.guid %>">
+                                    <div class="form-group col mb-0">
+                                        <label for="edit-sport-name-<%= sport.guid %>">Sport name</label>
+                                        <input class="form-control" id="edit-sport-name-<%= sport.guid %>" name="name" type="text" maxlength="120" value="<%= sport.name %>" required>
+                                    </div>
+                                    <div class="col-auto"><button class="btn btn-primary" type="submit">Update</button></div>
+                                </form>
+                            </details>
+                            <details id="course-defaults-<%= sport.guid %>" class="admin-disclosure admin-form-section" data-sport-section-details>
+                                <% const sectionCount = (sport.course_description_sections || []).length; %>
+                                <summary class="admin-card-summary"><h4 class="h6 d-inline mb-0" id="course-defaults-heading-<%= sport.guid %>">Course defaults</h4> <span class="badge <%= sectionCount ? 'badge-info' : 'badge-light text-muted' %> ml-2" data-sport-section-count><%= sectionCount ? sectionCount + (sectionCount === 1 ? ' default section' : ' default sections') : 'No default sections' %></span> <span class="d-inline-block align-middle ml-2" data-section-add-feedback></span></summary>
+                                <p class="small mt-3 mb-1">Default description sections for courses targeting this sport. Courses can inherit each section, override it, or append their own sections.</p>
+                                <p class="small text-muted mb-3">Changes apply to inherited sections only; unique course overrides are preserved.</p>
+                                <div class="alert alert-danger" data-section-delete-error role="alert" tabindex="-1" hidden></div>
+                                <div class="sr-only" data-section-delete-feedback role="status" aria-live="polite"></div>
+                                <%- include('partials/sport-course-sections', { sport }) %>
+                            </details>
+                            <% if (isAdmin) { const sportFaqs = faqs.filter(faq => faq.sport_guid === sport.guid); %>
+                                <section id="sport-faq-<%= sport.guid %>" data-sport-faq-card>
+                                    <details class="admin-disclosure admin-form-section mb-0" data-sport-faq-details>
+                                        <summary class="admin-card-summary"><h4 class="h6 d-inline mb-0">FAQs</h4> <span class="badge <%= sportFaqs.length ? 'badge-info' : 'badge-light text-muted' %> ml-2" data-sport-faq-count><%= sportFaqs.length ? sportFaqs.length + (sportFaqs.length === 1 ? ' FAQ' : ' FAQs') : 'No FAQs' %></span> <span class="d-inline-block align-middle ml-2"><span class="alert alert-success mb-0 py-1 px-2 small" data-faq-add-feedback role="status" aria-live="polite" hidden></span></span></summary>
+                                        <p class="small mt-3">Answers are shared by every course assigned to this sport, across all facilities. Only Administrators can edit them.</p>
+                                        <div class="alert alert-danger" data-faq-delete-error role="alert" tabindex="-1" hidden></div>
+                                        <div class="sr-only" data-faq-delete-feedback role="status" aria-live="polite"></div>
+                                        <details id="add-faq-<%= sport.guid %>" class="admin-disclosure border rounded p-3 mb-3" data-editor-disclosure>
+                                            <summary class="admin-card-summary"><h5 class="h6 d-inline mb-0">Add FAQ</h5></summary>
+                                            <form class="mt-3" method="POST" action="/admin/courses/faqs" data-editor-label="Add FAQ" data-faq-add>
+                                                <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                                                <%- include('partials/sport-faq-form', { faq: null, prefix: 'new-faq-' + sport.guid }) %>
+                                                <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
+                                                <button class="btn btn-primary btn-sm" type="submit">Add FAQ</button>
+                                            </form>
+                                        </details>
+                                        <div data-sport-faq-list>
+                                            <% if (sportFaqs.length) { %><h5 class="h6 border-top pt-4 mt-4 mb-3">Existing FAQs</h5><% } %>
+                                            <div data-card-order-list="/admin/courses/faqs/order" data-order-sport="<%= sport.guid %>">
+                                            <p class="small mb-2" data-order-feedback role="status" aria-live="polite"></p>
+                                            <div class="alert alert-danger" data-order-error role="alert" tabindex="-1" hidden></div>
+                                            <% sportFaqs.forEach(faq => { %>
+                                                <% const removeFaqId = `remove-faq-${faq.guid}`; %>
+                                                <div class="mb-3 position-relative" data-faq-card="<%= faq.guid %>" data-order-id="<%= faq.guid %>">
+                                                    <details class="admin-disclosure border rounded p-3" data-editor-disclosure>
+                                                        <summary class="admin-card-summary card-order-summary"><h5 class="h6 d-inline mb-0 text-break"><%= faq.question %></h5></summary>
+                                                        <form class="mt-3" method="POST" action="/admin/courses/faqs/update" data-editor-label="Edit FAQ" data-editor-preview="false" data-faq-edit>
+                                                            <input type="hidden" name="guid" value="<%= faq.guid %>">
+                                                            <input type="hidden" name="sport_guid" value="<%= sport.guid %>">
+                                                            <%- include('partials/sport-faq-form', { faq, prefix: 'faq-' + faq.guid }) %>
+                                                            <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+                                                                <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
+                                                                <button class="btn btn-outline-danger btn-sm" type="submit" form="<%= removeFaqId %>">Remove FAQ</button>
+                                                                <button class="btn btn-primary btn-sm" type="submit">Save FAQ</button>
+                                                            </div>
+                                                        </form>
+                                                        <form id="<%= removeFaqId %>" method="POST" action="/admin/courses/faqs/destroy" hidden>
+                                                            <input type="hidden" name="guid" value="<%= faq.guid %>">
+                                                        </form>
+                                                    </details>
+                                                    <%- include('partials/card-order-controls', { label: faq.question }) %>
+                                                    <button type="submit" form="<%= removeFaqId %>" class="btn btn-outline-danger btn-sm position-absolute" style="top: 1rem; right: 1rem;" aria-label="Remove FAQ: <%= faq.question %>" title="Remove FAQ">
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                                            <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            <% }); %>
                                             </div>
-                                            <div class="col-auto"><button class="btn btn-primary" type="submit">Update</button></div>
-                                        </form>
-                                    </div>
-                                    <div class="d-flex align-items-center flex-shrink-0">
-                                        <form method="POST" action="/admin/sports/destroy">
-                                            <input type="hidden" name="guid" value="<%= sport.guid %>">
-                                            <button class="btn btn-outline-danger" type="submit" aria-label="Delete <%= sport.name %>">Delete</button>
-                                        </form>
-                                    </div>
-                                </div>
-                                <section class="border rounded bg-light p-3 mt-3" aria-labelledby="course-defaults-heading-<%= sport.guid %>">
-                                    <div class="d-flex flex-wrap align-items-center justify-content-between">
-                                        <h3 class="h6 mb-2" id="course-defaults-heading-<%= sport.guid %>"><%= sport.name %> course defaults <span class="text-muted font-weight-normal">(<%= (sport.course_description_sections || []).length %> default sections)</span></h3>
-                                        <button class="btn btn-outline-primary btn-sm mb-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="course-defaults-<%= sport.guid %>">Edit course defaults</button>
-                                    </div>
-                                    <p class="small mb-1">Default description sections for courses targeting this sport. Courses can inherit each section, override it, or append their own sections.</p>
-                                    <p class="small text-muted mb-0">Changes apply to inherited sections only; unique course overrides are preserved.</p>
-                                    <div id="course-defaults-<%= sport.guid %>" data-edit-panel hidden>
-                                        <form class="mt-3" method="POST" action="/admin/sports/course-defaults" data-editor-label="<%= sport.name %> course defaults">
-                                            <input type="hidden" name="guid" value="<%= sport.guid %>">
-                                            <%- include('partials/description-sections-editor', { field: 'course_description_sections', sections: sport.course_description_sections || [] }) %>
-                                        </form>
-                                    </div>
+                                        </div>
+                                    </details>
                                 </section>
-                                </div>
-                                </details>
-                            </li>
-                        <% }); %>
-                    </ul>
-                </article>
+                            <% } %>
+                        </details>
+                        <form method="POST" action="/admin/sports/destroy" data-sport-delete>
+                            <input type="hidden" name="guid" value="<%= sport.guid %>">
+                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= sport.name %>">Delete sport</button>
+                        </form>
+                    </article>
+                <% }); %>
             <% } else { %>
                 <p class="text-muted border-top pt-3">No sports have been added.</p>
             <% } %>

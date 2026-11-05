@@ -8,109 +8,155 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <style>
+        .settings-admin main .form-control { max-width: none; }
+    </style>
 </head>
 
-<body class="bg-light">
+<body class="bg-light settings-admin">
     <%- include('partials/navigation') %>
     <main class="container py-5">
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Settings</h1>
-                <p class="text-muted mb-0">Configure the site and booking credit requests</p>
+                <p class="text-muted mb-0">Configure the site, booking credits and refunds</p>
             </div>
         </header>
 
         <% if (saved) { %><div class="alert alert-success" role="status">Settings saved.</div><% } %>
         <% if (error) { %><div class="alert alert-danger" role="alert">The title is required and must be <%= maxLength %> characters or fewer.</div><% } %>
+        <% if (organisationError) { %><div class="alert alert-danger" role="alert">Enter an organisation name of <%= maxLength %> characters or fewer.</div><% } %>
+        <% if (locals.membershipError) { %><div class="alert alert-danger" role="alert">Enter a membership scheme name of <%= maxLength %> characters or fewer.</div><% } %>
+        <% if (windowSaved) { %><div class="alert alert-success" role="status">Credit request period saved.</div><% } %>
+        <% if (windowError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</div><% } %>
+        <% if (lifetimeError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 36500.</div><% } %>
 
-        <section class="bg-white border rounded shadow-sm p-3" aria-labelledby="site-title-heading">
-            <h2 class="h5" id="site-title-heading">Site title</h2>
-            <form method="POST" action="/admin/settings">
+        <div class="admin-save-feedback mb-4">
+            <p class="alert text-muted mb-0" data-admin-save-placeholder>Expand a setting to edit it. Each setting is saved separately.</p>
+        </div>
+
+        <section class="mb-3" aria-labelledby="site-identity-heading">
+            <details class="admin-disclosure bg-white border rounded shadow-sm p-4">
+                <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="site-identity-heading">Site identity</h2></summary>
+        <div class="admin-form-section" data-settings-item>
+            <h3 class="h6" id="site-title-heading">Site title</h3>
+            <form method="POST" action="/admin/settings" data-editor-label="Site title" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="site_title">Title shown at the top of the home page</label>
                     <input class="form-control" id="site_title" name="site_title" type="text" maxlength="<%= maxLength %>" required value="<%= siteTitle %>" aria-describedby="site-title-help">
                     <small class="form-text text-muted" id="site-title-help">Up to <%= maxLength %> characters.</small>
                 </div>
+                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
                 <button class="btn btn-primary" type="submit">Save</button>
             </form>
-            <% if (organisationError) { %><div class="alert alert-danger mt-3" role="alert">Enter an organisation name of <%= maxLength %> characters or fewer.</div><% } %>
-            <form class="mt-3" method="POST" action="/admin/settings/organisation">
+        </div>
+        <div class="admin-form-section" data-settings-item>
+            <h3 class="h6" id="organisation-heading">Organisation name</h3>
+            <form method="POST" action="/admin/settings/organisation" data-editor-label="Organisation name" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="organisation-name">Organisation name</label>
                     <input class="form-control" id="organisation-name" name="organisation_name" type="text" maxlength="<%= maxLength %>" required value="<%= organisationName %>" aria-describedby="organisation-help">
                     <small class="form-text text-muted" id="organisation-help">Used in the credit and refund guidance. Defaults to Peck'em.</small>
                 </div>
+                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
                 <button class="btn btn-primary" type="submit">Save organisation name</button>
             </form>
-        </section>
-
-        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="membership-scheme-heading">
-            <h2 class="h5" id="membership-scheme-heading">Membership scheme</h2>
-            <% if (locals.membershipError) { %><div class="alert alert-danger" role="alert">Enter a membership scheme name of <%= maxLength %> characters or fewer.</div><% } %>
-            <form method="POST" action="/admin/settings/membership-scheme">
-                <div class="form-group">
-                    <label for="membership-scheme">Membership scheme name</label>
-                    <input class="form-control" id="membership-scheme" name="membership_scheme" type="text" maxlength="<%= maxLength %>" required value="<%= locals.membershipScheme || 'GLL Better Card' %>" aria-describedby="membership-scheme-help">
-                    <small class="form-text text-muted" id="membership-scheme-help">Used before "membership number" in My membership. Changing the scheme name does not change saved membership numbers.</small>
-                </div>
-                <button class="btn btn-primary" type="submit">Save membership scheme</button>
-            </form>
-        </section>
-        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="site-logo-heading">
-            <h2 class="h5" id="site-logo-heading">Logo</h2>
+        </div>
+        <div class="admin-form-section mb-0" data-settings-item>
+            <h3 class="h6" id="site-logo-heading">Logo</h3>
             <% if (hasLogo) { %>
                 <div class="border rounded p-3 mb-3 bg-light d-inline-block"><img src="/site-logo?v=<%= Date.now() %>" alt="Current logo" style="height: 3rem; width: auto; max-width: 16rem;"></div>
             <% } else { %>
                 <p class="text-muted">No logo set. Only the site title is shown.</p>
             <% } %>
-            <form method="POST" action="/admin/settings/logo" data-admin-logo>
+            <form method="POST" action="/admin/settings/logo" data-admin-logo data-editor-label="Logo" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="site_logo">Upload a logo</label>
                     <input class="form-control-file" id="site_logo" name="site_logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="site-logo-help" required>
                     <small class="form-text text-muted" id="site-logo-help">PNG, JPEG, WebP or SVG, up to 512 KB. It appears in the public header and admin navigation bar.</small>
                 </div>
-                <button class="btn btn-primary" type="submit" id="logo-upload">Upload logo</button>
+                <div class="d-flex flex-wrap align-items-center" style="gap: 0.5rem;">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
+                    <% if (hasLogo) { %>
+                        <button class="btn btn-outline-danger btn-sm" type="submit" form="remove-site-logo">Remove logo</button>
+                    <% } %>
+                    <button class="btn btn-primary btn-sm" type="submit" id="logo-upload">Upload logo</button>
+                </div>
             </form>
             <% if (hasLogo) { %>
-                <form class="d-inline ml-2" method="POST" action="/admin/settings/logo/remove">
-                    <button class="btn btn-outline-danger" type="submit">Remove logo</button>
-                </form>
+                <form id="remove-site-logo" method="POST" action="/admin/settings/logo/remove" hidden></form>
             <% } %>
+        </div>
+            </details>
         </section>
-        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="request-window">
-            <h2 id="request-window" class="h5">Credit request period</h2>
-            <p>Credits and refunds shows only bookings that ended within this many days. Residents can submit new credit requests only for those bookings. Existing requests remain available for review.</p>
-            <% if (windowSaved) { %><div class="alert alert-success" role="status">Credit request period saved.</div><% } %>
-            <% if (windowError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</div><% } %>
-            <form method="POST" action="/admin/settings/credit-request-period">
+        <section class="mb-3" aria-labelledby="membership-scheme-heading">
+            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
+            <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="membership-scheme-heading">Membership scheme</h2></summary>
+            <form method="POST" action="/admin/settings/membership-scheme" data-editor-label="Membership scheme" data-editor-preview="false">
+                <div class="form-group">
+                    <label for="membership-scheme">Membership scheme name</label>
+                    <input class="form-control" id="membership-scheme" name="membership_scheme" type="text" maxlength="<%= maxLength %>" required value="<%= locals.membershipScheme || 'GLL Better Card' %>" aria-describedby="membership-scheme-help">
+                    <small class="form-text text-muted" id="membership-scheme-help">Used before "membership number" in My membership. Changing the scheme name does not change saved membership numbers.</small>
+                </div>
+                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
+                <button class="btn btn-primary" type="submit">Save membership scheme</button>
+            </form>
+            </details>
+        </section>
+        <section class="mb-3" aria-labelledby="credit-request-settings-heading">
+            <details class="admin-disclosure bg-white border rounded shadow-sm p-4">
+            <summary class="admin-card-summary"><h2 id="credit-request-settings-heading" class="h5 d-inline mb-0">Credit and refund settings</h2></summary>
+            <div class="admin-form-section" data-credit-settings-item>
+            <h3 id="refunds-heading" class="h6">Bank and external refunds</h3>
+            <p>Master control overriding all other refund settings, including individual credit eligibility and weather approvals. Disabling blocks new bank refund requests, completion of pending bank refunds and external booking refunds. Account-credit awards and spending are unaffected. Pending requests remain visible but cannot be marked as done while disabled. Refund requests cannot be declined. Existing eligibility is preserved if refunds are re-enabled.</p>
+            <form method="POST" action="/admin/settings/refunds" data-editor-label="Bank and external refunds" data-editor-preview="false" data-editor-inline>
+                <label for="refunds-enabled">Refunds</label>
+                <select class="form-control mb-2" id="refunds-enabled" name="enabled">
+                    <option value="1" <%= locals.refundsEnabled !== false ? 'selected' : '' %>>Enabled</option>
+                    <option value="0" <%= locals.refundsEnabled === false ? 'selected' : '' %>>Disabled</option>
+                </select>
+                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
+                <button class="btn btn-primary btn-sm" type="submit">Save refunds setting</button>
+            </form>
+            </div>
+            <div class="admin-form-section" data-credit-settings-item>
+            <h3 id="request-window" class="h6">Credit request period</h3>
+            <p>Bookings older than x days can't be reimbursed.</p>
+            <form method="POST" action="/admin/settings/credit-request-period" data-editor-label="Credit request period" data-editor-preview="false" data-editor-inline>
                 <label for="credit-request-days">Number of days</label>
                 <input class="form-control mb-2" id="credit-request-days" name="days" type="number" min="1" max="365" step="1" required value="<%= creditRequestDays %>">
+                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                 <button class="btn btn-primary btn-sm" type="submit">Save period</button>
             </form>
-        </section>
-        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="credit-lifetime-heading">
-            <h2 id="credit-lifetime-heading" class="h5">Credit lifetime</h2>
-            <p>How many days newly issued credits remain available, measured from issue time. Changing this does not alter existing expiry dates. Spent or expired credits are hidden and cannot be used at checkout. A bank refund requested before expiry remains available for administrator review.</p>
-            <% if (lifetimeError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 36500.</div><% } %>
-            <form method="POST" action="/admin/settings/credit-lifetime">
+            </div>
+            <div class="admin-form-section mb-0" data-credit-settings-item>
+            <h3 id="credit-lifetime-heading" class="h6">Credit lifetime</h3>
+            <p>Credits expire after x days, measured from issue time. Changing this does not alter existing expiry dates. Spent or expired credits are hidden and cannot be used at checkout. A bank refund requested before expiry remains available for administrator review.</p>
+            <form method="POST" action="/admin/settings/credit-lifetime" data-editor-label="Credit lifetime" data-editor-preview="false" data-editor-inline>
                 <label for="credit-lifetime-days">Credit lifetime in days</label>
                 <input class="form-control mb-2" id="credit-lifetime-days" name="days" type="number" min="1" max="36500" step="1" required value="<%= creditLifetimeDays %>">
+                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                 <button class="btn btn-primary btn-sm" type="submit">Save credit lifetime</button>
             </form>
+            </div>
+            </details>
         </section>
-        <section class="bg-white border rounded shadow-sm p-3 mt-3" aria-labelledby="auto-approval-heading">
-            <h2 id="auto-approval-heading" class="h5">Weather credit slot auto-approval</h2>
+        <section class="mb-3" aria-labelledby="auto-approval-heading">
+            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
+            <summary class="admin-card-summary"><h2 id="auto-approval-heading" class="h5 d-inline mb-0">Weather credit slot auto-approval</h2></summary>
             <p>Allow administrators to approve a time slot across all facilities. Pending and later Weather requests for the exact same start and end time receive credit automatically. The card-paid portion is refundable; reissued credits retain their original refund eligibility. Only Weather requests can be auto-approved. Other requests require individual review; their card-paid portion is non-refundable unless the administrator allows a bank refund.</p>
             <p>Disabling pauses all saved slots without removing them or reversing credits. Re-enabling applies them to new requests; requests submitted while disabled still require review. The slot list uses the Credit request period above.</p>
-            <form method="POST" action="/admin/settings/credit-slot-auto-approval">
+            <form method="POST" action="/admin/settings/credit-slot-auto-approval" data-editor-label="Weather credit slot auto-approval" data-editor-preview="false">
                 <label for="credit-slot-auto-approval">Auto-approval</label>
                 <select class="form-control mb-2" id="credit-slot-auto-approval" name="enabled">
                     <option value="0" <%= !autoApprovalEnabled ? 'selected' : '' %>>Disabled</option>
                     <option value="1" <%= autoApprovalEnabled ? 'selected' : '' %>>Enabled</option>
                 </select>
+                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                 <button class="btn btn-primary btn-sm" type="submit">Save auto-approval</button>
             </form>
+            </details>
         </section>
     </main>
 </body>

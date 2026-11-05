@@ -116,13 +116,23 @@ async function findByGuid(guid) {
 }
 
 async function search(query, limit = 20) {
-    const prefix = `${query.toLowerCase()}%`;
+    const normalized = query.trim().toLowerCase().replace(/\s+/g, ' ');
+    const escapeLike = value => value.replace(/[\\%_]/g, '\\$&');
+    const prefix = `${escapeLike(normalized)}%`;
+    const terms = normalized.split(' ').map(term => `${escapeLike(term)}%`);
     const { rows } = await pool.query(
         `SELECT guid, name, email, role, ${assignedRoles} FROM profiles
-         WHERE deleted_at IS NULL AND (LOWER(name) LIKE $1 OR LOWER(email) LIKE $1)
+         WHERE deleted_at IS NULL AND (LOWER(name) LIKE $1 OR LOWER(email) LIKE $1 OR
+             NOT EXISTS (
+                 SELECT 1 FROM unnest($3::text[]) AS terms(pattern)
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM regexp_split_to_table(LOWER(name), '\\s+') AS words(word)
+                     WHERE words.word LIKE terms.pattern
+                 )
+             ))
          ORDER BY CASE WHEN LOWER(name) LIKE $1 THEN 0 ELSE 1 END, LOWER(name)
          LIMIT $2`,
-        [prefix, limit]
+        [prefix, limit, terms]
     );
     return rows;
 }

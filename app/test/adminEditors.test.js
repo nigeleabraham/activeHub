@@ -16,6 +16,100 @@ const locals = {
     switchableRoles: []
 };
 
+test('FAQ additions highlight only the confirmed new card and announce beside the heading', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    function highlightAddedCard('), source.indexOf('    async function save('));
+    for (const addedIds of [[], ['new'], ['new', 'another']]) {
+        let reset = false;
+        let replacements = 0;
+        let initialized = false;
+        let fadeStarted = false;
+        let finishHighlight;
+        const notice = { hidden: true, textContent: '' };
+        const highlighted = new Set();
+        const focused = [];
+        const scrolled = [];
+        const row = id => ({
+            dataset: { faqCard: id },
+            classList: {
+                add(name) { assert.equal(name, 'section-added-highlight'); highlighted.add(id); },
+                remove(name) { assert.equal(name, 'section-added-highlight'); highlighted.delete(id); }
+            },
+            querySelector(selector) {
+                assert.equal(selector, 'summary');
+                return { focus() { focused.push(id); } };
+            },
+            scrollIntoView() { scrolled.push(id); }
+        });
+        const previous = row('existing');
+        const list = { querySelectorAll: () => [previous, ...addedIds.map(row)] };
+        const count = {};
+        const card = {
+            id: 'sport-faq-one',
+            querySelectorAll: () => [previous],
+            querySelector(selector) {
+                if (selector === '[data-faq-add-feedback]') return notice;
+                return { replaceWith() { replacements++; } };
+            }
+        };
+        const form = {
+            isConnected: true, inert: true,
+            closest: () => card,
+            hasAttribute: () => false,
+            reset() { reset = true; }
+        };
+        const entry = { form };
+        const context = {
+            entry, response: { text: async () => '' }, entries: [entry],
+            DOMParser: class {
+                parseFromString() {
+                    return { getElementById: () => ({
+                        querySelector: selector => selector === '[data-sport-faq-list]' ? list : count
+                    }) };
+                }
+            },
+            initializeEditors() { initialized = true; },
+            resetNoticeFade(node, fade) {
+                assert.equal(node, notice);
+                assert.equal(fade, true);
+                fadeStarted = true;
+            },
+            window: {
+                setTimeout(callback, delay) {
+                    assert.equal(delay, 2500);
+                    finishHighlight = callback;
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(script, context);
+        const result = vm.runInContext('refreshFaqs(entry, response)', context);
+        if (addedIds.length !== 1) {
+            await assert.rejects(result, /FAQ change could not be confirmed/);
+            assert.equal(replacements, 0);
+            assert.equal(reset, false);
+            assert.equal(highlighted.size, 0);
+            continue;
+        }
+        await result;
+        assert.equal(replacements, 2);
+        assert.equal(initialized, true);
+        assert.equal(reset, true);
+        assert.equal(notice.hidden, false);
+        assert.equal(notice.textContent, 'FAQ added successfully.');
+        assert.equal(fadeStarted, true);
+        assert.deepEqual([...highlighted], ['new']);
+        assert.deepEqual(focused, ['new']);
+        assert.deepEqual(scrolled, ['new']);
+        assert.equal(form.inert, false);
+        finishHighlight();
+        assert.equal(highlighted.size, 0);
+    }
+    const sports = await readFile(path.join(__dirname, '../views/sports.ejs'), 'utf8');
+    assert.match(sports, /<summary[^>]*>.*data-faq-add-feedback.*role="status".*aria-live="polite".*<\/summary>/);
+    assert.match(sports, /@media \(prefers-reduced-motion: reduce\) \{\s*\.sports-admin \.section-added-highlight > details \{ animation: none; background-color: #d4edda;/);
+});
+
 test('every admin navigation renders the shared editor workflow with valid JavaScript', async () => {
     for (const activePage of ['facilities', 'courses', 'sports', 'opening-hours', 'bookings', 'court-configuration', 'profiles', 'roles', 'settings', 'credit-requests', 'credit-refunds']) {
         const html = await ejs.renderFile(navigation, { ...locals, activePage });
@@ -252,8 +346,15 @@ test('course defaults save independently of the sport name and reject invalid se
 test('sports directory exposes deletion feedback and keeps an empty replacement list', async () => {
     for (const sports of [[], [{ guid: 'sport-one', name: 'Tennis' }]]) {
         const html = await ejs.renderFile(path.join(__dirname, '../views/sports.ejs'), {
-            ...locals, activePage: 'sports', sports
+            ...locals, activePage: 'sports', sports, faqs: [], error: ''
         });
+        assert.match(html, /<title>Sports and Course Descriptions \| ActiveHub<\/title>/);
+        assert.match(html, /<h1 class="h2 mb-1">Sports and Course Descriptions<\/h1>/);
+        assert.match(html, /<body class="bg-light sports-admin">/);
+        assert.match(html, /\.sports-admin main details:not\(\[open\]\) > summary\s*\{\s*min-height: 1\.5rem;/);
+        assert.match(html, /\.sports-admin \[data-sport-guid\]:has\(> details:not\(\[open\]\)\)/);
+        assert.match(html, /\.sports-admin \[data-faq-card\]:has\(> details:not\(\[open\]\)\) > button/);
+        assert.match(html, /href="\/admin\/sports"[^>]*>Sports and Course Descriptions<\/a>/);
         assert.match(html, /data-sports-directory/);
         assert.match(html, /data-admin-save-placeholder>You can add, remove, and edit sports here\. These can then be assigned to the sports facilities\.<\/p>/);
         assert.match(html, /data-sport-count/);
@@ -262,19 +363,33 @@ test('sports directory exposes deletion feedback and keeps an empty replacement 
         assert.match(html, /data-sport-feedback role="status" aria-live="polite"/);
         if (sports.length) assert.match(html, /data-sport-guid="sport-one" data-sport-name="Tennis"/);
         if (sports.length) {
-            assert.match(html, /Tennis course defaults/);
-            assert.match(html, /data-editor-inline/);
-            assert.match(html, />Sport title<\/label>/);
-            assert.match(html, /<details data-sport-details>\s*<summary[^>]*>\s*<span>Tennis<\/span>\s*<span data-sport-edit-feedback/);
-            assert.match(html, /class="sr-only"[^>]*>Sport title<\/label>/);
-            assert.match(html, />Update<\/button>/);
+            const card = html.match(/<article id="sport-sport-one"[\s\S]*?<\/article>/)[0];
+            const disclosure = card.match(/<details class="admin-disclosure" data-sport-details>[\s\S]*<\/details>/)[0];
+            assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+            const summary = disclosure.match(/<summary class="admin-card-summary"[^>]*>([\s\S]*?)<\/summary>/)[1];
+            assert.match(summary, /<h3 class="h5 d-inline mb-0 text-break">Tennis<\/h3>\s*<span data-sport-edit-feedback/);
+            assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Tennis');
+            assert.match(disclosure, /<details class="admin-disclosure admin-form-section" data-editor-disclosure>\s*<summary class="admin-card-summary"><h4[^>]*>Sport details<\/h4><\/summary>/);
+            assert.match(disclosure, /<h4 id="sport-details-heading-sport-one" class="h6 d-inline mb-0">Sport details/);
+            assert.match(disclosure, /<h4 class="h6 d-inline mb-0" id="course-defaults-heading-sport-one">Course defaults/);
+            assert.match(disclosure, /<h4 class="h6 d-inline mb-0">FAQs<\/h4>/);
+            assert.match(disclosure, /<details id="course-defaults-sport-one" class="admin-disclosure admin-form-section" data-sport-section-details>\s*<summary class="admin-card-summary"><h4[^>]*>Course defaults/);
+            assert.doesNotMatch(disclosure, /data-editor-inline|data-edit-toggle|data-edit-panel|>Edit course defaults</);
+            assert.match(disclosure, /action="\/admin\/sports\/course-sections\/create"/);
+            assert.match(disclosure, /<label for="edit-sport-name-sport-one">Sport name<\/label>/);
+            assert.match(disclosure, />Update<\/button>/);
+            assert.doesNotMatch(disclosure, /action="\/admin\/sports\/destroy"/);
+            assert.match(card, /<\/details>\s*<form method="POST" action="\/admin\/sports\/destroy" data-sport-delete>[\s\S]*aria-label="Delete Tennis">Delete sport<\/button>/);
+            assert.equal((card.replace(disclosure, '').match(/<button/g) || []).length, 1);
             assert.doesNotMatch(html, /aria-controls="edit-sport-/);
-            assert.match(html, /action="\/admin\/sports\/course-defaults"/);
-            assert.match(html, />Save course defaults<\/button>/);
+            assert.doesNotMatch(disclosure, /action="\/admin\/sports\/course-defaults"|>Save course defaults</);
+            assert.match(disclosure, /data-editor-disclosure>\s*<summary[^>]*><h5 class="h6 d-inline mb-0">Add section<\/h5><\/summary>/);
             assert.doesNotMatch(html.match(/action="\/admin\/sports\/update"[\s\S]*?<\/form>/)[0], /description-sections/);
             assert.match(html, /select, textarea, \[data-description-sections\]/);
         }
         else assert.match(html, /No sports have been added/);
+        assert.match(html, /<details id="add-sport-panel"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0"><h2 id="add-sport-heading"[^>]*>Add sport<\/h2><\/summary>\s*<form method="POST" action="\/admin\/sports"/);
+        assert.match(html, /document\.querySelector\('#add-sport-panel > summary'\)/);
     }
 });
 
@@ -382,33 +497,42 @@ test('citizen pages and signed-out pages do not load admin editing behaviour', a
     }
 });
 
-test('course actions share a row and editing opens in a separate panel', async () => {
+test('course cards expand from the title to the edit form with runs below and delete kept separate', async () => {
     const course = { guid: 'course-one', name: 'Tennis coaching', description: '', facility_guids: ['facility-one'], sport_guids: ['sport-one'] };
     const facility = { guid: 'facility-one', name: 'Sports centre', address: '1 High Street', postcode: 'SW1A 1AA', courses: [course] };
     const html = await ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
         ...locals, activePage: 'courses', courses: [course], facilities: [facility],
         sports: [{ guid: 'sport-one', name: 'Tennis' }], faqs: [], error: ''
     });
-    assert.match(html, /data-edit-toggle[^>]*aria-controls="edit-course-course-one"[^>]*>Edit<\/button>/);
-    assert.match(html, /aria-label="Edit Tennis coaching"/);
-    assert.match(html, /<\/button>\s*<form method="POST" action="\/admin\/courses\/destroy">/);
-    assert.match(html, /id="edit-course-course-one" data-edit-panel hidden/);
+    assert.match(html, /<details id="add-course-panel-directory"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0">\s*<h2 id="add-course-heading"[^>]*>Add course<\/h2>\s*<span data-course-add-feedback/);
     assert.match(html, /id="add-course-directory"[^>]*data-editor-success-inline/);
     assert.match(html, /data-course-facility/);
     assert.match(html, /data-course-list/);
     assert.match(html, /data-course-guid="course-one" data-course-name="Tennis coaching"/);
     assert.match(html, /data-course-feedback role="status" aria-live="polite" aria-atomic="true"/);
     assert.match(html, /data-course-count/);
-    assert.match(html, /data-course-add-feedback/);
-    assert.match(html, /aria-controls="add-course-panel-directory">Add course<\/button>\s*<div[^>]*data-course-add-feedback/);
     const addForm = html.match(/<form[^>]*id="add-course-directory"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(addForm, /data-course-add-feedback/);
-    assert.match(html, /action="\/admin\/courses\/update" data-editor-label="Edit Tennis coaching"/);
-    assert.doesNotMatch(html, /<summary[^>]*>Edit/);
+    assert.doesNotMatch(html, /data-edit-toggle[^>]*aria-controls="(?:add-course-panel|edit-course)-/);
+    const card = html.match(/<article id="course-course-one"[\s\S]*?<\/article>/)[0];
+    const disclosure = card.match(/<details class="admin-disclosure" data-course-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
+    assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+    const summary = disclosure.match(/<summary class="admin-card-summary"[^>]*>([\s\S]*?)<\/summary>/)[1];
+    assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Tennis coaching');
+    assert.ok(!card.includes('data-course-description'), 'Course description is not replayed on the card');
+    assert.match(disclosure, /<\/summary>\s*<form method="POST" action="\/admin\/courses\/update" data-editor-preview="false" data-editor-label="Edit Tennis coaching">/);
+    assert.match(disclosure, /class="admin-form-section-title">Facility runs \(0\)<\/h4>/);
+    assert.ok(disclosure.indexOf('/admin/courses/update') < disclosure.indexOf('Facility runs'));
+    assert.doesNotMatch(disclosure, /action="\/admin\/courses\/destroy"/);
+    assert.match(card.replace(disclosure, ''), /action="\/admin\/courses\/destroy"[\s\S]*aria-label="Delete Tennis coaching">Delete<\/button>/);
     const editForm = html.match(/<form[^>]*action="\/admin\/courses\/update"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(editForm, /name="facility_guid"/);
     assert.doesNotMatch(editForm, /name="facility_guids"/);
     assert.match(editForm, /name="sport_guids" value="sport-one" checked/);
+    assert.match(html, /'\[data-course-edit\] > summary'/);
+    assert.match(html, /card\.querySelector\('#add-course-panel-directory > summary'\)/);
+    assert.match(html, /\{ kind: 'collapse', entry \}/);
+    assert.match(html, /main \.form-control,\s*main \.custom-select \{ max-width: none; \}/);
 });
 
 test('course updates accept sport and facility assignments', async t => {
@@ -455,7 +579,7 @@ test('course creation and deletion redirect with action-specific confirmation on
     }
 });
 
-test('logo upload uses the shared form workflow and retains explicit upload constraints', async () => {
+test('settings use title-led facility-style cards and preserve the logo upload workflow', async () => {
     const html = await ejs.renderFile(path.join(__dirname, '../views/settings.ejs'), {
         ...locals,
         saved: false,
@@ -464,7 +588,7 @@ test('logo upload uses the shared form workflow and retains explicit upload cons
         siteTitle: 'ActiveHub',
         organisationError: false,
         organisationName: 'Council',
-        hasLogo: false,
+        hasLogo: true,
         windowSaved: false,
         windowError: false,
         lifetimeError: false,
@@ -475,7 +599,60 @@ test('logo upload uses the shared form workflow and retains explicit upload cons
     assert.match(html, /action="\/admin\/settings\/logo" data-admin-logo/);
     assert.match(html, /name="site_logo" type="file"/);
     assert.match(html, /id="logo-upload">Upload logo/);
+    assert.match(html, /type="submit" form="remove-site-logo">Remove logo/);
+    assert.match(html, /<form id="remove-site-logo" method="POST" action="\/admin\/settings\/logo\/remove" hidden><\/form>/);
+    const logoActions = html.slice(html.indexOf('action="/admin/settings/logo"'), html.indexOf('id="remove-site-logo"'));
+    assert.ok(logoActions.indexOf('>Cancel</button>') < logoActions.indexOf('>Remove logo</button>'));
+    assert.ok(logoActions.indexOf('>Remove logo</button>') < logoActions.indexOf('>Upload logo</button>'));
+    assert.equal((logoActions.match(/btn-sm/g) || []).length, 3);
     assert.doesNotMatch(html, /getElementById\('logo-upload'\)\.addEventListener/);
+    const identity = html.match(/<section class="mb-3" aria-labelledby="site-identity-heading">[\s\S]*?<\/section>/)[0];
+    for (const id of ['site-title-heading', 'organisation-heading', 'site-logo-heading']) {
+        assert.ok(identity.includes(`id="${id}"`));
+    }
+    assert.doesNotMatch(identity, /id="membership-scheme-heading"/);
+    assert.equal((identity.match(/<details\b/g) || []).length, 1);
+    assert.equal((identity.match(/<summary\b/g) || []).length, 1);
+    assert.equal((identity.match(/data-editor-inline/g) || []).length, 3);
+    const creditSettings = html.match(/<section class="mb-3" aria-labelledby="credit-request-settings-heading">[\s\S]*?<\/section>/)[0];
+    assert.equal((creditSettings.match(/<details\b/g) || []).length, 1);
+    assert.equal((creditSettings.match(/<summary\b/g) || []).length, 1);
+    assert.equal((creditSettings.match(/data-editor-inline/g) || []).length, 3);
+    assert.match(creditSettings, />Credit and refund settings<\/h2>/);
+    assert.match(creditSettings, /id="refunds-heading"/);
+    assert.match(creditSettings, /id="request-window"/);
+    assert.match(creditSettings, /id="credit-lifetime-heading"/);
+    const cards = [
+        ...[...identity.matchAll(/<div class="admin-form-section[^"]*" data-settings-item>[\s\S]*?<\/form>/g)].map(match => match[0]),
+        html.match(/<details class="[^"]+" data-editor-disclosure>[\s\S]*?<\/details>/)[0],
+        ...[...creditSettings.matchAll(/<div class="admin-form-section[^"]*" data-credit-settings-item>[\s\S]*?<\/form>/g)].map(match => match[0]),
+        [...html.matchAll(/<details class="[^"]+" data-editor-disclosure>[\s\S]*?<\/details>/g)].at(-1)[0]
+    ];
+    assert.equal(cards.length, 8);
+    const actions = ['', '/organisation', '/logo', '/membership-scheme',
+        '/refunds', '/credit-request-period', '/credit-lifetime', '/credit-slot-auto-approval'];
+    const titles = ['Site title', 'Organisation name', 'Logo', 'Membership scheme',
+        'Bank and external refunds', 'Credit request period', 'Credit lifetime', 'Weather credit slot auto-approval'];
+    cards.forEach((card, index) => {
+        if (index < 3 || (index >= 4 && index <= 6)) {
+            assert.match(card, /data-editor-inline/);
+            assert.ok(card.includes(`>${titles[index]}</h3>`));
+            assert.doesNotMatch(card, /<details|<summary/);
+        } else {
+            assert.match(card, /<details class="admin-disclosure[^"]*" data-editor-disclosure>/);
+            assert.ok(card.includes(`>${titles[index]}</h2></summary>`));
+        }
+        assert.ok(card.includes(`action="/admin/settings${actions[index]}"`));
+        assert.match(card, /data-editor-label="[^"]+" data-editor-preview="false"/);
+        assert.equal((card.match(/data-cancel-edit/g) || []).length, 1);
+        assert.ok(card.indexOf('data-cancel-edit') < card.indexOf('type="submit"'));
+        assert.doesNotMatch(card, /<details[^>]*\bopen\b/);
+    });
+    assert.match(html, /\.settings-admin main \.form-control \{ max-width: none; \}/);
+    assert.match(html, /data-admin-save-placeholder>Expand a setting to edit it/);
+    assert.match(html, /name="credit-slot-auto-approval"|name="enabled"/);
+    assert.match(html, /name="days" type="number" min="1" max="365"/);
+    assert.match(html, /name="days" type="number" min="1" max="36500"/);
 });
 
 test('opening hours templates has a collapsible add card and reserved guidance', async () => {
@@ -485,8 +662,9 @@ test('opening hours templates has a collapsible add card and reserved guidance',
     });
     assert.match(html, /<h1[^>]*>Opening hours templates<\/h1>/);
     assert.match(html, /href="\/admin\/opening-hours"[^>]*>Opening hours templates/);
-    assert.match(html, /aria-controls="add-template-panel">Add template<\/button>/);
-    assert.match(html, /id="add-template-panel" data-edit-panel hidden/);
+    assert.match(html, /<details id="add-template-panel"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0"><h2 id="new-template-heading"[^>]*>Add template<\/h2><\/summary>/);
+    assert.doesNotMatch(html, /data-edit-toggle[^>]*aria-controls="add-template-panel"/);
+    assert.match(html, /document\.querySelector\('#add-template-panel > summary'\)/);
     assert.match(html, /class="admin-save-feedback mb-4"/);
     assert.match(html, /data-admin-save-placeholder>You can add, remove, and edit opening hours templates/);
     assert.match(html, /data-template-list>\s*<p[^>]*>No opening-hours templates yet\.<\/p>\s*<\/div>/);
@@ -497,12 +675,16 @@ test('opening hours templates has a collapsible add card and reserved guidance',
     assert.match(form, /name="dusk_override"/);
 });
 
-test('facility creation has one heading action, grouped fields and optional advanced coordinates', async () => {
+test('facility creation drops down from a single card title with grouped fields and optional advanced coordinates', async () => {
     const html = await ejs.renderFile(path.join(__dirname, '../views/facilities.ejs'), {
         ...locals, facilities: [], sports: [], openingHoursTemplates: []
     });
-    assert.match(html, /data-edit-toggle[^>]*aria-controls="add-facility-panel">Add facility/);
-    assert.match(html, /id="add-facility-panel"[^>]*data-edit-panel hidden/);
+    assert.match(html, /<details id="add-facility-panel"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0"><h2 id="add-facility-heading"[^>]*>Add facility<\/h2><\/summary>/);
+    const disclosure = html.match(/<details id="add-facility-panel"[\s\S]*?<\/form>\s*<\/details>/)[0];
+    assert.doesNotMatch(disclosure, /data-edit-panel|data-edit-toggle|facility-add-toggle|fa-chevron-down/);
+    assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+    assert.match(html, /if \(!details\.hasAttribute\('data-editor-disclosure'\)\)/);
+    assert.match(html, /main \.facility-details-fields \.form-control \{ max-width: none; \}/);
     assert.match(html, /data-admin-save-placeholder>You can add, remove, and edit facilities here/);
     assert.doesNotMatch(html, /card\.scrollIntoView|Facility created\./);
     for (const title of ['Add facility', 'Facility details', 'Activities', 'Booking arrangements', 'Advanced location settings']) {
@@ -511,7 +693,8 @@ test('facility creation has one heading action, grouped fields and optional adva
     assert.match(html, /type="radio" name="booking_mode" value="in_app" checked required/);
     assert.match(html, /type="radio" name="booking_mode" value="external"\s+required/);
     assert.match(html, /Create facility/);
-    assert.equal((html.match(/>Add facility<\/button>/g) || []).length, 1);
+    assert.equal((html.match(/id="add-facility-panel"/g) || []).length, 1);
+    assert.equal((html.match(/>Add facility<\/h2>/g) || []).length, 1);
 });
 
 test('facility add and edit share grouped controls, preserve values and keep delete separate', async () => {
@@ -526,15 +709,20 @@ test('facility add and edit share grouped controls, preserve values and keep del
         google_maps_url: 'https://maps.google.com', sports: [sport], courses: []
     };
     const html = await ejs.renderFile(path.join(__dirname, '../views/facilities.ejs'), {
-        ...locals, facilities: [facility, { ...facility, guid: 'second', booking_mode: 'in_app' }],
+        ...locals, facilities: [facility, { ...facility, guid: 'second', booking_mode: 'in_app',
+            courses: [{ guid: 'course-one', name: 'Junior tennis' }] }],
         sports: [sport, { guid: 'netball', name: 'Netball' }], openingHoursTemplates: [template]
     });
     const forms = [...html.matchAll(/<form\b[^>]*data-facility-form[^>]*>[\s\S]*?<\/form>/g)].map(match => match[0]);
     assert.equal(forms.length, 3);
     for (const form of forms) {
         assert.doesNotMatch(form, /max-width/);
-        assert.match(form, /form-group col-md-8/);
-        assert.match(form, /form-group col-md-4/);
+        assert.doesNotMatch(form, /form-group col-md-8|form-group col-md-4/);
+        assert.match(form, /fieldset class="admin-form-section facility-details-fields"/);
+        assert.equal((form.match(/<fieldset class="admin-form-section/g) || []).length, 3);
+        assert.equal((form.match(/<legend class="admin-form-section-title">/g) || []).length, 3);
+        const order = ['name', 'address', 'postcode', 'description'].map(name => form.indexOf(`name="${name}"`));
+        assert.deepEqual([...order].sort((a, b) => a - b), order);
         assert.match(form, /col-12 col-md-4 col-lg-3/);
         assert.equal((form.match(/form-group col-md-6/g) || []).length, 2);
         for (const heading of ['Facility details', 'Activities', 'Booking arrangements', 'Advanced location settings']) {
@@ -565,6 +753,74 @@ test('facility add and edit share grouped controls, preserve values and keep del
     assert.match(forms[1], /name="external_booking_url"[^>]*value="https:\/\/example.test\/book"[^>]*required/);
     assert.match(forms[2], /value="in_app" checked required/);
     assert.equal((html.match(/action="\/admin\/facilities\/destroy"/g) || []).length, 2);
+    const cards = [...html.matchAll(/<article id="facility-[\s\S]*?<\/article>/g)].map(match => match[0]);
+    assert.equal(cards.length, 2);
+    for (const card of cards) {
+        const disclosure = card.match(/<details class="admin-disclosure" data-facility-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
+        assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+        const summary = disclosure.match(/<summary class="admin-card-summary pr-5">([\s\S]*?)<\/summary>/)[1];
+        assert.match(summary, /<h3 class="h5 d-inline mb-0 text-break">Hall &amp; courts<\/h3>/);
+        assert.match(summary, /data-facility-edit-feedback/);
+        assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Hall &amp; courts');
+        assert.match(disclosure, /data-facility-form/);
+        assert.match(disclosure, /data-editor-label="Edit Hall &amp; courts"/);
+        const outside = card.replace(disclosure, '');
+        for (const replayed of ['1 High Street, SW1A 1AA', 'Open in Google Maps', 'Booking method:', 'Open external booking site', 'Closed today', 'data-facility-summary', '>Edit facility<']) {
+            assert.ok(!card.includes(replayed), replayed);
+        }
+        assert.match(outside, /action="\/admin\/facilities\/destroy"/);
+        assert.doesNotMatch(disclosure, /action="\/admin\/facilities\/destroy"/);
+    }
+    assert.doesNotMatch(cards[0], /Courses \(/);
+    const courses = cards[1].match(/<section class="admin-form-section[^"]*"[^>]*>[\s\S]*?<\/section>/)[0];
+    assert.ok(cards[1].indexOf('data-facility-form') < cards[1].indexOf(courses), 'Courses follow the form');
+    assert.match(courses, /<h4 id="facility-courses-heading-second" class="admin-form-section-title">Courses \(1\)<\/h4>/);
+    assert.match(courses, /Junior tennis/);
+    assert.match(courses, /action="\/admin\/facilities\/courses\/destroy"[\s\S]*value="course-one"/);
+    assert.match(courses, /href="\/admin\/courses">Manage courses/);
+    assert.match(html, /form\.parentElement\.hasAttribute\('data-editor-disclosure'\) \|\| form\.parentElement\.querySelectorAll\('form'\)\.length === 1/);
+    assert.match(html, /\.admin-disclosure\[open\] > summary \{ margin-bottom: 1rem !important; \}/);
+    assert.doesNotMatch(html, /article:has\(/);
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+    assert.equal(new Set(ids).size, ids.length);
+    for (const [, target] of html.matchAll(/<label[^>]*for="([^"]+)"/g)) {
+        assert.ok(ids.includes(target), `Missing label target ${target}`);
+    }
+});
+
+test('court configuration facilities, sports, resources and courts expand from their titles', async () => {
+    const sport = { guid: 'tennis', name: 'Tennis', allowed_months: [1, 2] };
+    const resource = { guid: 'net', name: 'Net A', claim_count: 1 };
+    const facility = {
+        guid: 'centre', name: 'Sports centre', address: '1 High Street', postcode: 'SW1A 1AA',
+        sports: [sport], resources: [resource],
+        options: [{ guid: 'court-one', name: 'Court 1', sport_guid: 'tennis', sport_name: 'Tennis', resources: [resource] }],
+        bookings: []
+    };
+    const html = await ejs.renderFile(path.join(__dirname, '../views/bookings.ejs'), {
+        ...locals, activePage: 'court-configuration', facilities: [facility], error: undefined, created: 0
+    });
+    const card = html.match(/<article id="court-facility-centre"[\s\S]*<\/section>\s*<\/details>\s*<\/article>/)[0];
+    const outer = card.match(/<details class="admin-disclosure">\s*<summary class="admin-card-summary">([\s\S]*?)<\/summary>/);
+    assert.match(outer[1], /<h2 id="facility-centre" class="h5 d-inline mb-0 text-break">Sports centre<\/h2>/);
+    assert.ok(!card.includes('1 High Street'), 'Address is not replayed on the card');
+    for (const title of ['Sport booking months', 'Resources (1)', 'Bookable courts (1)']) {
+        assert.ok(card.includes(`class="admin-form-section-title">${title}</h3>`), title);
+    }
+    for (const [title, action] of [
+        ['Tennis', 'sports/months'], ['Add resource', 'resources'], ['Net A', 'resources/update'],
+        ['Add bookable court', 'options'], ['Court 1 <span class="text-muted font-weight-normal">· Tennis</span>', 'options/update']
+    ]) {
+        const pattern = new RegExp(`<details class="admin-disclosure" data-editor-disclosure>\\s*<summary class="admin-card-summary"[^>]*><h4 class="h6 d-inline mb-0[^"]*">${title}</h4>[\\s\\S]*?</summary>\\s*<form method="POST" action="/admin/bookings/${action}"`);
+        assert.match(card, pattern, title);
+    }
+    for (const action of ['resources/destroy', 'options/destroy']) {
+        const form = card.match(new RegExp(`<form class="position-absolute"[^>]*action="/admin/bookings/${action}"`));
+        assert.ok(form, action);
+        assert.ok(card.lastIndexOf('</details>', form.index) > card.lastIndexOf('<details', form.index), `${action} sits outside the expander`);
+    }
+    assert.ok(!card.includes('>Edit court claims<') && !card.includes('Uses: Net A'));
+    assert.equal((card.match(/data-editor-preview="false"/g) || []).length, 3);
     const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
     assert.equal(new Set(ids).size, ids.length);
     for (const [, target] of html.matchAll(/<label[^>]*for="([^"]+)"/g)) {

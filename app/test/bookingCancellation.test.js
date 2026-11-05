@@ -8,7 +8,7 @@ test('booking cancellations wait for the shared fade, update counts and refresh 
     const html = await ejs.renderFile(path.join(__dirname, '../views/partials/booking-flow-script.ejs'));
     const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
     assert.doesNotThrow(() => new vm.Script(script));
-    const handler = script.slice(script.indexOf("    document.querySelectorAll('form[data-cancel-booking]')"),
+    const handler = script.slice(script.indexOf("    function initializeBookingCancellations()"),
         script.indexOf("    document.querySelectorAll('form[method="));
     for (const status of [204, 404, 200, 500]) {
         for (const lastRow of [false, true]) {
@@ -37,13 +37,18 @@ test('booking cancellations wait for the shared fade, update counts and refresh 
                 }
             };
             const form = {
+                dataset: {},
                 action: '/admin/bookings/cancel',
                 addEventListener(_event, callback) { listener = callback; },
                 querySelectorAll() { return [button]; },
                 getAttribute() { return busy; },
                 setAttribute(_key, value) { busy = value; },
                 removeAttribute() { busy = undefined; },
-                closest(selector) { return selector === 'tr' ? row : details; }
+                closest(selector) {
+                    if (selector === 'tr') return row;
+                    assert.equal(selector, '[data-facility-bookings]');
+                    return details;
+                }
             };
             vm.runInNewContext(handler, {
                 document: { querySelectorAll() { return [form]; } },

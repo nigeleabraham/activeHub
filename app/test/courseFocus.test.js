@@ -85,6 +85,35 @@ test('course sport choices use two equal-width columns', async () => {
     assert.equal((html.match(/type="checkbox"/g) || []).length, 2);
 });
 
+test('course form steps through details then a standard or own description with customisable sections', async () => {
+    const section = { id: 'age', heading: 'Age', text: '<bold>5 to 8</bold>' };
+    const render = locals => ejs.renderFile(path.join(__dirname, '../views/partials/course-form.ejs'), {
+        prefix: 'test-course', facilities: [facility], sports: [{ ...sport, course_description_sections: [section] }], ...locals
+    });
+    const standard = await render({ course: { ...course, description_sport_guid: GUID,
+        description_overrides: { age: { heading: 'Age', text: 'Custom' } } } });
+    assert.ok(standard.indexOf('1. Course details') < standard.indexOf('Sport (select at least one)'));
+    assert.ok(standard.indexOf('Sport (select at least one)') < standard.indexOf('2. Description'));
+    assert.match(standard, /id="test-course-mode-standard" name="description_mode" value="standard" data-description-mode checked/);
+    assert.match(standard, /Use a sport's standard description/);
+    assert.match(standard, /Write my own description/);
+    assert.match(standard, /data-standard-heading="Age" data-standard-text="&lt;bold&gt;5 to 8&lt;\/bold&gt;"/);
+    assert.match(standard, /data-override-mode checked/);
+    assert.match(standard, />Custom<\/textarea>/);
+    assert.match(standard, /data-override-customise[^>]*>Customise</);
+    assert.match(standard, /data-override-reset[^>]*>Reset to standard text</);
+    assert.match(standard, /<strong>5 to 8<\/strong>/);
+    assert.match(standard, /Formatting help/);
+    assert.match(standard, /Preview as customers see it/);
+    assert.doesNotMatch(standard, /Choose description defaults/);
+
+    const own = await render({ course });
+    assert.match(own, /value="own" data-description-mode checked/);
+    assert.doesNotMatch(own, /data-override-mode checked/);
+    const added = await render({ course: null });
+    assert.match(added, /value="standard" data-description-mode checked/);
+});
+
 test('main course saves shared details without dates or a facility', async t => {
     const create = t.mock.method(Courses, 'create', async () => ({ guid: GUID }));
     const admin = router.stack.find(layer => layer.handle.stack).handle;
@@ -186,7 +215,7 @@ test('customer sport sections omit unused sports and FAQs, and retain unassigned
         }
     });
 
-test('course-focused directory shows assignments, flags legacy courses and restricts FAQ controls', async () => {
+test('course-focused directory shows assignments and legacy warnings without FAQ management', async () => {
     for (const isAdmin of [false, true]) {
         const html = await ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
             currentProfile: { name: 'Leader', role: isAdmin ? 'Administrator' : 'Course leader', permissions: ['courses.manage'] },
@@ -194,55 +223,111 @@ test('course-focused directory shows assignments, flags legacy courses and restr
             courses: [course, { ...course, guid: 'legacy', sport_guids: [] }],
             facilities: [facility], sports: [sport], faqs: [faq]
         });
-        assert.match(html, /Sport: Tennis/);
+        assert.doesNotMatch(html, /Sport: Tennis/);
         assert.match(html, /Sport \(select at least one\)/);
         assert.match(html, /Facility runs/);
         assert.match(html, />Location<\/label>/);
         assert.match(html, /<select[^>]*name="facility_guid" required>/);
         assert.doesNotMatch(html, /name="facility_guids"/);
-        assert.match(html, /Sport assignment needed/);
+        assert.equal((html.match(/<span class="badge badge-warning[^"]*">Sport assignment needed<\/span>/g) || []).length, 1);
         assert.equal((html.match(/data-course-guid=/g) || []).length, 2);
-        assert.equal(html.includes('action="/admin/courses/faqs"'), isAdmin);
-        assert.equal(html.includes('action="/admin/courses/faqs/update"'), isAdmin);
-        assert.equal(html.includes('action="/admin/courses/faqs/destroy"'), isAdmin);
-        if (isAdmin) {
-            assert.match(html, /id="sport-faq-[^"]+" data-sport-faq-card/);
-            assert.match(html, /<details data-sport-faq-details>\s*<summary class="h5 mb-0"><h3 class="h5 d-inline">Tennis<\/h3> <span[^>]*data-sport-faq-count>1 FAQ<\/span><\/summary>/);
-            assert.match(html, /data-sport-faq-list/);
-            assert.match(html, /<h4 class="h6">What should I bring\?<\/h4>/);
-            assert.doesNotMatch(html, /<p[^>]*>&lt;b&gt;A racket&lt;\/b&gt;<\/p>/);
-            assert.match(html, /<textarea[^>]*name="answer"[^>]*>&lt;b&gt;A racket&lt;\/b&gt;<\/textarea>/);
-            assert.match(html, /action="\/admin\/courses\/faqs\/update"[^>]*data-editor-preview="false"/);
-            assert.match(html, /data-faq-actions>\s*<button[^>]*>Edit<\/button>\s*<form[^>]*action="\/admin\/courses\/faqs\/destroy">/);
-            assert.match(html, />Delete<\/button>/);
-            assert.doesNotMatch(html, />Edit FAQ<|>Delete FAQ</);
-            assert.match(html, /action="\/admin\/courses\/faqs"[^>]*data-faq-add/);
-            assert.match(html, /data-edit-toggle data-hide-when-editing[^>]*aria-controls="add-faq-[^"]+">Add FAQ<\/button>/);
-            assert.match(html, /data-faq-feedback[^>]*role="status"[^>]*hidden/);
-            assert.match(html, /Question<\/label>\s*<div[^>]*data-faq-feedback-slot[^>]*height: 2.5rem/);
-            assert.match(html, /async function refreshFaqs/);
-            assert.match(html, /resetNoticeFade\(notice, true\)/);
-            assert.match(html, /courseForm \|\| entry.form.matches\('\[data-faq-add\], \[data-faq-edit\]'\)/);
-            assert.match(html, /data-editor-preview="false" data-faq-edit/);
-            assert.match(html, /guard\(\{ kind: 'faq-disclosure', details: summary.parentElement, open: !summary.parentElement.open \}\)/);
-            assert.match(html, /if \(action.kind === 'faq-disclosure'\)/);
-        }
+        assert.doesNotMatch(html, /<form[^>]*action="\/admin\/courses\/faqs|<section[^>]*data-sport-faq-card|The FAQ could not be saved/);
     }
 });
 
 test('collapsed sport FAQ headings distinguish empty, single and multiple FAQs', async () => {
     for (const count of [0, 1, 2]) {
-        const html = await ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
+        const html = await ejs.renderFile(path.join(__dirname, '../views/sports.ejs'), {
             currentProfile: { name: 'Admin', role: 'Administrator' }, isAdmin: true, canSwitchRole: false,
-            area: 'admin', activePage: 'courses', error: '', courses: [], facilities: [facility], sports: [sport],
+            area: 'admin', activePage: 'sports', error: '', sports: [sport],
             faqs: Array.from({ length: count }, (_, index) => ({ ...faq, guid: `faq-${index}` }))
         });
         const label = count === 0 ? 'No FAQs' : count === 1 ? '1 FAQ' : '2 FAQs';
-        assert.ok(html.includes(`data-sport-faq-count>${label}</span></summary>`));
+        assert.ok(html.includes(`data-sport-faq-count>${label}</span>`));
+        assert.match(html, /data-faq-add-feedback role="status" aria-live="polite" hidden/);
         assert.match(html, count ? /badge-info/ : /badge-light text-muted/);
-        assert.doesNotMatch(html, /<details data-sport-faq-details open/);
+        assert.doesNotMatch(html, /<details[^>]*data-sport-faq-details[^>]* open/);
         assert.match(html, /querySelector\('\[data-sport-faq-count\]'\)\.replaceWith\(count\)/);
     }
+});
+
+test('sports directory groups FAQs under the matching sport with dropdown add and edit forms', async () => {
+    for (const isAdmin of [false, true]) {
+        const html = await ejs.renderFile(path.join(__dirname, '../views/sports.ejs'), {
+            currentProfile: { name: 'Manager', role: isAdmin ? 'Administrator' : 'Manager' },
+            isAdmin, canSwitchRole: false, area: 'admin', activePage: 'sports', error: '',
+            sports: [sport, { guid: 'other-sport', name: 'Swimming' }], faqs: [faq]
+        });
+        assert.equal(/<form[^>]*action="\/admin\/courses\/faqs"/.test(html), isAdmin);
+        assert.equal(/<form[^>]*action="\/admin\/courses\/faqs\/update"/.test(html), isAdmin);
+        assert.equal(/<form[^>]*action="\/admin\/courses\/faqs\/destroy"/.test(html), isAdmin);
+        if (!isAdmin) continue;
+        const tennis = html.match(/<article id="sport-[^"]+"[\s\S]*?<\/article>/)[0];
+        const swimming = html.match(/<article id="sport-other-sport"[\s\S]*?<\/article>/)[0];
+        assert.match(tennis, /<h4[^>]*>FAQs<\/h4>/);
+        assert.match(tennis, /data-sport-faq-count>1 FAQ/);
+        assert.match(tennis, /<summary[^>]*><h5[^>]*>What should I bring\?<\/h5><\/summary>/);
+        assert.match(tennis, /<textarea[^>]*name="answer"[^>]*>&lt;b&gt;A racket&lt;\/b&gt;<\/textarea>/);
+        assert.match(tennis, /data-editor-preview="false" data-faq-edit/);
+        assert.ok(tennis.indexOf('>Add FAQ</h5>') < tennis.indexOf('>Existing FAQs</h5>'));
+        assert.ok(tennis.indexOf('>Existing FAQs</h5>') < tennis.indexOf('data-faq-card='));
+        assert.match(tennis, /data-cancel-edit>Cancel<\/button>\s*<button[^>]*form="remove-faq-[^"]+">Remove FAQ<\/button>\s*<button[^>]*>Save FAQ<\/button>/);
+        assert.match(tennis, /aria-label="Remove FAQ: What should I bring\?"/);
+        assert.match(tennis, /data-card-order-list="\/admin\/courses\/faqs\/order"/);
+        assert.match(tennis, /data-card-drag/);
+        assert.match(tennis, /data-card-move="up"/);
+        assert.doesNotMatch(tennis, />Reorder FAQs<|action="\/admin\/courses\/faqs\/move"/);
+        assert.match(tennis, /data-editor-disclosure>\s*<summary[^>]*><h5[^>]*>Add FAQ<\/h5><\/summary>/);
+        assert.match(tennis, /data-faq-feedback[^>]*role="status"[^>]*hidden/);
+        assert.match(swimming, /data-sport-faq-count>No FAQs/);
+        assert.doesNotMatch(swimming, /What should I bring/);
+        assert.match(html, /async function refreshFaqs/);
+    }
+});
+
+test('default section counts match FAQ badge styling for empty, singular and plural lists', async () => {
+    for (const count of [0, 1, 2]) {
+        const html = await ejs.renderFile(path.join(__dirname, '../views/sports.ejs'), {
+            currentProfile: { name: 'Admin', role: 'Administrator' }, isAdmin: true, canSwitchRole: false,
+            area: 'admin', activePage: 'sports', error: '',
+            sports: [{ ...sport, course_description_sections: Array.from({ length: count }, (_, index) => ({
+                id: `section-${index}`, heading: 'Heading', text: 'Text'
+            })) }],
+            faqs: Array.from({ length: count }, (_, index) => ({ ...faq, guid: `faq-${index}` }))
+        });
+        const sectionBadge = html.match(/<span class="([^"]+)" data-sport-section-count>([^<]+)<\/span>/);
+        const faqBadge = html.match(/<span class="([^"]+)" data-sport-faq-count>/);
+        assert.equal(sectionBadge[1], faqBadge[1]);
+        assert.equal(sectionBadge[2], count ? `${count} default section${count === 1 ? '' : 's'}` : 'No default sections');
+    }
+});
+
+test('admin FAQ data loads only on sports, and sports load failures are explicit', async t => {
+    t.mock.method(Sports, 'findAll', async () => [sport]);
+    t.mock.method(Courses, 'findAll', async () => [course]);
+    t.mock.method(Facilities, 'findAll', async () => [facility]);
+    const findFaqs = t.mock.method(Courses, 'findFaqs', async () => [faq]);
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    for (const view of ['courses', 'sports']) {
+        const handler = admin.stack.find(layer => layer.route?.path === '/' + view && layer.route.methods.get).route.stack[0].handle;
+        let rendered;
+        await handler({ query: {} }, {
+            render(name, values) { rendered = { name, values }; },
+            sendStatus(status) { assert.fail(`Unexpected status ${status}`); }
+        });
+        assert.equal(rendered.name, view);
+        if (view === 'courses') {
+            assert.equal(findFaqs.mock.callCount(), 0);
+            assert.equal(rendered.values.faqs, undefined);
+        } else assert.deepEqual(rendered.values.faqs, [faq]);
+    }
+    findFaqs.mock.mockImplementation(async () => { throw new Error('FAQ database unavailable'); });
+    const log = t.mock.method(console, 'error', () => {});
+    let status;
+    const handler = admin.stack.find(layer => layer.route?.path === '/sports' && layer.route.methods.get).route.stack[0].handle;
+    await handler({ query: {} }, { sendStatus(value) { status = value; } });
+    assert.equal(status, 500);
+    assert.equal(log.mock.callCount(), 1);
 });
 
 test('course writes reject missing or malformed sports before calling the model', async t => {

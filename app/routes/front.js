@@ -142,12 +142,12 @@ async function recordAudit(profile, entry) {
 const ADMIN_LINKS = [
     { href: '/admin/facilities', title: 'Facilities', text: 'Venues, descriptions and opening hours templates' },
     { href: '/admin/courses', title: 'Courses', text: 'Courses offered at each facility' },
-    { href: '/admin/sports', title: 'Sports', text: 'The sports facilities can offer' },
+    { href: '/admin/sports', title: 'Sports and Course Descriptions', text: 'Manage sports and their standard course descriptions' },
     { href: '/admin/opening-hours', title: 'Opening hours', text: 'Weekly schedules and exceptions' },
     { href: '/admin/bookings', title: 'Bookings management', text: 'Book and manage slots for any profile' },
     { href: '/admin/court-configuration', title: 'Court configuration', text: 'Configure courts, shared resources and seasonal booking months' },
     { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
-    { href: '/admin/credit-refunds', title: 'Credit refunds', text: 'Review requests to transfer booking credit to a bank account' },
+    { href: '/admin/credit-refunds', title: 'Refund requests', text: 'Review requests to transfer booking credit to a bank account' },
     { href: '/admin/refunds', title: 'Refunds', text: 'Find a booking and refund it as account credit' },
     { href: '/admin/profiles', title: 'Profiles', text: 'People and the role each one holds' },
     { href: '/admin/roles', title: 'Roles', text: 'Create roles and assign responsibilities' },
@@ -627,6 +627,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 admin.get('/refunds', async (req, res) => {
     try {
+        const refundsEnabled = Settings.refundsEnabled(await Settings.getAll());
         const text = name => typeof req.query[name] === 'string' ? req.query[name].trim().slice(0, 100) : '';
         const date = name => DATE_PATTERN.test(req.query[name] || '') && !Number.isNaN(Date.parse(req.query[name])) ? req.query[name] : '';
         const filters = { reference: text('reference'), profile: text('profile'), location: text('location'), from: date('from'), to: date('to') };
@@ -634,12 +635,13 @@ admin.get('/refunds', async (req, res) => {
         const results = searched ? await Bookings.search(filters) : { bookings: [], truncated: false };
         res.render('refunds', {
             activePage: 'refunds',
+            refundsEnabled,
             filters,
             searched,
             bookings: results.bookings.map(booking => ({
                 ...booking,
                 refundable: !booking.refunded_at && isRefundable(booking),
-                externallyRefundable: !booking.refunded_at && isExternallyRefundable(booking),
+                externallyRefundable: refundsEnabled && !booking.refunded_at && isExternallyRefundable(booking),
                 externalPence: externalRefundPence(booking)
             })),
             truncated: results.truncated,
@@ -693,17 +695,93 @@ admin.post('/refunds/refund', async (req, res) => {
         });
         return res.redirect('/admin/refunds?' + withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
     } catch (error) {
+        if (error.code === 'REFUNDS_DISABLED') return res.status(403).send(error.message);
+        console.error('Unable to refund booking:', error);
+        return res.sendStatus(500);
+    }
+});
+
+function correctionReturn(req, path) {
+    const query = new URLSearchParams();
+    for (const key of ['from', 'to', 'profile', 'page']) {
+        if (typeof req.body[key] === 'string') query.set(key, req.body[key].slice(0, 100));
+    }
+    query.set('corrected', '1');
+    return path + '?' + query.toString();
+}
+
+admin.post('/credit-requests/reopen', async (req, res) => {
+    if (!GUID_PATTERN.test(req.body.request_guid || '')) return res.sendStatus(400);
+    try {
+        const result = await Bookings.reopenCreditRequest(req.body.request_guid);
+        await recordAudit(req.profile, { action: 'credit-request.reopen', entityType: 'booking',
+            entityGuid: result.booking_guid, entityLabel: result.booking_ref,
+            details: { from: 'declined', to: 'pending', previous_decline_comment: result.decline_comment } });
+        return res.redirect(correctionReturn(req, '/admin/credit-requests'));
+    } catch (error) {
+        if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
+        console.error('Unable to reopen credit request:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/credit-requests/refundability', async (req, res) => {
+    if (!GUID_PATTERN.test(req.body.request_guid || '') || !['0', '1'].includes(req.body.refundable)) return res.sendStatus(400);
+    try {
+        const result = await Credits.changeRequestRefundability(req.body.request_guid, req.body.refundable === '1');
+        await recordAudit(req.profile, { action: 'credit.refundability', entityType: 'credit-request',
+            entityGuid: req.body.request_guid, entityLabel: result.booking_ref, details: result });
+        return res.redirect(correctionReturn(req, '/admin/credit-requests'));
+    } catch (error) {
+        if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
+        console.error('Unable to change credit refund eligibility:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/credit-refunds/reopen', async (req, res) => {
+    if (!GUID_PATTERN.test(req.body.request_guid || '')) return res.sendStatus(400);
+    try {
+        const result = await Credits.reopenRefund(req.body.request_guid);
+        await recordAudit(req.profile, { action: 'credit-refund.reopen', entityType: 'credit',
+            entityGuid: result.credit_guid, entityLabel: result.booking_ref,
+            details: { from: 'declined', to: 'pending', previous_decline_comment: result.decline_comment } });
+        return res.redirect(correctionReturn(req, '/admin/credit-refunds'));
+    } catch (error) {
+        if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
+        console.error('Unable to reopen refund request:', error);
         return res.sendStatus(500);
     }
 });
 
 admin.get('/credit-requests', async (req, res) => {
+    const from = req.query.from === undefined ? '' : req.query.from;
+    const to = req.query.to === undefined ? '' : req.query.to;
+    const searched = from !== '' || to !== '';
+    if (searched && !AuditLog.isValidRange(from, to)) {
+        return res.status(400).send('Select valid From and To dates spanning no more than 62 days.');
+    }
+    const profileGuid = req.query.profile === undefined || req.query.profile === '' ? null : req.query.profile;
+    if (profileGuid !== null && (typeof profileGuid !== 'string' || !GUID_PATTERN.test(profileGuid))) {
+        return res.status(400).send('Select a valid credit history profile.');
+    }
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if ((req.query.page !== undefined && (typeof req.query.page !== 'string' || !/^[1-9][0-9]*$/.test(req.query.page))) ||
+        !Number.isSafeInteger(page) || !Number.isSafeInteger((page - 1) * 50)) {
+        return res.status(400).send('Select a valid credit history page.');
+    }
     try {
+        const selectedProfile = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
+        if (profileGuid && !selectedProfile) return res.status(400).send('The selected profile is no longer available.');
+        const history = searched ? await Bookings.searchCreditHistory({ from, to, page, profileGuid })
+            : { entries: [], total: 0, pageSize: 50 };
         const settings = await Settings.getAll();
         res.render('credit-requests', {
             activePage: 'credit-requests',
+            corrected: req.query.corrected === '1',
             declineError: req.query.error === 'comment',
-            requests: await Bookings.findCreditRequests(),
+            requests: await Bookings.findCreditRequests('pending'),
+            history, selectedProfile, searched, page, filters: { from, to, ...(profileGuid ? { profile: profileGuid } : {}) },
             autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
             autoApprovalSlots: await Bookings.findAutoApprovalSlots(),
             creditRequestDays: await Settings.getCreditRequestDays(),
@@ -788,13 +866,51 @@ admin.post('/settings/credit-lifetime', async (req, res) => {
     }
 });
 
-admin.get('/credit-refunds', async (req, res) => {
+admin.post('/settings/refunds', async (req, res) => {
+    if (!['0', '1'].includes(req.body.enabled)) return res.status(400).send('Select Enabled or Disabled for refunds.');
     try {
+        await Settings.set('refunds_enabled', req.body.enabled);
+        await recordAudit(req.profile, {
+            action: 'settings.refunds_enabled', entityType: 'setting', entityLabel: 'Bank and external refunds',
+            details: { enabled: req.body.enabled === '1' }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save refund setting:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.get('/credit-refunds', async (req, res) => {
+    const profileGuid = req.query.profile === undefined || req.query.profile === '' ? null : req.query.profile;
+    if (profileGuid !== null && (typeof profileGuid !== 'string' || !GUID_PATTERN.test(profileGuid))) {
+        return res.status(400).send('Select a valid refund history profile.');
+    }
+    const from = req.query.from === undefined ? '' : req.query.from;
+    const to = req.query.to === undefined ? '' : req.query.to;
+    const searched = from !== '' || to !== '';
+    if (searched && !AuditLog.isValidRange(from, to)) {
+        return res.status(400).send('Select valid From and To dates spanning no more than 62 days.');
+    }
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if ((req.query.page !== undefined && (typeof req.query.page !== 'string' || !/^[1-9][0-9]*$/.test(req.query.page))) ||
+        !Number.isSafeInteger(page) || !Number.isSafeInteger((page - 1) * Credits.REFUND_HISTORY_PAGE_SIZE)) {
+        return res.status(400).send('Select a valid refund history page.');
+    }
+    try {
+        const selectedProfile = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
+        if (profileGuid && !selectedProfile) return res.status(400).send('The selected profile is no longer available.');
+        const [requests, history] = await Promise.all([
+            Credits.findRefundRequests({ pendingOnly: true }),
+            searched ? Credits.searchRefundHistory({ from, to, page, profileGuid })
+                : { entries: [], total: 0, pageSize: Credits.REFUND_HISTORY_PAGE_SIZE }
+        ]);
         res.render('credit-refunds', {
             activePage: 'credit-refunds',
-            declineError: req.query.error === 'comment',
-            requests: await Credits.findRefundRequests(),
-            decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
+            corrected: req.query.corrected === '1',
+            refundsEnabled: Settings.refundsEnabled(await Settings.getAll()),
+            requests, history, filters: { from, to, ...(profileGuid ? { profile: profileGuid } : {}) }, selectedProfile, searched, page,
+            decision: req.query.decision === 'approved' ? 'approved' : '',
             error: req.query.error === '1'
         });
     } catch (error) {
@@ -805,20 +921,20 @@ admin.get('/credit-refunds', async (req, res) => {
 
 admin.post('/credit-refunds/decide', async (req, res) => {
     const { request_guid, decision } = req.body;
-    if (!GUID_PATTERN.test(request_guid || '') || !['approve', 'decline'].includes(decision)) return res.sendStatus(400);
-    const declineComment = decision === 'decline' ? parseDeclineComment(req.body.decline_comment) : null;
-    if (decision === 'decline' && !declineComment) return res.redirect('/admin/credit-refunds?error=comment');
+    if (!GUID_PATTERN.test(request_guid || '') || decision !== 'approve') {
+        return res.status(400).send('Refund requests can only be marked as done; they cannot be declined.');
+    }
     try {
-        const approve = decision === 'approve';
-        const result = await Credits.decideRefund(request_guid, approve, req.profile.name, declineComment);
+        const result = await Credits.decideRefund(request_guid, true, req.profile.name);
         if (!result) return res.redirect('/admin/credit-refunds?error=1');
         await recordAudit(req.profile, {
-            action: approve ? 'credit-refund.approve' : 'credit-refund.decline',
+            action: 'credit-refund.approve',
             entityType: 'credit', entityGuid: result.credit_guid, entityLabel: result.booking_ref,
-            details: { profile_guid: result.profile_guid, refunded: formatPounds(result.refunded_pence), ...(!approve ? { decline_comment: declineComment } : {}) }
+            details: { profile_guid: result.profile_guid, refunded: formatPounds(result.refunded_pence) }
         });
-        return res.redirect(approve ? '/admin/credit-refunds?decision=approved' : '/admin/credit-refunds?decision=declined');
+        return res.redirect('/admin/credit-refunds?decision=approved');
     } catch (error) {
+        if (error.code === 'REFUNDS_DISABLED') return res.status(403).send(error.message);
         console.error('Unable to decide credit refund request:', error);
         return res.sendStatus(500);
     }
@@ -867,6 +983,7 @@ router.get('/credits-and-refunds', async (req, res) => {
         ]);
         res.render('resident-credits', {
             activePage: 'credits-and-refunds',
+            refundsEnabled: Settings.refundsEnabled(settings),
             siteTitle: settings.site_title,
             hasLogo,
             profile: { name: profile?.name || req.profile.name, email: profile?.email || req.profile.email },
@@ -899,6 +1016,7 @@ router.post(['/credits-and-refunds/credit-refunds', '/profile/credit-refunds'], 
         });
         return res.redirect('/credits-and-refunds?refund_requested=1#booking-credit');
     } catch (error) {
+        if (error.code === 'REFUNDS_DISABLED') return res.status(403).send(error.message);
         console.error('Unable to request credit refund:', error);
         return res.sendStatus(500);
     }
@@ -1317,6 +1435,7 @@ admin.get('/settings', async (req, res) => {
             creditRequestDays: await Settings.getCreditRequestDays(),
             autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
             creditLifetimeDays: settings.credit_lifetime_days,
+            refundsEnabled: Settings.refundsEnabled(settings),
             lifetimeError: req.query.error === 'lifetime',
             windowSaved: req.query.window_saved === '1',
             windowError: req.query.error === 'days',
@@ -1409,17 +1528,29 @@ admin.post('/settings', async (req, res) => {
 });
 
 admin.get('/audit', async (req, res) => {
+    const from = req.query.from === undefined ? '' : req.query.from;
+    const to = req.query.to === undefined ? '' : req.query.to;
+    const searched = from !== '' || to !== '';
+    if (searched && !AuditLog.isValidRange(from, to)) {
+        return res.status(400).send('Select valid From and To dates spanning no more than 62 days.');
+    }
     const profileGuid = GUID_PATTERN.test(req.query.profile || '') ? req.query.profile : null;
     const action = typeof req.query.action === 'string' && req.query.action.length <= 60 ? req.query.action || null : null;
-    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if ((req.query.page !== undefined && (typeof req.query.page !== 'string' || !/^[1-9][0-9]*$/.test(req.query.page))) ||
+        !Number.isSafeInteger(page) || !Number.isSafeInteger((page - 1) * AuditLog.PAGE_SIZE)) {
+        return res.status(400).send('Select a valid audit page.');
+    }
     try {
         const [result, actions, profiles] = await Promise.all([
-            AuditLog.search({ profileGuid, action, page }),
-            AuditLog.findActions(),
+            searched ? AuditLog.search({ profileGuid, action, page, from, to })
+                : { entries: [], total: 0, pageSize: AuditLog.PAGE_SIZE },
+            searched ? AuditLog.findActions(from, to) : [],
             Profiles.findAll()
         ]);
-        res.render('audit', { ...result, actions, profiles, filters: { profile: profileGuid, action }, page, activePage: 'audit' });
+        res.render('audit', { ...result, actions, profiles, filters: { profile: profileGuid, action, from, to }, page, activePage: 'audit' });
     } catch (error) {
+        console.error('Unable to load audit:', error);
         res.sendStatus(500);
     }
 });
@@ -1496,14 +1627,13 @@ admin.post('/facilities/destroy', async (req, res) => {
 
 admin.get('/courses', async (req, res) => {
     try {
-        const [courses, facilities, sports, faqs] = await Promise.all([
+        const [courses, facilities, sports] = await Promise.all([
             Courses.findAll(),
             Facilities.findAll(),
-            Sports.findAll(),
-            Courses.findFaqs()
+            Sports.findAll()
         ]);
         res.render('courses', {
-            courses, facilities, sports, faqs, error: req.query.error,
+            courses, facilities, sports,
             activePage: 'courses'
         });
     } catch (error) {
@@ -1627,28 +1757,74 @@ for (const [path, updating] of [['/courses/faqs', false], ['/courses/faqs/update
         const answer = typeof req.body.answer === 'string' ? req.body.answer.trim() : '';
         if ((updating && !GUID_PATTERN.test(guid || '')) || !GUID_PATTERN.test(sport_guid || '') ||
             !question || question.length > 300 || !answer || answer.length > 10000) {
-            return res.redirect('/admin/courses?error=invalid-faq#sport-faq-heading');
+            return res.redirect('/admin/sports?error=invalid-faq');
         }
         try {
             const faq = await Courses.saveFaq(updating ? guid : null, { sport_guid, question, answer });
             if (!faq) return res.sendStatus(404);
             await recordAudit(req.profile, { action: updating ? 'sport-faq.update' : 'sport-faq.create',
                 entityType: 'sport-faq', entityGuid: faq.guid, entityLabel: question, details: { sport_guid } });
-            return res.redirect('/admin/courses?admin_saved=1#sport-faq-heading');
+            return res.redirect(`/admin/sports?admin_saved=1#sport-faq-${sport_guid}`);
         } catch (error) {
             console.error('Unable to save sport course FAQ:', error);
-            if (error.code === '23503') return res.redirect('/admin/courses?error=invalid-faq#sport-faq-heading');
+            if (error.code === '23503') return res.redirect('/admin/sports?error=invalid-faq');
             return res.sendStatus(500);
         }
     });
 }
+
+for (const type of ['sections', 'faqs']) {
+    admin.post(type === 'sections' ? '/sports/course-sections/order' : '/courses/faqs/order', async (req, res) => {
+        const { sport_guid } = req.body;
+        let order;
+        try {
+            order = JSON.parse(req.body.order);
+            if (typeof sport_guid !== 'string' || !GUID_PATTERN.test(sport_guid) ||
+                !Array.isArray(order) || order.length > 1000 || new Set(order).size !== order.length ||
+                order.some(id => typeof id !== 'string' || !GUID_PATTERN.test(id))) throw new Error('Invalid reorder input');
+        } catch (error) {
+            console.warn('Invalid sport list order:', error.message);
+            return res.status(400).json({ error: 'Invalid card order. Refresh the page and try again.' });
+        }
+        try {
+            const saved = type === 'sections'
+                ? await Sports.changeCourseSection(sport_guid, 'order', { order })
+                : await Courses.reorderFaqs(sport_guid, order);
+            if (!saved) return res.status(404).json({ error: 'This sport no longer exists. Refresh the page.' });
+            await recordAudit(req.profile, { action: type === 'sections' ? 'sport-section.order' : 'sport-faq.order',
+                entityType: 'sport', entityGuid: sport_guid, details: { order } });
+            return res.json({ saved: true, order });
+        } catch (error) {
+            console.error('Unable to reorder sport cards:', error);
+            return res.status(error instanceof RangeError ? 409 : 500).json({
+                error: error instanceof RangeError ? error.message : 'The order could not be saved. Check the list before retrying.'
+            });
+        }
+    });
+}
+
+admin.post('/courses/faqs/move', async (req, res) => {
+    const { guid, sport_guid, direction } = req.body;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid) ||
+        typeof sport_guid !== 'string' || !GUID_PATTERN.test(sport_guid) ||
+        !['up', 'down'].includes(direction)) return res.sendStatus(400);
+    try {
+        if (!await Courses.moveFaq(sport_guid, guid, direction)) return res.sendStatus(404);
+        await recordAudit(req.profile, { action: 'sport-faq.move', entityType: 'sport-faq',
+            entityGuid: guid, details: { sport_guid, direction } });
+        return res.redirect(`/admin/sports?admin_saved=1#sport-faq-${sport_guid}`);
+    } catch (error) {
+        console.error('Unable to reorder sport course FAQ:', error);
+        return res.sendStatus(500);
+    }
+});
 
 admin.post('/courses/faqs/destroy', async (req, res) => {
     if (!GUID_PATTERN.test(req.body.guid || '')) return res.sendStatus(400);
     try {
         if (!await Courses.removeFaq(req.body.guid)) return res.sendStatus(404);
         await recordAudit(req.profile, { action: 'sport-faq.delete', entityType: 'sport-faq', entityGuid: req.body.guid });
-        return res.redirect('/admin/courses?admin_saved=1#sport-faq-heading');
+        return res.redirect('/admin/sports?admin_saved=1');
     } catch (error) {
         console.error('Unable to delete sport course FAQ:', error);
         return res.sendStatus(500);
@@ -1657,9 +1833,10 @@ admin.post('/courses/faqs/destroy', async (req, res) => {
 
 admin.get('/sports', async (req, res) => {
     try {
-        const sports = await Sports.findAll();
-        res.render('sports', { sports, activePage: 'sports' });
+        const [sports, faqs] = await Promise.all([Sports.findAll(), Courses.findFaqs()]);
+        res.render('sports', { sports, faqs, error: req.query.error, activePage: 'sports' });
     } catch (error) {
+        console.error('Unable to load sports and course descriptions:', error);
         res.sendStatus(500);
     }
 });
@@ -1729,6 +1906,38 @@ admin.post('/sports/destroy', async (req, res) => {
     }
 });
 
+for (const operation of ['create', 'update', 'destroy', 'move']) {
+    admin.post(`/sports/course-sections/${operation}`, async (req, res) => {
+        const { guid, section_id, heading, text, direction } = req.body;
+        if (typeof guid !== 'string' || !GUID_PATTERN.test(guid) ||
+            (operation !== 'create' && (typeof section_id !== 'string' || !GUID_PATTERN.test(section_id))) ||
+            (operation === 'move' && !['up', 'down'].includes(direction))) return res.sendStatus(400);
+        let section = { id: section_id, direction };
+        if (operation === 'create' || operation === 'update') {
+            try {
+                section = require('../courseDescriptions').sections([{
+                    id: operation === 'create' ? require('crypto').randomUUID() : section_id, heading, text
+                }])[0];
+            } catch (error) {
+                console.warn('Invalid sport course section:', error.message);
+                return res.sendStatus(400);
+            }
+        }
+        try {
+            if (!await Sports.changeCourseSection(guid, operation, section)) return res.sendStatus(404);
+            await recordAudit(req.profile, { action: `sport-section.${operation}`, entityType: 'sport',
+                entityGuid: guid, entityLabel: section.heading, details: { section_id: section.id } });
+            if (operation === 'create') {
+                return res.redirect(`/admin/sports?admin_saved=section-created&admin_saved_target=course-defaults-${guid}&section_created=${section.id}#course-defaults-${guid}`);
+            }
+            res.redirect(`/admin/sports?admin_saved=sport-updated&admin_saved_target=course-defaults-${guid}#course-defaults-${guid}`);
+        } catch (error) {
+            console.error('Unable to change sport course section:', error);
+            res.sendStatus(error instanceof RangeError ? 400 : 500);
+        }
+    });
+}
+
 admin.get('/opening-hours', async (req, res) => {
     try {
         const templates = await OpeningHours.findAll();
@@ -1779,6 +1988,15 @@ admin.post('/opening-hours/destroy', async (req, res) => {
 async function adminBookingsPage(req, res) {
     const configuring = req.path === '/court-configuration';
     try {
+        const selectedFacility = !configuring && typeof req.query.facility_guid === 'string' ? req.query.facility_guid : '';
+        const filters = Object.fromEntries(['reference', 'profile', 'from', 'to'].map(key =>
+            [key, typeof req.query[key] === 'string' ? req.query[key].trim() : '']));
+        const validDate = value => !value || (DATE_PATTERN.test(value) && Number(value.slice(0, 4)) > 0 &&
+            !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
+        const searchError = selectedFacility && (filters.reference.length > 100 || filters.profile.length > 100 ||
+            !validDate(filters.from) || !validDate(filters.to) || (filters.from && filters.to && filters.from > filters.to))
+            ? 'Enter a valid date range and search text of no more than 100 characters.'
+            : selectedFacility && !Object.values(filters).some(Boolean) ? 'Enter at least one search filter.' : '';
         const facilityRows = await Bookings.findInAppFacilities();
         const facilities = await Promise.all(facilityRows.map(async facility => {
             if (configuring) {
@@ -1789,10 +2007,14 @@ async function adminBookingsPage(req, res) {
                 ]);
                 return { ...facility, sports, resources, options };
             }
-            const [options, bookings] = await Promise.all([
-                Bookings.findOptions(facility.guid), Bookings.findBookings(facility.guid)
+            const searched = selectedFacility === facility.guid;
+            const [options, results] = await Promise.all([
+                Bookings.findOptions(facility.guid),
+                searched && !searchError ? Bookings.searchFacilityBookings(facility.guid, filters)
+                    : { bookings: [], truncated: false }
             ]);
-            return { ...facility, options, bookings };
+            return { ...facility, options, ...results, searched, filters: searched ? filters : {},
+                searchError: searched ? searchError : '' };
         }));
         res.render('bookings', {
             facilities,

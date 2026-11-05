@@ -173,12 +173,17 @@ test('administrator template forms save independent daylight switches and render
         activePage: 'opening-hours', currentProfile: null, isAdmin: true, canSwitchRole: false, area: 'admin'
     });
     assert.ok(html.includes('name="dawn_override" checked'));
-    assert.match(html, /class="d-flex align-items-center mt-3" data-template-actions/);
-    assert.match(html, /id="template-test"/);
-    assert.match(html, /data-template-edit-feedback/);
-    assert.match(html, /<h3 class="h5 mb-0 mr-3 text-break">Test daylight<\/h3>/);
-    assert.match(html, /<p class="text-muted mb-2">/);
-    assert.match(html, /<form class="mt-3" method="POST" action="\/admin\/opening-hours\/update"/);
+    const card = html.match(/<article id="template-test"[\s\S]*?<\/article>/)[0];
+    const disclosure = card.match(/<details class="admin-disclosure" data-template-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
+    assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+    const summary = disclosure.match(/<summary class="admin-card-summary"[^>]*>([\s\S]*?)<\/summary>/)[1];
+    assert.match(summary, /<h3 class="h5 d-inline mb-0 text-break">Test daylight<\/h3>/);
+    assert.match(summary, /data-template-edit-feedback/);
+    assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Test daylight');
+    assert.doesNotMatch(card, /data-template-actions|Edit template|Dawn limit|Dusk \+ 20 min limit/);
+    assert.match(disclosure, /<\/summary>\s*<form method="POST" action="\/admin\/opening-hours\/update" data-hours-form data-editor-preview="false" data-editor-label="Edit Test daylight">/);
+    assert.doesNotMatch(disclosure, /action="\/admin\/opening-hours\/destroy"/);
+    assert.match(card.replace(disclosure, ''), /action="\/admin\/opening-hours\/destroy"[\s\S]*aria-label="Delete Test daylight">Delete<\/button>/);
     assert.match(html, /class="btn btn-primary" type="submit">Save changes/);
     assert.match(html, /data-templates-directory/);
     assert.match(html, /data-template-list/);

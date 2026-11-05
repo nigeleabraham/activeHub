@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { Pool } = require('pg');
 const Credits = require('./Credits');
 const Settings = require('./Settings');
-const { parseDeclineComment } = require('../validation');
+const { parseDeclineComment, isValidDateRange } = require('../validation');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
@@ -281,7 +281,8 @@ async function findOptions(facilityGuid) {
     return rows;
 }
 
-async function findBookings(facilityGuid, startsAt = null, endsAt = null) {
+async function findBookings(facilityGuid, startsAt = null, endsAt = null, filters = null) {
+    const like = value => value ? `%${value.replace(/[\\%_]/g, '\\$&')}%` : null;
     const { rows } = await pool.query(
         `SELECT bookings.guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
                 bookings.profile_guid, profiles.name AS profile_name,
@@ -308,11 +309,21 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null) {
                  WHERE bookings.facility_guid = $1
                      AND ($2::timestamptz IS NULL OR bookings.ends_at > $2)
                      AND ($3::timestamptz IS NULL OR bookings.starts_at < $3)
+                     ${filters ? `AND ($4::text IS NULL OR bookings.booking_ref ILIKE $4)
+                     AND ($5::text IS NULL OR profiles.name ILIKE $5 OR profiles.email ILIKE $5)
+                     AND ($6::date IS NULL OR bookings.ends_at > $6::date::timestamp AT TIME ZONE 'Europe/London')
+                     AND ($7::date IS NULL OR bookings.starts_at < ($7::date + 1)::timestamp AT TIME ZONE 'Europe/London')` : ''}
          GROUP BY bookings.guid, options.name, sports.name, profiles.name, booked_by.name
-         ORDER BY bookings.starts_at`,
-                [facilityGuid, startsAt, endsAt]
+         ORDER BY bookings.starts_at ${filters ? 'DESC LIMIT $8' : ''}`,
+                filters ? [facilityGuid, startsAt, endsAt, like(filters.reference), like(filters.profile),
+                    filters.from || null, filters.to || null, SEARCH_LIMIT + 1] : [facilityGuid, startsAt, endsAt]
     );
     return Credits.fundingForBookings(rows);
+}
+
+async function searchFacilityBookings(facilityGuid, filters) {
+    const bookings = await findBookings(facilityGuid, null, null, filters);
+    return { bookings: bookings.slice(0, SEARCH_LIMIT), truncated: bookings.length > SEARCH_LIMIT };
 }
 
 function findBookingsForProfile(profileGuid, condition, order, parameters = []) {
@@ -736,6 +747,7 @@ function addCreditToBooking(facilityGuid, bookingGuid, byName = null, refundable
 // Cancels a booking that is being refunded outside ActiveHub (e.g. back to the card). No credit is added.
 function cancelWithExternalRefund(facilityGuid, bookingGuid, pence, byName = null) {
     return inTransaction(async client => {
+        await Settings.assertRefundsEnabled(client);
         await snapshotRefund(client, facilityGuid, bookingGuid, pence, byName, 'external');
         const result = await client.query(
             'DELETE FROM bookings WHERE facility_guid = $1 AND guid = $2 AND credited_at IS NULL',
@@ -814,13 +826,19 @@ async function findAutoApprovalSlots() {
     return rows;
 }
 
-async function findCreditRequests(status) {
+async function findCreditRequests(status, historyFilters = null) {
     const { rows } = await pool.query(
         `SELECT requests.guid, requests.status, requests.reason, requests.note, requests.decline_comment, requests.auto_approved, requests.requested_at, requests.decided_at, requests.decided_by_name,
                 bookings.guid AS booking_guid, bookings.facility_guid, bookings.booking_ref, bookings.starts_at, bookings.ends_at,
                 bookings.amount_paid_pence, bookings.credit_applied_pence, bookings.payment_reference, bookings.credited_at,
                 profiles.name AS profile_name, profiles.email AS profile_email,
                 facilities.name AS facility_name, options.name AS option_name, sports.name AS sport_name
+                ${historyFilters ? `, (SELECT COALESCE(SUM(c.remaining_pence), 0)::int FROM credits c
+                    WHERE c.booking_guid = bookings.guid AND c.profile_guid = requests.profile_guid
+                        AND c.refundable AND c.expires_at > statement_timestamp() AND c.voided_at IS NULL) AS available_refundable_pence,
+                (SELECT COALESCE(SUM(c.remaining_pence), 0)::int FROM credits c
+                    WHERE c.booking_guid = bookings.guid AND c.profile_guid = requests.profile_guid
+                        AND NOT c.refundable AND c.expires_at > statement_timestamp() AND c.voided_at IS NULL) AS available_non_refundable_pence` : ''}
          FROM booking_credit_requests requests
          JOIN bookings ON bookings.guid = requests.booking_guid
          JOIN facilities ON facilities.guid = bookings.facility_guid
@@ -828,11 +846,34 @@ async function findCreditRequests(status) {
          JOIN sports ON sports.guid = options.sport_guid
          LEFT JOIN profiles ON profiles.guid = requests.profile_guid
          WHERE ($1::text IS NULL OR requests.status = $1)
-         ORDER BY (requests.status = 'pending') DESC, requests.requested_at DESC
-         LIMIT 100`,
-        [status || null]
+         ${historyFilters ? `AND requests.status <> 'pending'
+         AND requests.decided_at >= $2::date::timestamp AT TIME ZONE 'Europe/London'
+         AND requests.decided_at < ($3::date + 1)::timestamp AT TIME ZONE 'Europe/London'
+         AND ($4::uuid IS NULL OR requests.profile_guid = $4)` : ''}
+         ORDER BY ${historyFilters ? 'requests.decided_at DESC, requests.guid DESC LIMIT 50 OFFSET $5'
+            : "(requests.status = 'pending') DESC, requests.requested_at DESC LIMIT 100"}`,
+        historyFilters ? [null, historyFilters.from, historyFilters.to, historyFilters.profileGuid || null,
+            (historyFilters.page - 1) * 50] : [status || null]
     );
     return Credits.fundingForBookings(rows, 'booking_guid');
+}
+
+async function searchCreditHistory({ from, to, page = 1, profileGuid = null }) {
+    if (!isValidDateRange(from, to)) {
+        throw new RangeError('Select valid From and To dates spanning no more than 62 days.');
+    }
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger((page - 1) * 50)) {
+        throw new RangeError('Select a valid credit history page.');
+    }
+    const [entries, count] = await Promise.all([
+        findCreditRequests(null, { from, to, page, profileGuid }),
+        pool.query(`SELECT COUNT(*)::int AS count FROM booking_credit_requests
+            WHERE status <> 'pending'
+            AND decided_at >= $1::date::timestamp AT TIME ZONE 'Europe/London'
+            AND decided_at < ($2::date + 1)::timestamp AT TIME ZONE 'Europe/London'
+            AND ($3::uuid IS NULL OR profile_guid = $3)`, [from, to, profileGuid])
+    ]);
+    return { entries, total: count.rows[0].count, pageSize: 50 };
 }
 
 // Approving gives the profile what was paid (once per booking); declining just closes the request.
@@ -899,9 +940,31 @@ async function decideCreditRequestInTransaction(client, requestGuid, approve, by
     return { ...found.rows[0], credited, refundable: creditRefundable, ...breakdown };
 }
 
+function reopenCreditRequest(requestGuid) {
+    return inTransaction(async client => {
+        await lockCreditRequests(client);
+        const result = await client.query(`WITH previous AS (
+                SELECT guid, decline_comment FROM booking_credit_requests WHERE guid = $1 AND status = 'declined' FOR UPDATE
+            ) UPDATE booking_credit_requests r
+            SET status = 'pending', decided_at = NULL, decided_by_name = NULL, decline_comment = NULL, auto_approved = false
+            FROM bookings b, profiles p, previous
+            WHERE r.guid = $1 AND r.status = 'declined' AND b.guid = r.booking_guid
+                AND previous.guid = r.guid AND b.credited_at IS NULL AND p.guid = r.profile_guid AND p.deleted_at IS NULL
+            RETURNING r.booking_guid, b.booking_ref, previous.decline_comment`, [requestGuid]);
+        if (!result.rowCount) {
+            const error = new Error('Only declined credit requests for an available, uncredited booking can be reopened.');
+            error.code = 'CREDIT_CORRECTION_CONFLICT';
+            throw error;
+        }
+        return result.rows[0];
+    });
+}
+
 module.exports = {
+    reopenCreditRequest,
     requestCredit,
     findCreditRequests,
+    searchCreditHistory,
     decideCreditRequest,
     findAutoApprovalSlots,
     initialize,
@@ -910,6 +973,7 @@ module.exports = {
     findResources,
     findOptions,
     findBookings,
+    searchFacilityBookings,
     createResource,
     updateResource,
     removeResource,

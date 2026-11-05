@@ -4,25 +4,23 @@
     const external = facility.booking_mode === 'external';
 %>
 <p class="small text-muted">All fields are required unless marked optional.</p>
-<form method="POST" action="<%= editing ? '/admin/facilities/update' : '/admin/facilities' %>" data-facility-form data-editor-preview="false" data-editor-label="<%= editing ? 'Edit facility' : 'New facility' %>">
+<form method="POST" action="<%= editing ? '/admin/facilities/update' : '/admin/facilities' %>" data-facility-form data-editor-preview="false" data-editor-label="<%= editing ? 'Edit ' + facility.name : 'New facility' %>">
     <% if (editing) { %>
         <input type="hidden" name="guid" value="<%= facility.guid %>">
     <% } %>
-    <fieldset class="mb-4">
-        <legend class="h6">Facility details</legend>
-        <div class="row">
-            <div class="form-group col-md-8">
-                <label for="<%= fieldId('name') %>">Name</label>
-                <input class="form-control" id="<%= fieldId('name') %>" name="name" type="text" maxlength="160" value="<%= facility.name || '' %>" required>
-            </div>
-            <div class="form-group col-md-4">
-                <label for="<%= fieldId('postcode') %>">Postcode</label>
-                <input class="form-control" id="<%= fieldId('postcode') %>" name="postcode" type="text" maxlength="32" value="<%= facility.postcode || '' %>" required>
-            </div>
+    <fieldset class="admin-form-section facility-details-fields">
+        <legend class="admin-form-section-title">Facility details</legend>
+        <div class="form-group">
+            <label for="<%= fieldId('name') %>">Name</label>
+            <input class="form-control" id="<%= fieldId('name') %>" name="name" type="text" maxlength="160" value="<%= facility.name || '' %>" required>
         </div>
         <div class="form-group">
             <label for="<%= fieldId('address') %>">Address</label>
             <input class="form-control" id="<%= fieldId('address') %>" name="address" type="text" maxlength="240" value="<%= facility.address || '' %>" required>
+        </div>
+        <div class="form-group">
+            <label for="<%= fieldId('postcode') %>">Postcode</label>
+            <input class="form-control" id="<%= fieldId('postcode') %>" name="postcode" type="text" maxlength="32" value="<%= facility.postcode || '' %>" required>
         </div>
         <div class="form-group">
             <label for="<%= fieldId('description') %>">Description</label>
@@ -37,8 +35,8 @@
             </div>
         </details>
     </fieldset>
-    <fieldset class="mb-4">
-        <legend class="h6">Activities</legend>
+    <fieldset class="admin-form-section">
+        <legend class="admin-form-section-title">Activities</legend>
         <p class="small">Select at least one sport offered at this facility.</p>
         <% if (sports.length) { %>
             <div class="row">
@@ -55,8 +53,8 @@
             <p class="text-muted mb-0">No sports defined. <a href="/admin/sports">Manage sports</a>.</p>
         <% } %>
     </fieldset>
-    <fieldset class="mb-4">
-        <legend class="h6">Booking arrangements</legend>
+    <fieldset class="admin-form-section">
+        <legend class="admin-form-section-title">Booking arrangements</legend>
         <fieldset class="form-group">
             <legend class="col-form-label">Booking method</legend>
             <label class="d-block"><input type="radio" name="booking_mode" value="in_app" <%= !external ? 'checked' : '' %> required> Book through this website</label>

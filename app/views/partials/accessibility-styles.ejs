@@ -287,6 +287,30 @@
         background-color: #fff;
         border-color: var(--camden-blue);
     }
+
+    /* Admin directory cards: the title is the expander and the expanded body holds the editor */
+    .admin-disclosure[open] > summary { margin-bottom: 1rem !important; }
+    .admin-card-summary { min-height: 2.5rem; cursor: pointer; }
+    .admin-form-section {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-left: 4px solid var(--camden-navy);
+        border-radius: 0.25rem;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+    /* Floated so a legend sits inside the bordered panel rather than on its border. */
+    .admin-form-section > .admin-form-section-title {
+        float: left;
+        width: 100%;
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .admin-form-section > .admin-form-section-title + * { clear: both; }
+    .admin-form-section > :last-child { margin-bottom: 0; }
 </style>
 <script>
     // A dropdown keeps focus after a choice; release it so the yellow highlight only shows while in use

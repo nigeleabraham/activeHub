@@ -4,8 +4,25 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365' };
+const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1' };
 const SITE_TITLE_MAX_LENGTH = 60;
+
+function refundsEnabled(settings) {
+    const value = settings.refunds_enabled ?? DEFAULTS.refunds_enabled;
+    if (!['0', '1'].includes(value)) throw new Error('Invalid configured refund setting');
+    return value === '1';
+}
+
+async function assertRefundsEnabled(client) {
+    // Hold the setting until the refund commits, so disabling waits for in-flight refunds.
+    const { rows } = await client.query("SELECT value FROM site_settings WHERE key = 'refunds_enabled' FOR SHARE");
+    if (!rows.length) throw new Error('Refund setting has not been initialized');
+    if (!refundsEnabled({ refunds_enabled: rows[0].value })) {
+        const error = new Error('Bank and external refunds are disabled system-wide. Account credit remains available.');
+        error.code = 'REFUNDS_DISABLED';
+        throw error;
+    }
+}
 
 function parseCreditRequestDays(value) {
     if (typeof value !== 'string' || !/^\d{1,3}$/.test(value)) return null;
@@ -34,6 +51,7 @@ async function initialize() {
             updated_at timestamptz NOT NULL DEFAULT now()
         )
     `);
+    await pool.query("INSERT INTO site_settings (key, value) VALUES ('refunds_enabled', '1') ON CONFLICT (key) DO NOTHING");
     await pool.query(`
         CREATE TABLE IF NOT EXISTS site_logo (
             id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -77,4 +95,4 @@ async function set(key, value) {
     );
 }
 
-module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays };
+module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays, refundsEnabled, assertRefundsEnabled };

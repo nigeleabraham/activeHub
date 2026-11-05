@@ -1,10 +1,33 @@
 const { Pool } = require('pg');
+const { isValidDateRange } = require('../validation');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
 const PAGE_SIZE = 50;
+const RANGE_FILTER = `created_at >= ($1::date)::timestamp AT TIME ZONE 'Europe/London'
+    AND created_at < ($2::date + 1)::timestamp AT TIME ZONE 'Europe/London'`;
+const MAX_RANGE_DAYS = 62;
+
+function currentMonth(now = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London', year: 'numeric', month: '2-digit'
+    }).formatToParts(now);
+    return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`;
+}
+
+function isValidMonth(month) {
+    return typeof month === 'string' && /^(?!0000)[0-9]{4}-(?:0[1-9]|1[0-2])$/.test(month);
+}
+
+function isValidRange(from, to) {
+    return isValidDateRange(from, to, MAX_RANGE_DAYS);
+}
+
+function requireRange(from, to) {
+    if (!isValidRange(from, to)) throw new RangeError('Select valid From and To dates spanning no more than 62 days.');
+}
 
 async function initialize() {
     // Profile name and role are copied onto each row so the trail survives profile edits and deletion.
@@ -36,16 +59,20 @@ async function record(profile, { action, entityType, entityGuid = null, entityLa
     );
 }
 
-async function search({ profileGuid = null, action = null, page = 1 } = {}) {
-    const offset = (Math.max(1, page) - 1) * PAGE_SIZE;
-    const filters = [profileGuid, action];
-    const where = `($1::uuid IS NULL OR profile_guid = $1) AND ($2::text IS NULL OR action = $2)`;
+async function search({ profileGuid = null, action = null, page = 1, from, to } = {}) {
+    requireRange(from, to);
+    const filters = [from, to, profileGuid, action];
+    const offset = (page - 1) * PAGE_SIZE;
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(offset)) {
+        throw new RangeError('Select a valid audit page.');
+    }
+    const where = `${RANGE_FILTER} AND ($3::uuid IS NULL OR profile_guid = $3) AND ($4::text IS NULL OR action = $4)`;
     const [rows, total] = await Promise.all([
         pool.query(
             `SELECT guid, created_at, profile_guid, profile_name, profile_role,
                     action, entity_type, entity_guid, entity_label, details
              FROM audit_log WHERE ${where}
-             ORDER BY created_at DESC, guid LIMIT ${PAGE_SIZE} OFFSET $3`,
+             ORDER BY created_at DESC, guid LIMIT ${PAGE_SIZE} OFFSET $5`,
             [...filters, offset]
         ),
         pool.query(`SELECT COUNT(*)::int AS count FROM audit_log WHERE ${where}`, filters)
@@ -53,26 +80,27 @@ async function search({ profileGuid = null, action = null, page = 1 } = {}) {
     return { entries: rows.rows, total: total.rows[0].count, pageSize: PAGE_SIZE };
 }
 
-async function findActions() {
-    const { rows } = await pool.query('SELECT DISTINCT action FROM audit_log ORDER BY action');
+async function findActions(from, to) {
+    requireRange(from, to);
+    const { rows } = await pool.query(
+        `SELECT DISTINCT action FROM audit_log WHERE ${RANGE_FILTER} ORDER BY action`,
+        [from, to]
+    );
     return rows.map(row => row.action);
 }
 
 // Audit entries are kept for two months; older ones are deleted.
 const RETENTION = '2 months';
-const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 async function purgeExpired() {
     const { rowCount } = await pool.query(`DELETE FROM audit_log WHERE created_at < now() - INTERVAL '${RETENTION}'`);
     return rowCount;
 }
 
-function startPurgeSchedule() {
-    const run = () => purgeExpired()
+function purgeOnStartup() {
+    return purgeExpired()
         .then(count => { if (count) console.log(`Deleted ${count} audit entries older than ${RETENTION}`); })
         .catch(error => console.error('Audit purge failed:', error));
-    void run();
-    setInterval(run, PURGE_INTERVAL_MS).unref();
 }
 
-module.exports = { PAGE_SIZE, RETENTION, initialize, record, search, findActions, purgeExpired, startPurgeSchedule };
+module.exports = { PAGE_SIZE, MAX_RANGE_DAYS, RETENTION, currentMonth, isValidMonth, isValidRange, initialize, record, search, findActions, purgeExpired, purgeOnStartup };
