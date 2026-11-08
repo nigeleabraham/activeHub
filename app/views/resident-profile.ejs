@@ -48,7 +48,7 @@
         </div>
     </header>
     <main class="container py-4">
-            <% if (saved) { %><div class="alert alert-success" role="status">Your details have been saved.</div><% } %>
+            <% if (saved) { %><output class="alert alert-success" aria-live="polite">Your details have been saved.</output><% } %>
             <% if (error) { %><div class="alert alert-danger" role="alert"><%= error === 'duplicate-email' ? 'That email address is already used by another profile.' : 'Enter a name and valid email address. Names must be at most 120 characters. Optional telephone numbers must be at most 40 characters and contain only digits, spaces, +, -, parentheses or full stops. Address lines must be at most 160 characters, town/city and county 120, and postcode 20. Answer both health questions. If you answer Yes to a medical concern, select at least one condition and specify details (up to 1,000 characters) if you select Other.' %></div><% } %>
             <form method="POST" action="/profile" data-profile-sections>
                 <div class="row">
@@ -78,7 +78,7 @@
                         </div>
                         <div class="form-group">
                             <label for="emergency-contact-telephone">Emergency contact telephone number (optional)</label>
-                            <input class="form-control" id="emergency-contact-telephone" name="emergency_contact_telephone" type="tel" maxlength="40" autocomplete="section-emergency tel" value="<%= profile.emergency_contact_telephone || '' %>">
+                            <input class="form-control" id="emergency-contact-telephone" name="emergency_contact_telephone" type="tel" maxlength="40" autocomplete="off" value="<%= profile.emergency_contact_telephone || '' %>">
                         </div>
                     </section>
                     </div>
@@ -176,10 +176,10 @@
             <section class="bg-white border rounded shadow-sm p-4 mt-4" id="my-children" aria-labelledby="my-children-heading">
                 <h2 class="h4" id="my-children-heading">My children</h2>
                 <p>Manage profiles for all your children and choose them when booking courses. Children do not receive a separate login.</p>
-                <% if (locals.familySaved || locals.childSaved) { %><p class="alert alert-success" role="status">Your children’s records have been updated.</p><% } %>
+                <% if (locals.familySaved || locals.childSaved) { %><output class="alert alert-success" aria-live="polite">Your children’s records have been updated.</output><% } %>
                 <% if (locals.familyError) { %><p class="alert alert-danger" role="alert">Choose an existing child.</p><% } %>
                 <p class="alert alert-danger" role="alert" data-child-archive-error hidden></p>
-                <p class="sr-only" role="status" data-child-archive-status></p>
+                <output class="sr-only" aria-live="polite" data-child-archive-status></output>
                 <ul class="list-unstyled children-list">
                     <% (locals.familyMembers || []).forEach(member => { %>
                         <li>

@@ -244,7 +244,7 @@ test('collapsed sport FAQ headings distinguish empty, single and multiple FAQs',
         });
         const label = count === 0 ? 'No FAQs' : count === 1 ? '1 FAQ' : '2 FAQs';
         assert.ok(html.includes(`data-sport-faq-count>${label}</span>`));
-        assert.match(html, /data-faq-add-feedback role="status" aria-live="polite" hidden/);
+        assert.match(html, /<output[^>]*data-faq-add-feedback aria-live="polite" hidden/);
         assert.match(html, count ? /badge-info/ : /badge-light text-muted/);
         assert.doesNotMatch(html, /<details[^>]*data-sport-faq-details[^>]* open/);
         assert.match(html, /querySelector\('\[data-sport-faq-count\]'\)\.replaceWith\(count\)/);
@@ -278,7 +278,7 @@ test('sports directory groups FAQs under the matching sport with dropdown add an
         assert.match(tennis, /data-card-move="up"/);
         assert.doesNotMatch(tennis, />Reorder FAQs<|action="\/admin\/courses\/faqs\/move"/);
         assert.match(tennis, /data-editor-disclosure>\s*<summary[^>]*><h5[^>]*>Add FAQ<\/h5><\/summary>/);
-        assert.match(tennis, /data-faq-feedback[^>]*role="status"[^>]*hidden/);
+        assert.match(tennis, /<output[^>]*data-faq-feedback[^>]*aria-live="polite"[^>]*hidden/);
         assert.match(swimming, /data-sport-faq-count>No FAQs/);
         assert.doesNotMatch(swimming, /What should I bring/);
         assert.match(html, /async function refreshFaqs/);

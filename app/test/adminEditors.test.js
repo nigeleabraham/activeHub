@@ -106,7 +106,7 @@ test('FAQ additions highlight only the confirmed new card and announce beside th
         assert.equal(highlighted.size, 0);
     }
     const sports = await readFile(path.join(__dirname, '../views/sports.ejs'), 'utf8');
-    assert.match(sports, /<summary[^>]*>.*data-faq-add-feedback.*role="status".*aria-live="polite".*<\/summary>/);
+    assert.match(sports, /<summary[^>]*>.*<output[^>]*data-faq-add-feedback.*aria-live="polite".*<\/summary>/);
     assert.match(sports, /@media \(prefers-reduced-motion: reduce\) \{\s*\.sports-admin \.section-added-highlight > details \{ animation: none; background-color: #d4edda;/);
 });
 
@@ -237,7 +237,7 @@ test('facility, sport and template confirmations fade alongside names without re
                 addEventListener(event, callback) { assert.equal(event, 'load'); onLoad = callback; }
             },
             document: {
-                createElement(tag) { assert.equal(tag, 'div'); return notice; },
+                createElement(tag) { assert.equal(tag, 'output'); return notice; },
                 querySelector() { return { querySelector() { return { after() { assert.fail('Banner placed at page header'); } }; } }; },
                 getElementById(id) { return id === `${type}-one` ? card : null; }
             }
@@ -360,7 +360,7 @@ test('sports directory exposes deletion feedback and keeps an empty replacement 
         assert.match(html, /data-sport-count/);
         assert.match(html, /data-sport-list/);
         assert.match(html, /data-sport-error role="alert" tabindex="-1" hidden/);
-        assert.match(html, /data-sport-feedback role="status" aria-live="polite"/);
+        assert.match(html, /<output class="sr-only" data-sport-feedback aria-live="polite"/);
         if (sports.length) assert.match(html, /data-sport-guid="sport-one" data-sport-name="Tennis"/);
         if (sports.length) {
             const card = html.match(/<article id="sport-sport-one"[\s\S]*?<\/article>/)[0];
@@ -379,7 +379,7 @@ test('sports directory exposes deletion feedback and keeps an empty replacement 
             assert.match(disclosure, /<label for="edit-sport-name-sport-one">Sport name<\/label>/);
             assert.match(disclosure, />Update<\/button>/);
             assert.doesNotMatch(disclosure, /action="\/admin\/sports\/destroy"/);
-            assert.match(card, /<\/details>\s*<form method="POST" action="\/admin\/sports\/destroy" data-sport-delete>[\s\S]*aria-label="Delete Tennis">Delete sport<\/button>/);
+            assert.match(card, /<\/details>\s*<form method="POST" action="\/admin\/sports\/destroy" data-sport-delete>[\s\S]*aria-label="Delete sport: Tennis">Delete sport<\/button>/);
             assert.equal((card.replace(disclosure, '').match(/<button/g) || []).length, 1);
             assert.doesNotMatch(html, /aria-controls="edit-sport-/);
             assert.doesNotMatch(disclosure, /action="\/admin\/sports\/course-defaults"|>Save course defaults</);
@@ -509,7 +509,7 @@ test('course cards expand from the title to the edit form with runs below and de
     assert.match(html, /data-course-facility/);
     assert.match(html, /data-course-list/);
     assert.match(html, /data-course-guid="course-one" data-course-name="Tennis coaching"/);
-    assert.match(html, /data-course-feedback role="status" aria-live="polite" aria-atomic="true"/);
+    assert.match(html, /<output class="alert alert-success" data-course-feedback aria-live="polite" aria-atomic="true"/);
     assert.match(html, /data-course-count/);
     const addForm = html.match(/<form[^>]*id="add-course-directory"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(addForm, /data-course-add-feedback/);

@@ -23,9 +23,9 @@
         </header>
 
         <% if (declineError) { %><div class="alert alert-danger" role="alert">Enter a decline comment of 1 to 500 characters. This will be visible to the requestor.</div><% } %>
-        <% if (locals.corrected) { %><div class="alert alert-success" role="status">Request updated. Reopened requests are in Pending review.</div><% } %>
+        <% if (locals.corrected) { %><output class="alert alert-success" aria-live="polite">Request updated. Reopened requests are in Pending review.</output><% } %>
         <% if (decision) { %>
-            <div class="alert alert-success" role="status">Request for booking <strong><%= decisionRef %></strong> was <%= decision %>.<%= decision === 'approved' ? ' The amount paid has been added to the profile\'s credit.' : '' %></div>
+            <output class="alert alert-success" aria-live="polite">Request for booking <strong><%= decisionRef %></strong> was <%= decision %>.<%= decision === 'approved' ? ' The amount paid has been added to the profile\'s credit.' : '' %></output>
         <% } else if (error) { %>
             <div class="alert alert-warning" role="alert">That request could not be processed. It may already have been decided, or the booking may already be credited.</div>
         <% } %>

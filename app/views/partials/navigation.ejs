@@ -66,9 +66,9 @@ const adminGroups = [
             <button class="btn btn-outline-primary btn-sm" type="submit">Switch</button>
         </form>
         <% if (viewingAs) { %>
-            <div class="alert alert-warning small py-1 px-2 mb-2 text-left" role="status">
+            <output class="alert alert-warning small py-1 px-2 mb-2 text-left" aria-live="polite">
                 Your active role is <strong><%= viewingAs %></strong>. Access uses this role's permissions only.
-            </div>
+            </output>
         <% } %>
     <% } %>
     <% if (navigationItems.length) { %>

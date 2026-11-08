@@ -20,12 +20,12 @@
             </div>
         </header>
         <p>Action the bank transfer outside ActiveHub, then mark the request as done to record completion and deduct the current remaining credit. Check the remaining amount before transferring: it may decrease if credit is spent; fully spent requests close automatically. Refund requests cannot be declined.</p>
-        <% if (locals.corrected) { %><div class="alert alert-success" role="status">Declined refund request reopened. It is now in Pending action.</div><% } %>
+        <% if (locals.corrected) { %><output class="alert alert-success" aria-live="polite">Declined refund request reopened. It is now in Pending action.</output><% } %>
         <% if (locals.refundsEnabled === false) { %>
-            <div class="alert alert-warning" role="status">Bank and external refunds are disabled system-wide. Pending requests remain visible but cannot be marked as done until refunds are enabled in Settings.</div>
+            <output class="alert alert-warning" aria-live="polite">Bank and external refunds are disabled system-wide. Pending requests remain visible but cannot be marked as done until refunds are enabled in Settings.</output>
         <% } %>
         <% if (decision === 'approved') { %>
-            <div class="alert alert-success" role="status">Refund marked as done and the remaining credit deducted. Search History using today's date to check the exact completed amount.</div>
+            <output class="alert alert-success" aria-live="polite">Refund marked as done and the remaining credit deducted. Search History using today's date to check the exact completed amount.</output>
         <% } %>
         <% if (error) { %>
             <div class="alert alert-warning" role="alert">This request can no longer be actioned. It may already be decided or its credit fully spent.</div>
@@ -59,7 +59,7 @@
                             <div class="profile-choice-list" data-refund-profile-choices role="radiogroup" aria-label="Refund history profile">
                                 <label><input type="radio" name="refund-profile-choice" value="<%= chosen ? chosen.guid : '' %>" checked> <%= chosen ? chosen.name : 'All profiles' %></label>
                             </div>
-                            <p class="sr-only" data-refund-profile-status role="status" aria-live="polite"></p>
+                            <output class="sr-only" data-refund-profile-status aria-live="polite"></output>
                         </div>
                         <div class="form-group col-md">
                             <label for="refund-from">From date</label>
@@ -74,7 +74,7 @@
                             <button class="btn btn-primary" type="submit">Search history</button>
                         </div>
                     </form>
-                    <% if (searched) { %><p role="status"><%= history.total %> matching this period</p><% } %>
+                    <% if (searched) { %><output aria-live="polite"><%= history.total %> matching this period</output><% } %>
                 <% } %>
                 <% if (items.length) { %>
                     <div class="table-responsive bg-white border rounded">

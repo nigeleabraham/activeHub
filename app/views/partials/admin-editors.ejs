@@ -112,11 +112,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const successKey = pageUrl.searchParams.get('admin_saved');
     if (Object.hasOwn(successMessages, successKey)) {
-        const notice = document.createElement('div');
+        const notice = document.createElement('output');
         notice.className = 'alert alert-success';
         if (['course-updated', 'course-deleted'].includes(successKey)) notice.classList.add('sr-only');
         notice.setAttribute('data-admin-save-confirmation', '');
-        notice.setAttribute('role', 'status');
         notice.setAttribute('aria-live', 'polite');
         notice.textContent = successMessages[successKey];
         const main = document.querySelector('main');
@@ -919,9 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 details.append(toggle, form);
             }
         }
-        const status = document.createElement('span');
-        status.className = 'admin-editor-status small font-weight-bold';
-        status.setAttribute('role', 'status');
+        const status = document.createElement('output');
+        status.className = 'admin-editor-status output-inline small font-weight-bold';
+        status.setAttribute('aria-live', 'polite');
         const error = document.createElement('div');
         error.className = 'alert alert-danger w-100';
         error.setAttribute('role', 'alert');

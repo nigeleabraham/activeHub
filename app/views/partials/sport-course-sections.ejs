@@ -17,7 +17,7 @@
     <h5 class="h6 border-top pt-4 mt-4 mb-3">Existing sections</h5>
 <% } %>
 <div data-card-order-list="/admin/sports/course-sections/order" data-order-sport="<%= sport.guid %>">
-<p class="small mb-2" data-order-feedback role="status" aria-live="polite"></p>
+<output class="small mb-2" data-order-feedback aria-live="polite"></output>
 <div class="alert alert-danger" data-order-error role="alert" tabindex="-1" hidden></div>
 <% sections.forEach(section => { %>
     <% const removeFormId = `remove-section-${sport.guid}-${section.id}`; %>

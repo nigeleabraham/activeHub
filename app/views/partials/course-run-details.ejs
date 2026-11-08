@@ -18,7 +18,7 @@ const schedules = [...new Set(run.sessions.map(session => {
 <% } %>
 <p class="mb-2"><strong class="h4">&pound;<%= (run.current_price_pence / 100).toFixed(2) %></strong> for <%= run.remaining_sessions %> remaining sessions</p>
 <% if (spaces <= 0) { %>
-    <p class="font-weight-bold text-danger" role="status"><span class="bg-danger text-white px-2 rounded">Sold out</span></p>
+    <output class="font-weight-bold text-danger" aria-live="polite"><span class="bg-danger text-white px-2 rounded">Sold out</span></output>
 <% } else { %>
     <p class="small mb-2">Spaces remaining: <%= spaces %>.</p>
 <% } %>

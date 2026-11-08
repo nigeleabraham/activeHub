@@ -25,11 +25,11 @@
         <% } %>
     </div>
 <% } else if (created) { %>
-    <div class="alert alert-success booking-toast d-flex align-items-start" role="status" data-booking-toast>
-        <div class="mr-3">
+    <output class="alert alert-success booking-toast d-flex align-items-start" aria-live="polite" data-booking-toast>
+        <span class="mr-3">
             <strong><%= created === 1 ? 'Booking confirmed' : created + ' bookings confirmed' %></strong>
-            <div class="small"><% if (locals.creditUsed && creditUsed !== '£0.00') { %><%= creditUsed %> of account credit used. <% } %><% if (locals.paid && paid !== '£0.00') { %>Payment of <%= paid %> received (simulated). <% } %>Your <%= created === 1 ? 'slot has' : 'slots have' %> been booked successfully. You can see <%= created === 1 ? 'it' : 'them' %> in the bookings list.</div>
-        </div>
+            <span class="small d-block"><% if (locals.creditUsed && creditUsed !== '£0.00') { %><%= creditUsed %> of account credit used. <% } %><% if (locals.paid && paid !== '£0.00') { %>Payment of <%= paid %> received (simulated). <% } %>Your <%= created === 1 ? 'slot has' : 'slots have' %> been booked successfully. You can see <%= created === 1 ? 'it' : 'them' %> in the bookings list.</span>
+        </span>
         <button type="button" class="close ml-auto" data-dismiss-toast aria-label="Dismiss notification"><span aria-hidden="true">&times;</span></button>
-    </div>
+    </output>
 <% } %>

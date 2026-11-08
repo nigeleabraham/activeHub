@@ -191,7 +191,7 @@ test('administrator template forms save independent daylight switches and render
     assert.match(html, /data-template-guid="test"/);
     assert.match(html, /data-template-name="Test daylight"/);
     assert.match(html, /data-template-error role="alert" tabindex="-1" hidden/);
-    assert.match(html, /data-template-feedback role="status" aria-live="polite"/);
+    assert.match(html, /<output class="sr-only" data-template-feedback aria-live="polite"/);
     assert.doesNotMatch(html, /justify-content-between align-items-center" style="row-gap/);
     assert.ok(!html.includes('name="dusk_override" checked'));
     assert.equal((html.match(/name="dawn_override"/g) || []).length, 2);

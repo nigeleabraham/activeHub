@@ -24,11 +24,11 @@
             </div>
         </header>
 
-        <% if (saved) { %><div class="alert alert-success" role="status">Settings saved.</div><% } %>
+        <% if (saved) { %><output class="alert alert-success" aria-live="polite">Settings saved.</output><% } %>
         <% if (error) { %><div class="alert alert-danger" role="alert">The title is required and must be <%= maxLength %> characters or fewer.</div><% } %>
         <% if (organisationError) { %><div class="alert alert-danger" role="alert">Enter an organisation name of <%= maxLength %> characters or fewer.</div><% } %>
         <% if (locals.membershipError) { %><div class="alert alert-danger" role="alert">Enter a membership scheme name of <%= maxLength %> characters or fewer.</div><% } %>
-        <% if (windowSaved) { %><div class="alert alert-success" role="status">Credit request period saved.</div><% } %>
+        <% if (windowSaved) { %><output class="alert alert-success" aria-live="polite">Credit request period saved.</output><% } %>
         <% if (windowError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</div><% } %>
         <% if (lifetimeError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 36500.</div><% } %>
 

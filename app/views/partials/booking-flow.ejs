@@ -20,7 +20,7 @@
                 </div>
             </div>
             <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
-            <div class="booking-calendar-slots mb-3" data-calendar-slots role="group" aria-label="Booking times"></div>
+            <fieldset class="booking-calendar-slots semantic-control-group mb-3" data-calendar-slots aria-label="Booking times"></fieldset>
             <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
             <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
             <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
@@ -66,8 +66,8 @@
         <div data-booking-search-results aria-live="polite">
         <% if (facility.searchError) { %><p class="alert alert-danger" role="alert"><%= facility.searchError %></p><% } %>
         <% if (facility.searched && !facility.searchError) { %>
-            <p role="status">Search results: <span data-booking-count><%= visibleBookings.length %></span></p>
-            <% if (facility.truncated) { %><p class="alert alert-warning" role="status">Showing the latest 100 matching bookings. Refine your search to see other results.</p><% } %>
+            <output aria-live="polite">Search results: <span data-booking-count><%= visibleBookings.length %></span></output>
+            <% if (facility.truncated) { %><output class="alert alert-warning" aria-live="polite">Showing the latest 100 matching bookings. Refine your search to see other results.</output><% } %>
         <% } %>
     <% if (visibleBookings.length) { %>
         <div class="table-responsive" data-bookings-table>

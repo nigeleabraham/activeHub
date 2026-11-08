@@ -13,6 +13,8 @@ And open http://localhost:3000 in your browser.
 
 ## Responsive layout
 
+Live feedback uses native `output` elements with polite announcements. Shared styling preserves block notices, inline heading feedback and hidden states. Booking/reorder controls use native fieldsets, the cookie banner is a labelled section, and opening-hours tables have row headers. The CVC remains masked with autofill disabled; emergency-contact telephone autofill is disabled to avoid filling the account holder's own number.
+
 The customer Bookings page has separate, initially collapsed **Court bookings** and **Course bookings** sections. Course bookings include the account holder and their children, clearly label each attendee, list upcoming purchased sessions and link to the order confirmation. Completed course places are omitted. Purchased attendee/schedule snapshots remain visible even if a child's profile is later archived.
 
 The customer booking form uses compact vertical spacing without reducing text sizes. Facility and court selectors remain prominent, slot buttons have no vertical gaps, and buttons retain a minimum 48px target height and width.

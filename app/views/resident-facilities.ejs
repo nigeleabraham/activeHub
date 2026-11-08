@@ -29,7 +29,7 @@
         .sport-chip.matched { background: #ffde02; color: #0b0c0c; font-weight: 600; }
         .distance { font-weight: 700; color: #113255; }
         .text-muted { color: #505a5f !important; }
-        .week-table td { padding: 0.15rem 1rem 0.15rem 0; }
+        .week-table td, .week-table th { padding: 0.15rem 1rem 0.15rem 0; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -79,12 +79,12 @@
             <div class="d-flex flex-wrap align-items-center">
                 <button type="button" id="near-me" class="btn btn-outline-brand mr-2 mb-2">📍 Sort by nearest to me</button>
                 <button type="button" id="clear" class="btn btn-link mb-2">Clear filters</button>
-                <span id="location-status" class="text-muted ml-md-3 mb-2" role="status"></span>
+                <output id="location-status" class="output-inline text-muted ml-md-3 mb-2" aria-live="polite"></output>
             </div>
             <p class="text-muted small mb-0">Your location is used only in your browser to work out distances. It is not sent to us or stored.</p>
         </form>
 
-        <p id="result-count" class="mt-4 mb-3 font-weight-bold" role="status" aria-live="polite"></p>
+        <output id="result-count" class="mt-4 mb-3 font-weight-bold" aria-live="polite"></output>
 
         <div class="row" id="results">
             <% facilities.forEach(facility => { %>
@@ -116,7 +116,7 @@
                                 <table class="week-table mt-2"><tbody>
                                     <% facility.week.forEach(day => { %>
                                         <tr>
-                                            <td><%= new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) %></td>
+                                            <th scope="row" class="font-weight-normal"><%= new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) %></th>
                                             <td><%= day.is_closed ? 'Closed' : day.opens_at + '–' + day.closes_at %></td>
                                         </tr>
                                     <% }) %>

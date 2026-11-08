@@ -9,7 +9,7 @@
         <div class="profile-choice-list" data-credit-profile-choices role="radiogroup" aria-label="Credit history profile">
             <label><input type="radio" name="credit-profile-choice" value="<%= chosen ? chosen.guid : '' %>" checked> <%= chosen ? chosen.name : 'All profiles' %></label>
         </div>
-        <p class="sr-only" data-credit-profile-status role="status" aria-live="polite"></p>
+        <output class="sr-only" data-credit-profile-status aria-live="polite"></output>
     </div>
     <div class="form-group col-md">
         <label for="credit-from">From date</label>
@@ -24,4 +24,4 @@
         <button class="btn btn-primary" type="submit">Search history</button>
     </div>
 </form>
-<% if (searched) { %><p role="status"><%= history.total %> matching this period</p><% } %>
+<% if (searched) { %><output aria-live="polite"><%= history.total %> matching this period</output><% } %>

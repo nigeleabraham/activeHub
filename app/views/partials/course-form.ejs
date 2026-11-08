@@ -59,7 +59,8 @@
                         <h5 class="h6 mb-2" id="<%= cardId %>-title"><%= section.heading || 'Introduction' %></h5>
                         <span class="badge badge-light border" data-override-badge>Standard</span>
                     </div>
-                    <input type="checkbox" hidden tabindex="-1" aria-hidden="true" data-override-mode<%= override ? ' checked' : '' %>>
+                    <label class="sr-only" for="<%= cardId %>-override-mode">Customise <%= section.heading || 'Introduction' %></label>
+                    <input id="<%= cardId %>-override-mode" type="checkbox" hidden tabindex="-1" aria-hidden="true" data-override-mode<%= override ? ' checked' : '' %>>
                     <div class="mb-2" data-default-preview><div style="white-space: pre-wrap;"><%- include('faq-answer', { answer: section.text, boldText: true }) %></div></div>
                     <div data-override-fields>
                         <div class="form-group">

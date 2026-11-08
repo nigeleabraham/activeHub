@@ -91,7 +91,7 @@ test('refund history view starts empty and pagination preserves both dates', asy
     assert.match(initial, /name="from" type="date" value="" required/);
     assert.match(initial, /name="to" type="date" value="" required/);
     assert.match(initial, /id="refund-profile-search" type="search"/);
-    assert.match(initial, /class="sr-only" data-refund-profile-status role="status" aria-live="polite"/);
+    assert.match(initial, /<output class="sr-only" data-refund-profile-status aria-live="polite"/);
     assert.match(initial, /type="hidden" name="profile" value=""/);
     assert.doesNotMatch(initial, /data-refund-all-profiles/);
     assert.match(initial, /if \(!event.target.value.trim\(\)\) finder.reset\(\{ guid: '', name: 'All profiles' \}\)/);

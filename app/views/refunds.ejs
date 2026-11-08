@@ -21,17 +21,17 @@
             </div>
         </header>
         <% if (locals.refundsEnabled === false) { %>
-            <div class="alert alert-warning" role="status">Bank and external refunds are disabled system-wide. You can still award account credit; saved bank-refund eligibility only applies if refunds are re-enabled.</div>
+            <output class="alert alert-warning" aria-live="polite">Bank and external refunds are disabled system-wide. You can still award account credit; saved bank-refund eligibility only applies if refunds are re-enabled.</output>
         <% } %>
 
         <% if (done === 'credit') { %>
-            <div class="alert alert-success" role="status">
+            <output class="alert alert-success" aria-live="polite">
                 <strong><%= doneAmount %></strong> was added to the profile's credit for booking <strong><%= doneRef %></strong>. The booking is still in place.
-            </div>
+            </output>
         <% } else if (done === 'external') { %>
-            <div class="alert alert-success" role="status">
+            <output class="alert alert-success" aria-live="polite">
                 Booking <strong><%= doneRef %></strong> was cancelled. Please refund <strong><%= doneAmount %></strong> outside ActiveHub.
-            </div>
+            </output>
         <% } else if (error) { %>
             <div class="alert alert-warning" role="alert">
                 <%= error === 'not-refundable'

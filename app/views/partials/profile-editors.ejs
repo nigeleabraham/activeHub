@@ -44,9 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.hidden = true;
             toggle.setAttribute('aria-controls', panel.id);
             actions.append(toggle);
-            const feedback = document.createElement('p');
+            const feedback = document.createElement('output');
             feedback.className = 'alert-success sr-only';
-            feedback.setAttribute('role', 'status');
+            feedback.setAttribute('aria-live', 'polite');
             feedback.hidden = true;
             const contents = Array.from(section.children).filter(element => element !== heading);
             form.append(key, ...contents);

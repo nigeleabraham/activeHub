@@ -19,7 +19,7 @@
     </header>
     <main class="container py-4">
         <h1>Course enrolment confirmed</h1>
-        <p role="status">Your course places are confirmed. Card payments are simulated; no money has been taken.</p>
+        <output aria-live="polite">Your course places are confirmed. Card payments are simulated; no money has been taken.</output>
         <p>Order reference: <strong><%= order.guid %></strong></p>
         <ul class="list-unstyled">
             <% order.items.forEach(item => { %>
