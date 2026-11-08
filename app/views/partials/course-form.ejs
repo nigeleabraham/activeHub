@@ -1,4 +1,7 @@
-<% const standardMode = course ? Boolean(course.description_sport_guid) : true; %>
+<% const customDescription = course && (course.description_custom ??
+    (!course.description_sport_guid || Object.keys(course.description_overrides || {}).length > 0 || (course.description_sections || []).length > 0));
+const standardAvailable = sports.some(sport => (course?.sport_guids || []).includes(sport.guid) && sport.course_description_text?.trim());
+const standardMode = standardAvailable && (!course || !customDescription); %>
 <fieldset class="admin-form-section">
     <legend class="admin-form-section-title">1. Course details</legend>
     <div class="form-group">
@@ -26,13 +29,14 @@
     <fieldset class="form-group">
         <legend class="h6">How do you want to describe this course?</legend>
         <div class="form-check mb-2">
-            <input class="form-check-input" type="radio" id="<%= prefix %>-mode-standard" name="description_mode" value="standard" data-description-mode<%= standardMode ? ' checked' : '' %>>
-            <label class="form-check-label" for="<%= prefix %>-mode-standard">Use a sport's standard description <span class="text-muted">(recommended)</span></label>
-            <small class="form-text text-muted mt-0">Sections you don't customise update automatically when the sport's standard text changes on the Sports and Course Descriptions page.</small>
+            <input class="form-check-input" type="radio" id="<%= prefix %>-mode-standard" name="description_mode" value="standard" data-description-mode aria-describedby="<%= prefix %>-standard-availability"<%= standardMode ? ' checked' : '' %><%= standardAvailable ? '' : ' disabled' %>>
+            <label class="form-check-label<%= standardAvailable ? '' : ' text-muted' %>" for="<%= prefix %>-mode-standard" data-description-standard-label>Use a sport's standard description <span class="text-muted">(recommended)</span></label>
+            <small id="<%= prefix %>-standard-availability" class="form-text text-muted mt-0" data-description-availability<%= standardAvailable ? ' hidden' : '' %>>Unavailable: select a sport with a standard description, or customise this course's description.</small>
+            <small class="form-text text-muted mt-0">The whole description updates automatically when the sport's standard description changes.</small>
         </div>
         <div class="form-check">
             <input class="form-check-input" type="radio" id="<%= prefix %>-mode-own" name="description_mode" value="own" data-description-mode<%= standardMode ? '' : ' checked' %>>
-            <label class="form-check-label" for="<%= prefix %>-mode-own">Write my own description</label>
+            <label class="form-check-label" for="<%= prefix %>-mode-own">Customise this course's description</label>
         </div>
     </fieldset>
 
@@ -45,63 +49,33 @@
             </select>
             <small class="form-text text-muted" data-description-source-help>Only sports ticked above can be chosen.</small>
         </div>
-        <input type="hidden" name="description_overrides" value="<%= JSON.stringify(course?.description_overrides || {}) %>" data-description-overrides>
+        <input type="hidden" name="description_overrides" value="{}">
+        <input type="hidden" name="description_sections" value="[]">
         <% sports.forEach(sport => { %>
-            <fieldset data-description-defaults="<%= sport.guid %>" hidden disabled>
-                <legend class="sr-only"><%= sport.name %> standard sections</legend>
-                <% if (!sport.course_description_sections?.length) { %><p class="text-muted"><%= sport.name %> has no standard sections yet. Add them on the Sports and Course Descriptions page, or write your own description.</p><% } %>
-                <% (sport.course_description_sections || []).forEach(section => {
-                    const override = course?.description_sport_guid === sport.guid ? course?.description_overrides?.[section.id] : null;
-                    const cardId = `${prefix}-section-${sport.guid}-${section.id}`;
-                %>
-                <div class="bg-white border rounded p-3 mb-3" data-description-override="<%= section.id %>" data-standard-heading="<%= section.heading %>" data-standard-text="<%= section.text %>">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <h5 class="h6 mb-2" id="<%= cardId %>-title"><%= section.heading || 'Introduction' %></h5>
-                        <span class="badge badge-light border" data-override-badge>Standard</span>
-                    </div>
-                    <label class="sr-only" for="<%= cardId %>-override-mode">Customise <%= section.heading || 'Introduction' %></label>
-                    <input id="<%= cardId %>-override-mode" type="checkbox" hidden tabindex="-1" aria-hidden="true" data-override-mode<%= override ? ' checked' : '' %>>
-                    <div class="mb-2" data-default-preview><div style="white-space: pre-wrap;"><%- include('faq-answer', { answer: section.text, boldText: true }) %></div></div>
-                    <div data-override-fields>
-                        <div class="form-group">
-                            <label for="<%= cardId %>-heading">Heading</label>
-                            <input class="form-control" id="<%= cardId %>-heading" data-override-heading maxlength="160" value="<%= (override || section).heading %>">
-                        </div>
-                        <div class="form-group">
-                            <label for="<%= cardId %>-text">Text</label>
-                            <textarea class="form-control" id="<%= cardId %>-text" data-override-text rows="4" maxlength="10000"><%= (override || section).text %></textarea>
-                        </div>
-                    </div>
-                    <button type="button" class="btn btn-link btn-sm p-0" data-override-customise aria-describedby="<%= cardId %>-title">Customise</button>
-                    <button type="button" class="btn btn-link btn-sm p-0" data-override-reset aria-describedby="<%= cardId %>-title">Reset to standard text</button>
-                </div>
-                <% }); %>
-            </fieldset>
+            <template data-description-defaults="<%= sport.guid %>"><%= sport.course_description_text || '' %></template>
         <% }); %>
-        <p class="small text-muted" data-description-own-kept hidden>Your own description is kept and will be used again if you switch back to writing your own.</p>
     </div>
 
     <div class="form-group" data-description-own>
         <label for="<%= prefix %>-description">Description</label>
-        <textarea class="form-control" id="<%= prefix %>-description" name="description" rows="5" maxlength="10000"><%= course?.description || '' %></textarea>
+        <textarea class="form-control" id="<%= prefix %>-description" name="description" rows="10" maxlength="1020000"><%= course?.description_text ?? course?.description ?? '' %></textarea>
+        <small class="form-text text-muted" data-description-state></small>
+        <button type="button" class="btn btn-link btn-sm p-0 mt-2" data-description-reset>Reset to sport description</button>
     </div>
 
-    <h5 class="h6 mt-4">Additional sections <span class="text-muted font-weight-normal">(optional, shown after the description)</span></h5>
-    <%- include('description-sections-editor', { field: 'description_sections', sections: course?.description_sections || [] }) %>
-
-    <details class="mb-2">
-        <summary class="small">Formatting help</summary>
-        <ul class="small text-muted mt-2 mb-0">
+    <div class="mb-2" data-formatting-help>
+        <p class="small font-weight-bold mb-1">Formatting help</p>
+        <ul class="list-unstyled d-flex flex-wrap small text-muted mb-0" style="column-gap: 1.5rem; row-gap: 0.25rem;">
             <li>&lt;bold&gt;text&lt;/bold&gt; for <strong>bold</strong></li>
             <li>&lt;ul&gt;text&lt;/ul&gt; for <u>underline</u></li>
             <li>&lt;bullet&gt;text&lt;/bullet&gt; for each bullet point</li>
             <li>&lt;email&gt;name@example.com&lt;/email&gt; for a clickable email address</li>
             <li>Other HTML is displayed as text.</li>
         </ul>
-    </details>
+    </div>
     <details data-description-preview>
         <summary class="small">Preview as customers see it</summary>
         <div class="bg-white border rounded p-3 mt-2" data-description-preview-body></div>
     </details>
 </fieldset>
-<p class="small text-muted">These details are shared by all facility runs. Add locations, sessions, prices and capacities after saving the course.</p>
+<p class="small text-muted">These details are shared by all course runs. Add locations, sessions, prices and capacities after saving the course.</p>

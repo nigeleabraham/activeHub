@@ -30,6 +30,8 @@ app.disable('x-powered-by');
 
 app.use(connectLiveReload())
 
+app.post(['/admin/courses', '/admin/courses/update', '/admin/sports', '/admin/sports/course-defaults', '/admin/courses/faqs/save'],
+    express.urlencoded({ extended: false, limit: '12mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.locals.moment = moment;
 

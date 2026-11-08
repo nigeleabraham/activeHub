@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (previous.length) summary.querySelectorAll('dd').forEach((value, index) => {
                     if (value.textContent === previous[index]) return;
                     value.classList.add('admin-course-highlight');
-                    window.setTimeout(() => value.classList.remove('admin-course-highlight'), 2000);
+                    window.setTimeout(() => value.classList.remove('admin-course-highlight'), 1500);
                 });
             }
             form.addEventListener('profile-saved', refreshSummary);

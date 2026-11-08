@@ -34,11 +34,33 @@ async function findAll() {
     const { rows } = await pool.query(
         'SELECT guid, name, course_description_sections, created_at FROM sports ORDER BY LOWER(name)'
     );
-    return rows;
+    return rows.map(sport => ({ ...sport,
+        course_description_text: require('../courseDescriptions').combineSections(sport.course_description_sections || [])
+    }));
 }
 
-async function create(name, descriptionSections = []) {
+async function create(name, descriptionSections = [], faqText = '') {
     const validated = require('../courseDescriptions').sections(descriptionSections);
+    if (typeof faqText !== 'string' || faqText.length > 1020000) throw new RangeError('FAQ text is too long.');
+    if (faqText.trim()) {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const { rows } = await client.query(
+                'INSERT INTO sports (name,course_description_sections) VALUES ($1,$2) RETURNING *',
+                [name, JSON.stringify(validated)]
+            );
+            await client.query("INSERT INTO sport_course_faqs (sport_guid, question, answer) VALUES ($1, '', $2)",
+                [rows[0].guid, faqText.trim()]);
+            await client.query('COMMIT');
+            return rows[0];
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
     const { rows } = await pool.query(
         'INSERT INTO sports (name,course_description_sections) VALUES ($1,$2) RETURNING *',
         [name, JSON.stringify(validated)]
@@ -64,6 +86,39 @@ async function updateCourseDefaults(guid, descriptionSections) {
     const { rows } = await pool.query('UPDATE sports SET course_description_sections=$2 WHERE guid=$1 RETURNING guid',
         [guid, JSON.stringify(validated)]);
     return rows[0] || null;
+}
+
+async function updateCourseDescription(guid, text) {
+    if (typeof text !== 'string' || text.length > 1020000) throw new RangeError('Description is too long.');
+    const { randomUUID } = require('node:crypto');
+    const { courseDescriptionText } = require('../courseDescriptions');
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query('SELECT course_description_sections FROM sports WHERE guid=$1 FOR UPDATE', [guid]);
+        if (!rows.length) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        const { rows: customized } = await client.query(`SELECT guid, description_sport_guid, description_overrides, description_sections
+            FROM courses WHERE description_sport_guid=$1
+            AND (description_overrides <> '{}'::jsonb OR description_sections <> '[]'::jsonb) FOR UPDATE`, [guid]);
+        for (const course of customized) {
+            await client.query(`UPDATE courses SET description=$2, description_sport_guid=NULL,
+                description_overrides='{}', description_sections='[]' WHERE guid=$1`,
+            [course.guid, courseDescriptionText(course, rows[0].course_description_sections)]);
+        }
+        const description = text.trim();
+        const sections = description ? [{ id: rows[0].course_description_sections[0]?.id || randomUUID(), heading: '', text: description }] : [];
+        await client.query('UPDATE sports SET course_description_sections=$2 WHERE guid=$1', [guid, JSON.stringify(sections)]);
+        await client.query('COMMIT');
+        return { guid };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 async function changeCourseSection(guid, operation, section) {
@@ -108,4 +163,4 @@ async function changeCourseSection(guid, operation, section) {
     }
 }
 
-module.exports = { initialize, findAll, create, update, remove, updateCourseDefaults, changeCourseSection };
+module.exports = { initialize, findAll, create, update, remove, updateCourseDefaults, updateCourseDescription, changeCourseSection };

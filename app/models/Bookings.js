@@ -204,6 +204,15 @@ async function initialize() {
         WHERE amount_paid_pence = 0 AND amount_pence > 0 AND payment_status IN ('paid', 'credit')
     `);
     await pool.query('CREATE INDEX IF NOT EXISTS bookings_profile_idx ON bookings (profile_guid)');
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS bookings_facility_time_range_idx ON bookings USING gist
+        (facility_guid, tstzrange(starts_at, ends_at, '[)'))
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS bookings_facility_starts_idx ON bookings (facility_guid, starts_at DESC, guid)');
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS bookings_time_range_idx ON bookings USING gist
+        (tstzrange(starts_at, ends_at, '[)'))
+    `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS booking_reservations (
@@ -216,6 +225,7 @@ async function initialize() {
             EXCLUDE USING gist (resource_guid WITH =, time_range WITH &&)
         )
     `);
+    await pool.query('CREATE INDEX IF NOT EXISTS booking_reservations_booking_idx ON booking_reservations (booking_guid)');
     await Credits.initialize();
 }
 
@@ -226,6 +236,11 @@ async function findInAppFacilities() {
          WHERE booking_mode = 'in_app'
          ORDER BY LOWER(name)`
     );
+    return rows;
+}
+
+async function findBookingFacilities() {
+    const { rows } = await pool.query('SELECT guid, name FROM facilities ORDER BY LOWER(name)');
     return rows;
 }
 
@@ -282,9 +297,32 @@ async function findOptions(facilityGuid) {
 }
 
 async function findBookings(facilityGuid, startsAt = null, endsAt = null, filters = null) {
+    if (filters) {
+        const days = await Settings.getBookingSearchDays();
+        if (!isValidDateRange(filters.from, filters.to, days + 1)) {
+            throw new RangeError(`Enter both dates with To between From and From +${days} days.`);
+        }
+    }
     const like = value => value ? `%${value.replace(/[\\%_]/g, '\\$&')}%` : null;
     const { rows } = await pool.query(
-        `SELECT bookings.guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
+        `${filters ? `WITH matching_bookings AS MATERIALIZED (
+             SELECT bookings.guid
+             FROM bookings
+             WHERE ${facilityGuid ? 'bookings.facility_guid = $1' : '$1::uuid IS NULL'}
+                 AND ($2::timestamptz IS NULL OR bookings.ends_at > $2)
+                 AND ($3::timestamptz IS NULL OR bookings.starts_at < $3)
+                 AND tstzrange(bookings.starts_at, bookings.ends_at, '[)') && tstzrange(
+                     $6::date::timestamp AT TIME ZONE 'Europe/London',
+                     ($7::date + 1)::timestamp AT TIME ZONE 'Europe/London', '[)')
+                 AND ($4::text IS NULL OR bookings.booking_ref ILIKE $4)
+                 AND ($5::text IS NULL OR EXISTS (
+                     SELECT 1 FROM profiles WHERE profiles.guid = bookings.profile_guid
+                         AND (profiles.name ILIKE $5 OR profiles.email ILIKE $5)
+                 ))
+             ORDER BY bookings.starts_at DESC, bookings.guid LIMIT $8
+         )` : ''}
+         SELECT bookings.guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
+                ${filters ? 'bookings.facility_guid, facilities.name AS facility_name,' : ''}
                 bookings.profile_guid, profiles.name AS profile_name,
                 bookings.booked_by_guid, booked_by.name AS booked_by_name,
                 bookings.payment_status, bookings.amount_pence, bookings.credit_applied_pence, bookings.amount_paid_pence, bookings.booking_ref, bookings.credited_at,
@@ -300,21 +338,19 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null, filter
                     '[]'::json
                 ) AS resource_guids
          FROM bookings
+         ${filters ? 'JOIN matching_bookings ON matching_bookings.guid = bookings.guid' : ''}
+         ${filters ? 'JOIN facilities ON facilities.guid = bookings.facility_guid' : ''}
          JOIN bookable_options AS options ON options.guid = bookings.option_guid
          JOIN sports ON sports.guid = options.sport_guid
          LEFT JOIN profiles ON profiles.guid = bookings.profile_guid
          LEFT JOIN profiles AS booked_by ON booked_by.guid = bookings.booked_by_guid
          LEFT JOIN booking_reservations AS reservations ON reservations.booking_guid = bookings.guid
          LEFT JOIN booking_resources AS resources ON resources.guid = reservations.resource_guid
-                 WHERE bookings.facility_guid = $1
+                 WHERE ${filters && !facilityGuid ? '$1::uuid IS NULL' : 'bookings.facility_guid = $1'}
                      AND ($2::timestamptz IS NULL OR bookings.ends_at > $2)
                      AND ($3::timestamptz IS NULL OR bookings.starts_at < $3)
-                     ${filters ? `AND ($4::text IS NULL OR bookings.booking_ref ILIKE $4)
-                     AND ($5::text IS NULL OR profiles.name ILIKE $5 OR profiles.email ILIKE $5)
-                     AND ($6::date IS NULL OR bookings.ends_at > $6::date::timestamp AT TIME ZONE 'Europe/London')
-                     AND ($7::date IS NULL OR bookings.starts_at < ($7::date + 1)::timestamp AT TIME ZONE 'Europe/London')` : ''}
-         GROUP BY bookings.guid, options.name, sports.name, profiles.name, booked_by.name
-         ORDER BY bookings.starts_at ${filters ? 'DESC LIMIT $8' : ''}`,
+         GROUP BY bookings.guid, options.name, sports.name, profiles.name, booked_by.name${filters ? ', facilities.name' : ''}
+         ORDER BY bookings.starts_at ${filters ? 'DESC, bookings.guid' : ''}`,
                 filters ? [facilityGuid, startsAt, endsAt, like(filters.reference), like(filters.profile),
                     filters.from || null, filters.to || null, SEARCH_LIMIT + 1] : [facilityGuid, startsAt, endsAt]
     );
@@ -324,6 +360,10 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null, filter
 async function searchFacilityBookings(facilityGuid, filters) {
     const bookings = await findBookings(facilityGuid, null, null, filters);
     return { bookings: bookings.slice(0, SEARCH_LIMIT), truncated: bookings.length > SEARCH_LIMIT };
+}
+
+function searchBookings(filters) {
+    return searchFacilityBookings(filters.facility_guid || null, filters);
 }
 
 function findBookingsForProfile(profileGuid, condition, order, parameters = []) {
@@ -991,5 +1031,7 @@ module.exports = {
     removeBookingWithCredit,
     addCreditToBooking,
     cancelWithExternalRefund,
+    searchBookings,
+    findBookingFacilities,
     search
 };

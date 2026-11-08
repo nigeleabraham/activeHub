@@ -45,7 +45,7 @@ test('child archive reuses deletion animation and confirms removal before animat
     });
     assert.match(html, /action="\/profile\/family-members\/remove" data-child-archive/);
     assert.match(html, /data-child-archive-error hidden/);
-    assert.match(html, /async function animateDeletion\(row\)/);
+    assert.match(html, /async function animateDeletion\(row, holdMs = 0, durationMs = 800\)/);
     assert.match(html, /prefers-reduced-motion: reduce/);
     assert.match(html, /destination\.searchParams\.get\('family_saved'\) !== '1'/);
     assert.match(html, /input\.value === guid/);

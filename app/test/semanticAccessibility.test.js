@@ -27,8 +27,8 @@ test('control groups, cookie region and opening-hours rows use native semantics'
     assert.match(read('partials/card-order-controls.ejs'), /<fieldset[^>]*>\s*<legend class="sr-only">Order:/);
     assert.match(read('partials/cookie-banner.ejs'), /<section id="cookie-banner"[^>]*aria-label=/);
     assert.match(read('resident-facilities.ejs'), /<th scope="row"/);
-    assert.match(read('partials/course-form.ejs'), /<label[^>]*for="<%= cardId %>-override-mode"/);
-    assert.match(read('partials/course-form.ejs'), /<input id="<%= cardId %>-override-mode"/);
+    assert.match(read('partials/course-form.ejs'), /<label for="<%= prefix %>-description">Description/);
+    assert.doesNotMatch(read('partials/course-form.ejs'), /data-override-mode/);
 });
 
 test('remote icon styles are integrity checked and delete labels include the visible name', () => {

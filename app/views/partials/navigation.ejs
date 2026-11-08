@@ -3,10 +3,11 @@ const adminItems = [
     { key: 'admin-home', label: 'Admin home', href: '/admin' },
     { key: 'external-home', label: 'External home', href: '/' },
     { key: 'facilities', label: 'Facilities', href: '/admin/facilities' },
-    { key: 'courses', label: 'Courses', href: '/admin/courses' },
+    { key: 'courses', label: 'Courses and course runs', href: '/admin/courses' },
     { key: 'sports', label: 'Sports and Course Descriptions', href: '/admin/sports' },
     { key: 'opening-hours', label: 'Opening hours templates', href: '/admin/opening-hours' },
     { key: 'bookings', label: 'Bookings management', href: '/admin/bookings' },
+    { key: 'booking-search', label: 'Booking search', href: '/admin/booking-search' },
     { key: 'court-configuration', label: 'Court configuration', href: '/admin/court-configuration' },
     { key: 'credit-requests', label: 'Credit requests', href: '/admin/credit-requests' },
     { key: 'credit-refunds', label: 'Refund requests', href: '/admin/credit-refunds' },
@@ -26,7 +27,7 @@ const adminBrand = locals.adminBrand || { title: locals.siteTitle || 'ActiveHub'
 const adminGroups = [
     { label: 'Home Pages', keys: ['admin-home', 'external-home'] },
     { label: 'Facilities management', keys: ['facilities', 'courses', 'sports', 'opening-hours', 'court-configuration'] },
-    { label: 'Bookings management', keys: ['bookings', 'credit-requests', 'credit-refunds', 'refunds'] },
+    { label: 'Bookings management', keys: ['bookings', 'booking-search', 'credit-requests', 'credit-refunds', 'refunds'] },
     { label: 'System Admin', keys: ['profiles', 'roles', 'audit', 'settings'] }
 ].map(group => ({ ...group, keys: group.keys.filter(key => navigationItems.some(item => item.key === key)) }))
     .filter(group => group.keys.length);

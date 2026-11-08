@@ -1,0 +1,90 @@
+<% const filters = results.filters || {}; %>
+<% const maxDays = results.maxDays; %>
+<% const maximumTo = /^\d{4}-\d{2}-\d{2}$/.test(filters.from || '') && Number.isFinite(Date.parse(filters.from))
+    ? new Date(Date.parse(filters.from) + maxDays * 86400000).toISOString().slice(0, 10) : ''; %>
+<section id="booking-search" data-booking-search-panel aria-labelledby="booking-search-heading">
+    <h2 class="h5" id="booking-search-heading" tabindex="-1">Search existing bookings</h2>
+    <p class="small text-muted" id="booking-search-help">From defaults to today. To defaults to From +<%= maxDays %> days and can be shortened, but never before From. Facility, reference and name/email filters are optional. Choose All facilities to search across sites. Dates use UK time.</p>
+    <form method="GET" action="/admin/booking-search" class="mb-3" data-facility-booking-search data-booking-search-days="<%= maxDays %>">
+        <div class="form-group">
+            <label for="booking-facility">Facility <small class="text-muted">Optional</small></label>
+            <select class="form-control form-control-sm" id="booking-facility" name="facility_guid">
+                <option value="">All facilities</option>
+                <% facilities.forEach(facility => { %>
+                    <option value="<%= facility.guid %>" <%= filters.facility_guid === facility.guid ? 'selected' : '' %>><%= facility.name %></option>
+                <% }); %>
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                <label for="booking-reference">Booking reference <small class="text-muted">Optional</small></label>
+                <input class="form-control form-control-sm" id="booking-reference" name="reference" maxlength="100" value="<%= filters.reference || '' %>">
+            </div>
+            <div class="form-group col-md-6">
+                <label for="booking-profile">Booked-for name or email <small class="text-muted">Optional</small></label>
+                <input class="form-control form-control-sm" id="booking-profile" name="profile" maxlength="100" value="<%= filters.profile || '' %>">
+            </div>
+            <div class="form-group col-md-6">
+                <label for="booking-from">From date</label>
+                <input class="form-control form-control-sm" id="booking-from" name="from" type="date" value="<%= filters.from || '' %>" aria-describedby="booking-search-help" required>
+            </div>
+            <div class="form-group col-md-6">
+                <label for="booking-to">To date</label>
+                <input class="form-control form-control-sm" id="booking-to" name="to" type="date" value="<%= filters.to || '' %>" min="<%= filters.from || '' %>" max="<%= maximumTo %>" aria-describedby="booking-search-help" required>
+            </div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm mr-2" href="/admin/booking-search" data-clear-booking-search>Clear search</a>
+        <button class="btn btn-primary btn-sm" type="submit">Search bookings</button>
+    </form>
+    <p class="alert alert-danger" data-booking-search-error role="alert" hidden></p>
+    <div data-booking-search-results aria-live="polite">
+        <% if (results.searchError) { %><p class="alert alert-danger" role="alert"><%= results.searchError %></p><% } %>
+        <% if (results.searched && !results.searchError) { %>
+            <output aria-live="polite">Search results: <span data-booking-count><%= results.bookings.length %></span></output>
+            <% if (results.truncated) { %><output class="alert alert-warning" aria-live="polite">Showing the latest 100 matching bookings. Refine your search to see other results.</output><% } %>
+        <% } %>
+        <% if (results.bookings.length) { %>
+            <div class="table-responsive" data-bookings-table>
+                <table class="table table-sm bg-white">
+                    <thead><tr><th>Reference</th><th>Facility</th><th>Court</th><th>Start (local)</th><th>End (local)</th><th>Resources held</th><th>Fee / paid</th><th>Booked for</th><th>Booked by</th><th></th></tr></thead>
+                    <tbody>
+                        <% results.bookings.forEach(booking => { %>
+                            <tr>
+                                <td><code><%= booking.booking_ref %></code></td>
+                                <td><%= booking.facility_name %></td>
+                                <td><%= booking.option_name %> · <%= booking.sport_name %></td>
+                                <td><time data-local-booking-time datetime="<%= moment.utc(booking.starts_at).toISOString() %>"><%= moment.utc(booking.starts_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
+                                <td><time data-local-booking-time datetime="<%= moment.utc(booking.ends_at).toISOString() %>"><%= moment.utc(booking.ends_at).format('ddd D MMM YYYY, HH:mm [UTC]') %></time></td>
+                                <td><%= booking.resource_names.join(', ') %></td>
+                                <td><% if (booking.payment_status === 'paid' || booking.payment_status === 'credit') { %>Fee £<%= (booking.amount_pence / 100).toFixed(2) %> · paid £<%= (booking.amount_paid_pence / 100).toFixed(2) %><%= booking.payment_status === 'credit' ? ' (credit)' : booking.credit_applied_pence ? ' (incl. £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit)' : '' %><% } else { %>Free · paid £0.00<% } %>
+                                    <%- include('booking-funding', { booking }) %>
+                                </td>
+                                <td><%= booking.profile_name || 'Unassigned' %></td>
+                                <td><%= booking.booked_by_name || 'Not recorded' %></td>
+                                <td>
+                                    <form method="POST" action="/admin/bookings/cancel" data-cancel-booking>
+                                        <input type="hidden" name="return_to" value="booking-search">
+                                        <input type="hidden" name="search_facility_guid" value="<%= filters.facility_guid || '' %>">
+                                        <% ['reference', 'profile', 'from', 'to'].forEach(key => { %>
+                                            <input type="hidden" name="<%= key %>" value="<%= filters[key] || '' %>">
+                                        <% }); %>
+                                        <input type="hidden" name="facility_guid" value="<%= booking.facility_guid %>">
+                                        <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
+                                        <% if (isAdmin && booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
+                                            <label class="d-block small mt-1"><input type="checkbox" name="refundable" value="1"> Allow bank refund of the card-paid portion</label>
+                                            <p class="small mb-1">Reissued credits retain their original refund eligibility.</p>
+                                            <button class="btn btn-outline-primary btn-sm mt-1" type="submit" name="credit" value="1">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> paid to <%= booking.profile_name %></button>
+                                        <% } %>
+                                    </form>
+                                </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        <% } %>
+        <p class="text-muted" data-no-bookings <%= results.bookings.length || !results.searched || results.searchError ? 'hidden' : '' %>>No matching bookings.</p>
+        <% if (!results.searched) { %><p class="text-muted">Search to load existing bookings.</p><% } %>
+    </div>
+</section>

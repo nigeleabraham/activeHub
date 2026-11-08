@@ -27,7 +27,7 @@ test('profile save feedback is screen-reader-only and highlights changed values 
     assert.match(source, /feedback\.className = 'alert-success sr-only'/);
     assert.match(source, /if \(value\.textContent === previous\[index\]\) return/);
     assert.match(source, /value\.classList\.add\('admin-course-highlight'\)/);
-    assert.match(source, /setTimeout\(\(\) => value\.classList\.remove\('admin-course-highlight'\), 2000\)/);
+    assert.match(source, /setTimeout\(\(\) => value\.classList\.remove\('admin-course-highlight'\), 1500\)/);
     assert.doesNotMatch(source, /section\.classList\.add\('admin-course-highlight'\)/);
 });
 

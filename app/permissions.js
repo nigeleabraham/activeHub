@@ -20,7 +20,7 @@ function adminPermissions(path) {
     const permissions = {
         facilities: 'facilities.manage', courses: 'courses.manage', sports: 'sports.manage',
         'opening-hours': 'opening_hours.manage', bookings: 'bookings.manage',
-        'court-configuration': 'bookings.manage', profiles: 'profiles.manage',
+        'court-configuration': 'bookings.manage', 'booking-search': 'bookings.manage', profiles: 'profiles.manage',
         roles: 'roles.manage', audit: 'audit.view'
     };
     return permissions[area] ? [permissions[area]] : [];

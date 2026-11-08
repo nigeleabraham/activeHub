@@ -1,0 +1,6 @@
+<% const faqText = faqs.map(faq => [faq.question ? `<bold>${faq.question}</bold>` : '', faq.answer].filter(Boolean).join('\n')).join('\n\n'); %>
+<% if (typeof editable !== 'undefined' && editable) { %>
+    <%- include('formatted-description-form', { prefix, description: faqText, label: 'FAQs', field: 'faq_text' }) %>
+<% } else { %>
+    <div class="readable-content" style="white-space: pre-wrap;"><%- include('faq-answer', { answer: faqText, boldText: true }) %></div>
+<% } %>

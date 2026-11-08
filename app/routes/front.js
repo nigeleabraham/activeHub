@@ -15,7 +15,7 @@ const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
 const AuditLog = require('./../models/AuditLog');
 const auth = require('./../middleware/auth');
 const { parseFacilityInput, resolveFacilityCoordinates } = require('./../facilityUtils');
-const { isValidEmail, parseDeclineComment, parseBookingMonths } = require('./../validation');
+const { isValidEmail, parseDeclineComment, parseBookingMonths, isValidDateRange } = require('./../validation');
 const { parseRunInput } = require('../courseRuns');
 
 const router = express.Router();
@@ -29,7 +29,7 @@ function parseCourseInput(body) {
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 160 ||
         !sportGuids.length || sportGuids.length > 100 ||
         sportGuids.some(guid => typeof guid !== 'string' || !GUID_PATTERN.test(guid)) ||
-        description.length > 10000) {
+        description.length > 1020000) {
         return null;
     }
     let config = {};
@@ -141,10 +141,11 @@ async function recordAudit(profile, entry) {
 // Management areas use active-role permissions; settings and financial reviews are Administrator-only.
 const ADMIN_LINKS = [
     { href: '/admin/facilities', title: 'Facilities', text: 'Venues, descriptions and opening hours templates' },
-    { href: '/admin/courses', title: 'Courses', text: 'Courses offered at each facility' },
+    { href: '/admin/courses', title: 'Courses and course runs', text: 'Manage shared courses and their runs at each facility' },
     { href: '/admin/sports', title: 'Sports and Course Descriptions', text: 'Manage sports and their standard course descriptions' },
     { href: '/admin/opening-hours', title: 'Opening hours', text: 'Weekly schedules and exceptions' },
     { href: '/admin/bookings', title: 'Bookings management', text: 'Book and manage slots for any profile' },
+    { href: '/admin/booking-search', title: 'Booking search', text: 'Find existing bookings and manage cancellations' },
     { href: '/admin/court-configuration', title: 'Court configuration', text: 'Configure courts, shared resources and seasonal booking months' },
     { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
     { href: '/admin/credit-refunds', title: 'Refund requests', text: 'Review requests to transfer booking credit to a bank account' },
@@ -617,6 +618,16 @@ const cancelBookingHandler = async (req, res) => {
         });
         // In-page cancels update the list without a reload.
         if (req.get('X-Requested-With') === 'fetch') return res.sendStatus(204);
+        if (req.body.return_to === 'booking-search') {
+            const query = new URLSearchParams();
+            if (typeof req.body.search_facility_guid === 'string') {
+                query.set('facility_guid', req.body.search_facility_guid.slice(0, 36));
+            }
+            for (const key of ['reference', 'profile', 'from', 'to']) {
+                if (typeof req.body[key] === 'string') query.set(key, req.body[key].slice(0, 100));
+            }
+            return res.redirect(`/admin/booking-search?${query}`);
+        }
         return res.redirect(BOOKINGS_PATH);
     } catch (error) {
         return res.sendStatus(500);
@@ -845,6 +856,23 @@ admin.post('/settings/credit-slot-auto-approval', async (req, res) => {
         return res.redirect('/admin/settings?saved=1');
     } catch (error) {
         console.error('Unable to save weather slot auto-approval setting:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/settings/booking-search-days', async (req, res) => {
+    const days = Settings.parseBookingSearchDays(req.body.days);
+    if (days === null) return res.redirect('/admin/settings?error=booking-search-days');
+    try {
+        const previous = await Settings.getBookingSearchDays();
+        await Settings.set('booking_search_days', String(days));
+        await recordAudit(req.profile, {
+            action: 'settings.booking_search_days', entityType: 'setting', entityLabel: 'Booking search range',
+            details: { from: previous, to: days }
+        });
+        return res.redirect('/admin/settings?saved=1');
+    } catch (error) {
+        console.error('Unable to save booking search range:', error);
         return res.sendStatus(500);
     }
 });
@@ -1257,6 +1285,7 @@ admin.get('/profiles/search', async (req, res) => {
     try {
         return res.json({ profiles: await Profiles.search(query) });
     } catch (error) {
+        console.error('Unable to search profiles:', error);
         return res.sendStatus(500);
     }
 });
@@ -1435,6 +1464,8 @@ admin.get('/settings', async (req, res) => {
             creditRequestDays: await Settings.getCreditRequestDays(),
             autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
             creditLifetimeDays: settings.credit_lifetime_days,
+            bookingSearchDays: await Settings.getBookingSearchDays(),
+            bookingSearchError: req.query.error === 'booking-search-days',
             refundsEnabled: Settings.refundsEnabled(settings),
             lifetimeError: req.query.error === 'lifetime',
             windowSaved: req.query.window_saved === '1',
@@ -1750,6 +1781,24 @@ admin.post('/facilities/courses/destroy', async (req, res) => {
     }
 });
 
+admin.post('/courses/faqs/save', async (req, res) => {
+    const { sport_guid, faq_text } = req.body;
+    if (typeof sport_guid !== 'string' || !GUID_PATTERN.test(sport_guid) ||
+        typeof faq_text !== 'string' || faq_text.length > 1020000) {
+        console.warn('Invalid sport FAQ text');
+        return res.redirect('/admin/sports?error=invalid-faq');
+    }
+    try {
+        if (!await Courses.saveFaqText(sport_guid, faq_text)) return res.sendStatus(404);
+        await recordAudit(req.profile, { action: 'sport-faq.update', entityType: 'sport',
+            entityGuid: sport_guid, details: { sport_guid } });
+        return res.redirect(`/admin/sports?admin_saved=sport-updated&admin_saved_target=sport-${sport_guid}#sport-${sport_guid}`);
+    } catch (error) {
+        console.error('Unable to save sport FAQs:', error);
+        return res.sendStatus(500);
+    }
+});
+
 for (const [path, updating] of [['/courses/faqs', false], ['/courses/faqs/update', true]]) {
     admin.post(path, async (req, res) => {
         const { guid, sport_guid } = req.body;
@@ -1846,11 +1895,29 @@ admin.post('/sports', async (req, res) => {
     if (!name || name.length > 120) {
         return res.sendStatus(400);
     }
+    if (req.body.faq_text !== undefined && !auth.isAdministrator(req.profile)) return res.sendStatus(403);
+    if ((req.body.course_description !== undefined &&
+        (typeof req.body.course_description !== 'string' || req.body.course_description.length > 1020000)) ||
+        (req.body.faq_text !== undefined && (typeof req.body.faq_text !== 'string' || req.body.faq_text.length > 1020000))) {
+        console.warn('Invalid new sport description or FAQ text');
+        return res.sendStatus(400);
+    }
+    let sections;
     try {
-        await Sports.create(name, parseSportSections(req.body));
+        const description = req.body.course_description?.trim();
+        sections = req.body.course_description === undefined ? parseSportSections(req.body)
+            : description ? [{ id: require('node:crypto').randomUUID(), heading: '', text: description }] : [];
+        if (sections) sections = require('../courseDescriptions').sections(sections);
+    } catch (error) {
+        console.warn('Invalid new sport course defaults:', error.message);
+        return res.sendStatus(400);
+    }
+    try {
+        await Sports.create(name, sections, req.body.faq_text || '');
         res.redirect('/admin/sports');
     } catch (error) {
-        res.sendStatus(400);
+        console.error('Unable to create sport:', error);
+        res.sendStatus(error.code === '23505' ? 400 : 500);
     }
 });
 
@@ -1876,7 +1943,20 @@ admin.post('/sports/update', async (req, res) => {
 admin.post('/sports/course-defaults', async (req, res) => {
     const guid = req.body.guid;
     if (typeof guid !== 'string' || !GUID_PATTERN.test(guid) ||
-        typeof req.body.course_description_sections !== 'string') return res.sendStatus(400);
+        (typeof req.body.course_description !== 'string' && typeof req.body.course_description_sections !== 'string')) return res.sendStatus(400);
+    if (typeof req.body.course_description === 'string') {
+        if (req.body.course_description.length > 1020000) {
+            console.warn('Invalid sport course description: exceeds maximum length');
+            return res.sendStatus(400);
+        }
+        try {
+            if (!await Sports.updateCourseDescription(guid, req.body.course_description)) return res.sendStatus(404);
+            return res.redirect(`/admin/sports?admin_saved=sport-updated&admin_saved_target=sport-${guid}#sport-${guid}`);
+        } catch (error) {
+            console.error('Unable to update sport course description:', error);
+            return res.sendStatus(500);
+        }
+    }
     let sections;
     try {
         sections = parseSportSections(req.body);
@@ -1987,16 +2067,43 @@ admin.post('/opening-hours/destroy', async (req, res) => {
 
 async function adminBookingsPage(req, res) {
     const configuring = req.path === '/court-configuration';
+    const searching = req.path === '/booking-search';
+    if (!configuring && !searching && typeof req.query.facility_guid === 'string') {
+        const query = new URLSearchParams();
+        for (const key of ['facility_guid', 'reference', 'profile', 'from', 'to']) {
+            if (typeof req.query[key] === 'string') query.set(key, req.query[key]);
+        }
+        return res.redirect(`/admin/booking-search?${query}`);
+    }
     try {
-        const selectedFacility = !configuring && typeof req.query.facility_guid === 'string' ? req.query.facility_guid : '';
-        const filters = Object.fromEntries(['reference', 'profile', 'from', 'to'].map(key =>
-            [key, typeof req.query[key] === 'string' ? req.query[key].trim() : '']));
-        const validDate = value => !value || (DATE_PATTERN.test(value) && Number(value.slice(0, 4)) > 0 &&
-            !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
-        const searchError = selectedFacility && (filters.reference.length > 100 || filters.profile.length > 100 ||
-            !validDate(filters.from) || !validDate(filters.to) || (filters.from && filters.to && filters.from > filters.to))
-            ? 'Enter a valid date range and search text of no more than 100 characters.'
-            : selectedFacility && !Object.values(filters).some(Boolean) ? 'Enter at least one search filter.' : '';
+        if (searching) {
+            const [facilities, maxDays] = await Promise.all([
+                Bookings.findBookingFacilities(), Settings.getBookingSearchDays()
+            ]);
+            const filters = Object.fromEntries(['facility_guid', 'reference', 'profile', 'from', 'to'].map(key =>
+                [key, typeof req.query[key] === 'string' ? req.query[key].trim() : '']));
+            const searched = Object.values(filters).some(Boolean);
+            const searchError = filters.facility_guid && !facilities.some(facility => facility.guid === filters.facility_guid)
+                ? 'Select a valid facility or All facilities.'
+                : searched && (filters.reference.length > 100 || filters.profile.length > 100 ||
+                    !isValidDateRange(filters.from, filters.to, maxDays + 1))
+                    ? `Enter both dates with To between From and From +${maxDays} days, and search text of no more than 100 characters.` : '';
+            const results = searched && !searchError ? await Bookings.searchBookings(filters) : { bookings: [], truncated: false };
+            if (!searched) {
+                const parts = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit'
+                }).formatToParts(new Date());
+                const part = type => parts.find(item => item.type === type).value;
+                filters.from = `${part('year')}-${part('month')}-${part('day')}`;
+                const to = new Date(`${filters.from}T00:00:00Z`);
+                to.setUTCDate(to.getUTCDate() + maxDays);
+                filters.to = to.toISOString().slice(0, 10);
+            }
+            return res.render('bookings', {
+                facilities, searchResults: { ...results, filters, searched, searchError, maxDays },
+                error: req.query.error, created: 0, activePage: 'booking-search'
+            });
+        }
         const facilityRows = await Bookings.findInAppFacilities();
         const facilities = await Promise.all(facilityRows.map(async facility => {
             if (configuring) {
@@ -2007,14 +2114,8 @@ async function adminBookingsPage(req, res) {
                 ]);
                 return { ...facility, sports, resources, options };
             }
-            const searched = selectedFacility === facility.guid;
-            const [options, results] = await Promise.all([
-                Bookings.findOptions(facility.guid),
-                searched && !searchError ? Bookings.searchFacilityBookings(facility.guid, filters)
-                    : { bookings: [], truncated: false }
-            ]);
-            return { ...facility, options, ...results, searched, filters: searched ? filters : {},
-                searchError: searched ? searchError : '' };
+            const options = await Bookings.findOptions(facility.guid);
+            return { ...facility, options, bookings: [] };
         }));
         res.render('bookings', {
             facilities,
@@ -2029,6 +2130,7 @@ async function adminBookingsPage(req, res) {
 }
 
 admin.get('/bookings', adminBookingsPage);
+admin.get('/booking-search', adminBookingsPage);
 admin.get('/court-configuration', adminBookingsPage);
 
 admin.post('/bookings/resources', async (req, res) => {

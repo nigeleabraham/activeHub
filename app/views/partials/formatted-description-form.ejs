@@ -1,0 +1,11 @@
+<div data-formatted-description>
+    <div class="form-group">
+        <label for="<%= prefix %>"><%= typeof label === 'undefined' ? 'Course description' : label %><% if (typeof optional !== 'undefined' && optional) { %> <small class="text-muted">Optional</small><% } %></label>
+        <textarea class="form-control" id="<%= prefix %>" name="<%= typeof field === 'undefined' ? 'course_description' : field %>" rows="10" maxlength="1020000"><%= description %></textarea>
+    </div>
+    <p class="small text-muted">Use &lt;bold&gt;text&lt;/bold&gt; for bold, &lt;ul&gt;text&lt;/ul&gt; for underline, &lt;bullet&gt;text&lt;/bullet&gt; for bullets and &lt;email&gt;name@example.com&lt;/email&gt; for email links. Other HTML is displayed as text.</p>
+    <details>
+        <summary class="small">Preview as customers see it</summary>
+        <div class="bg-white border rounded p-3 mt-2" data-formatted-description-preview></div>
+    </details>
+</div>

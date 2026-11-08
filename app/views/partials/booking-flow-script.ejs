@@ -1,7 +1,24 @@
 <script>
     document.querySelectorAll('[data-facility-booking-search]').forEach(form => {
-        const panel = form.closest('details');
+        const panel = form.closest('[data-booking-search-panel]');
         const error = panel.querySelector('[data-booking-search-error]');
+        const fromDate = form.querySelector('[name="from"]');
+        const toDate = form.querySelector('[name="to"]');
+        const maxDays = Number(form.dataset.bookingSearchDays);
+        function updateDateRange(resetTo) {
+            toDate.min = fromDate.value;
+            if (!fromDate.value || !fromDate.validity.valid) {
+                toDate.max = '';
+                return;
+            }
+            const maximum = new Date(`${fromDate.value}T00:00:00Z`);
+            maximum.setUTCDate(maximum.getUTCDate() + maxDays);
+            toDate.max = maximum.toISOString().slice(0, 10);
+            if (resetTo) toDate.value = toDate.max;
+        }
+        updateDateRange(false);
+        fromDate.addEventListener('input', () => updateDateRange(true));
+        fromDate.addEventListener('change', () => updateDateRange(true));
         let busy = false;
         async function search(clear) {
             if (busy) return;
@@ -15,7 +32,7 @@
                 url.hash = '';
                 url.search = clear ? '' : new URLSearchParams(new FormData(form)).toString();
                 const response = await fetch(url);
-                if (!response.ok || new URL(response.url).pathname !== '/admin/bookings') {
+                if (!response.ok || new URL(response.url).pathname !== '/admin/booking-search') {
                     throw new Error('The booking search could not be completed. Check your session and try again.');
                 }
                 const html = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -24,6 +41,11 @@
                 panel.querySelector('[data-booking-search-results]').replaceWith(results);
                 if (clear) {
                     for (const field of form.querySelectorAll('input:not([type="hidden"])')) field.value = '';
+                    for (const field of form.querySelectorAll('select')) field.value = '';
+                    const freshForm = html.querySelector('[data-facility-booking-search]');
+                    fromDate.value = freshForm.querySelector('[name="from"]').value;
+                    toDate.value = freshForm.querySelector('[name="to"]').value;
+                    updateDateRange(false);
                 }
                 initializeBookingCancellations();
                 results.querySelectorAll('[data-local-booking-time]').forEach(time => {
@@ -199,7 +221,7 @@
                 details.querySelector('[data-booking-calendar]')?.dispatchEvent(new CustomEvent('refresh-availability'));
                 const remainingRows = details.querySelectorAll('[data-bookings-table] tbody tr');
                 const focusTarget = remainingRows[Math.min(index, remainingRows.length - 1)]?.querySelector('[data-cancel-booking] button')
-                    || details.querySelector('summary');
+                    || details.querySelector('summary, #booking-search-heading');
                 focusTarget.focus({ preventScroll: true });
             } catch (error) {
                 console.error('Unable to cancel booking', error);

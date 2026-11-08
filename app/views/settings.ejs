@@ -104,6 +104,21 @@
             </form>
             </details>
         </section>
+        <section class="mb-3" aria-labelledby="booking-search-settings-heading">
+            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure <%= locals.bookingSearchError ? 'open' : '' %>>
+                <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="booking-search-settings-heading">Booking search range</h2></summary>
+                <% if (locals.bookingSearchError) { %><p class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</p><% } %>
+                <form method="POST" action="/admin/settings/booking-search-days" data-editor-label="Booking search range" data-editor-preview="false">
+                    <div class="form-group">
+                        <label for="booking-search-days">Maximum days after the From date</label>
+                        <input class="form-control" id="booking-search-days" name="days" type="number" min="1" max="365" step="1" required value="<%= locals.bookingSearchDays || 30 %>" aria-describedby="booking-search-days-help">
+                        <small class="form-text text-muted" id="booking-search-days-help">From defaults to today. To defaults to From plus this many days and can only be shortened, never before From. For example, 30 allows 31 inclusive calendar dates. Larger ranges may increase database work.</small>
+                    </div>
+                    <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save booking search range</button>
+                </form>
+            </details>
+        </section>
         <section class="mb-3" aria-labelledby="credit-request-settings-heading">
             <details class="admin-disclosure bg-white border rounded shadow-sm p-4">
             <summary class="admin-card-summary"><h2 id="credit-request-settings-heading" class="h5 d-inline mb-0">Credit and refund settings</h2></summary>

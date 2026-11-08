@@ -14,6 +14,111 @@ const id = '123e4567-e89b-42d3-a456-426614174001';
 const otherId = '123e4567-e89b-42d3-a456-426614174002';
 const original = [{ id, heading: 'Age', text: 'Original' }, { id: otherId, heading: 'Refunds', text: 'Unchanged' }];
 
+test('creating sport defaults and FAQs commits together and rolls back FAQ failures', async t => {
+    for (const failing of [false, true]) {
+        const queries = [];
+        const connection = t.mock.method(Pool.prototype, 'connect', async () => ({
+            async query(sql, values) {
+                queries.push({ sql, values });
+                if (sql.startsWith('INSERT INTO sports')) return { rows: [{ guid }] };
+                if (failing && sql.startsWith('INSERT INTO sport_course_faqs')) throw new Error('FAQ failure');
+                return { rows: [] };
+            },
+            release() { queries.push({ sql: 'release' }); }
+        }));
+        if (failing) await assert.rejects(Sports.create('New sport', original, ' FAQs '), /FAQ failure/);
+        else assert.equal((await Sports.create('New sport', original, ' FAQs ')).guid, guid);
+        assert.equal(queries[0].sql, 'BEGIN');
+        assert.deepEqual(queries.find(query => query.sql.startsWith('INSERT INTO sport_course_faqs')).values, [guid, 'FAQs']);
+        assert.equal(queries.at(-2).sql, failing ? 'ROLLBACK' : 'COMMIT');
+        assert.equal(queries.at(-1).sql, 'release');
+        connection.mock.restore();
+    }
+});
+
+test('sport creation accepts formatted defaults and restricts FAQ creation to Administrators', async t => {
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    const handler = admin.stack.findLast(layer => layer.route?.path === '/sports' && layer.route.methods.post).route.stack[0].handle;
+    const save = t.mock.method(Sports, 'create', async () => ({ guid }));
+    let status;
+    let location;
+    const response = { sendStatus(value) { status = value; }, redirect(value) { location = value; } };
+    await handler({ profile: { role: 'Administrator' }, body: { name: ' New sport ',
+        course_description: '<bold>Details</bold>', faq_text: '<bold>Question</bold>\nAnswer' } }, response);
+    assert.equal(location, '/admin/sports');
+    const args = save.mock.calls[0].arguments;
+    assert.equal(args[0], 'New sport');
+    assert.equal(args[1][0].text, '<bold>Details</bold>');
+    assert.equal(args[1][0].heading, '');
+    assert.equal(args[2], '<bold>Question</bold>\nAnswer');
+    await handler({ profile: { role: 'Sports manager' }, body: { name: 'Sport', faq_text: 'Not allowed' } }, response);
+    assert.equal(status, 403);
+    await handler({ profile: { role: 'Administrator' }, body: { name: 'Sport', course_description: 'x'.repeat(1020001) } }, response);
+    assert.equal(status, 400);
+    assert.equal(save.mock.callCount(), 1);
+    await handler({ profile: { role: 'Sports manager' }, body: { name: 'Sport', course_description: 'Default' } }, response);
+    assert.equal(save.mock.callCount(), 2);
+});
+
+test('saving one sport description preserves legacy customized courses atomically', async t => {
+    const queries = [];
+    const custom = { guid: otherId, description_sport_guid: guid,
+        description_overrides: { [id]: { heading: 'Age', text: 'Custom' } },
+        description_sections: [{ id: guid, heading: '', text: 'Extra' }] };
+    t.mock.method(Pool.prototype, 'connect', async () => ({
+        async query(sql, values) {
+            queries.push({ sql, values });
+            if (sql.startsWith('SELECT course_description_sections')) return { rows: [{ course_description_sections: original }] };
+            if (sql.startsWith('SELECT guid')) return { rows: [custom] };
+            return { rows: [] };
+        },
+        release() { queries.push({ sql: 'release' }); }
+    }));
+    await Sports.updateCourseDescription(guid, '<bold>One block</bold>\nDescription');
+    const savedCourse = queries.find(query => query.sql.startsWith('UPDATE courses'));
+    assert.equal(savedCourse.values[1], '<bold>Age</bold>\nCustom\n\n<bold>Refunds</bold>\nUnchanged\n\nExtra');
+    assert.match(savedCourse.sql, /description_sport_guid=NULL/);
+    const savedSport = queries.find(query => query.sql.startsWith('UPDATE sports'));
+    assert.deepEqual(JSON.parse(savedSport.values[1]), [{ id, heading: '', text: '<bold>One block</bold>\nDescription' }]);
+    assert.ok(queries.indexOf(savedCourse) < queries.indexOf(savedSport));
+    assert.deepEqual(queries.slice(-2).map(query => query.sql), ['COMMIT', 'release']);
+});
+
+test('single sport description route accepts plain formatted text and rejects invalid size', async t => {
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    const handler = admin.stack.findLast(layer => layer.route?.path === '/sports/course-defaults').route.stack[0].handle;
+    const save = t.mock.method(Sports, 'updateCourseDescription', async () => ({ guid }));
+    let location;
+    await handler({ body: { guid, course_description: '<bold>Description</bold>' } },
+        { redirect(value) { location = value; } });
+    assert.equal(save.mock.calls[0].arguments[1], '<bold>Description</bold>');
+    assert.match(location, /admin_saved=sport-updated/);
+    t.mock.method(console, 'warn', () => {});
+    let status;
+    await handler({ body: { guid, course_description: 'x'.repeat(1020001) } },
+        { sendStatus(value) { status = value; } });
+    assert.equal(status, 400);
+    assert.equal(save.mock.callCount(), 1);
+});
+
+test('single sport description conversion rolls back if preserving a course fails', async t => {
+    const queries = [];
+    t.mock.method(Pool.prototype, 'connect', async () => ({
+        async query(sql) {
+            queries.push(sql);
+            if (sql.startsWith('SELECT course_description_sections')) return { rows: [{ course_description_sections: original }] };
+            if (sql.startsWith('SELECT guid')) return { rows: [{ guid: otherId, description_sport_guid: guid,
+                description_overrides: {}, description_sections: [{ id, heading: '', text: 'Keep me' }] }] };
+            if (sql.startsWith('UPDATE courses')) throw new Error('Preservation failed');
+            return { rows: [] };
+        },
+        release() { queries.push('release'); }
+    }));
+    await assert.rejects(Sports.updateCourseDescription(guid, 'New default'), /Preservation failed/);
+    assert.equal(queries.some(sql => sql.startsWith('UPDATE sports')), false);
+    assert.deepEqual(queries.slice(-2), ['ROLLBACK', 'release']);
+});
+
 test('individual section changes lock the current sport and preserve other sections and IDs', async t => {
     let stored = structuredClone(original);
     const queries = [];

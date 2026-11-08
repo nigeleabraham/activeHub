@@ -1,10 +1,15 @@
 <% const collapseDescription = typeof collapsible !== 'undefined' && collapsible;
-const hasDescription = (!course.description_sport_guid && course.description) || (course.resolved_sections || []).length;
+const singleDescription = typeof course.description_text === 'string';
+const hasDescription = singleDescription ? course.description_text.trim() :
+    (!course.description_sport_guid && course.description) || (course.resolved_sections || []).length;
 if (collapseDescription && hasDescription) { %>
 <details class="mb-3" data-course-description>
     <summary>Course description</summary>
     <div class="mt-3">
 <% } %>
+<% if (singleDescription) { %>
+<div class="mb-3 readable-content" style="white-space: pre-wrap;"><%- include('faq-answer', { answer: course.description_text, boldText: true }) %></div>
+<% } else { %>
 <% if (!course.description_sport_guid && course.description) { %><div class="mb-3 readable-content" style="white-space: pre-wrap;"><%- include('faq-answer', { answer: course.description, boldText: true }) %></div><% } %>
 <% (course.resolved_sections || []).forEach(section => { %>
     <div class="mb-3">
@@ -12,6 +17,7 @@ if (collapseDescription && hasDescription) { %>
         <div class="readable-content" style="white-space: pre-wrap;"><%- include('faq-answer', { answer: section.text, boldText: true }) %></div>
     </div>
 <% }); %>
+<% } %>
 <% if (collapseDescription && hasDescription) { %>
     </div>
 </details>

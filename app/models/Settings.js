@@ -4,7 +4,7 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1' };
+const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1', booking_search_days: '30' };
 const SITE_TITLE_MAX_LENGTH = 60;
 
 function refundsEnabled(settings) {
@@ -36,6 +36,17 @@ function parseCreditLifetimeDays(value) {
     return days >= 1 && days <= 36500 ? days : null;
 }
 
+function parseBookingSearchDays(value) {
+    return parseCreditRequestDays(value);
+}
+
+async function getBookingSearchDays() {
+    const settings = await getAll();
+    const days = parseBookingSearchDays(settings.booking_search_days);
+    if (days === null) throw new Error('Invalid configured booking search day limit');
+    return days;
+}
+
 async function getCreditRequestDays() {
     const settings = await getAll();
     const days = parseCreditRequestDays(settings.credit_request_days);
@@ -52,6 +63,7 @@ async function initialize() {
         )
     `);
     await pool.query("INSERT INTO site_settings (key, value) VALUES ('refunds_enabled', '1') ON CONFLICT (key) DO NOTHING");
+    await pool.query("INSERT INTO site_settings (key, value) VALUES ('booking_search_days', '30') ON CONFLICT (key) DO NOTHING");
     await pool.query(`
         CREATE TABLE IF NOT EXISTS site_logo (
             id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -95,4 +107,4 @@ async function set(key, value) {
     );
 }
 
-module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays, refundsEnabled, assertRefundsEnabled };
+module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays, refundsEnabled, assertRefundsEnabled, parseBookingSearchDays, getBookingSearchDays };

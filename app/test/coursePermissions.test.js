@@ -23,6 +23,7 @@ test('course permission grants all course actions without opening unrelated admi
     const update = t.mock.method(Courses, 'update', async () => ({ guid: GUID, facility_guid: GUID }));
     const remove = t.mock.method(Courses, 'remove', async () => ({ facility_guid: GUID }));
     const saveFaq = t.mock.method(Courses, 'saveFaq', async () => ({ guid: GUID }));
+    const saveFaqText = t.mock.method(Courses, 'saveFaqText', async () => ({ sport_guid: GUID }));
     const removeFaq = t.mock.method(Courses, 'removeFaq', async () => true);
     const moveFaq = t.mock.method(Courses, 'moveFaq', async () => ({ guid: GUID }));
     t.mock.method(Courses, 'reorderFaqs', async () => ({ guid: GUID }));
@@ -107,6 +108,13 @@ test('course permission grants all course actions without opening unrelated admi
     assert.equal(saveFaq.mock.callCount(), 2);
     assert.equal(removeFaq.mock.callCount(), 1);
     assert.equal(moveFaq.mock.callCount(), 1);
+    const faqTextBody = { sport_guid: GUID, faq_text: '<bold>Question?</bold>\nAnswer.' };
+    for (const [role, permission, status] of [
+        ['Coach', true, 403], ['Manager', 'sports', 403], [null, false, 401], ['Administrator', false, 302]
+    ]) {
+        assert.equal((await call('/admin/courses/faqs/save', role, permission, faqTextBody)).status, status);
+    }
+    assert.equal(saveFaqText.mock.callCount(), 1);
     for (const route of ['/courses/faqs/order', '/sports/course-sections/order']) {
         const orderBody = { sport_guid: GUID, order: JSON.stringify([GUID]) };
         assert.equal((await call('/admin' + route, 'Coach', true, orderBody)).status, 403);

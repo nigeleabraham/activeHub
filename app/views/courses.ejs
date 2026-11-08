@@ -3,13 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Courses | ActiveHub</title>
+    <title>Courses and course runs | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
     <style>
         main .form-control,
         main .custom-select { max-width: none; }
+        #add-course-panel-directory:not([open]) { padding: 0.75rem 1rem !important; }
+        #add-course-panel-directory:not([open]) > summary { min-height: 1.75rem; margin-bottom: 0 !important; }
+        #add-course-panel-directory:not([open]) [data-course-add-feedback] { height: 1.5rem !important; }
+        #add-course-panel-directory:not([open]) [data-course-add-feedback] > .alert {
+            min-height: 1.5rem;
+            font-size: 0.75rem;
+            padding: 0.125rem 0.375rem;
+        }
+        [data-course-group-disclosure]:not([open]) { padding: 0.75rem 1rem !important; }
+        [data-course-group-disclosure]:not([open]) > summary { min-height: 1.75rem; margin-bottom: 0 !important; }
+        .admin-course-card:has(> [data-course-edit]:not([open])) { padding: 0.75rem 1rem !important; }
+        [data-course-edit]:not([open]) > summary { min-height: 1.75rem; margin-bottom: 0 !important; }
+        [data-course-delete-slot] {
+            display: inline-block;
+            vertical-align: middle;
+            position: relative;
+            width: 12rem;
+            max-width: 100%;
+            height: 1.5rem;
+        }
+        [data-course-delete-feedback] {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100%;
+            font-size: 0.75rem;
+            line-height: 1.4;
+            padding: 0.125rem 0.375rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .admin-course-card:has(> [data-course-edit]:not([open])) > [data-course-delete] {
+            top: 0.625rem !important;
+            right: 1rem !important;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -17,17 +53,21 @@
     <main class="container py-5">
         <header class="mb-4">
             <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-            <h1 class="h2 mb-1">Courses</h1>
-            <p class="text-muted mb-0">Manage shared course details and facility runs, sessions, prices and spaces</p>
+            <h1 class="h2 mb-1">Courses and course runs</h1>
+            <p class="text-muted mb-0">Manage shared course details and course runs, sessions, prices and spaces</p>
         </header>
+        <div class="admin-save-feedback mb-4">
+            <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit courses and course runs here. Assign sports and descriptions to courses, and configure locations, sessions, prices and spaces for each run.</p>
+        </div>
         <section id="course-directory" data-course-facility aria-labelledby="course-list-heading">
             <details id="add-course-panel-directory" class="admin-disclosure bg-white border rounded shadow-sm p-4 mb-4" data-editor-disclosure>
-                <summary class="h5 mb-0">
+                <summary class="admin-card-summary">
                     <h2 id="add-course-heading" class="h5 d-inline mb-0">Add course</h2>
                     <span data-course-add-feedback class="d-inline-block align-middle ml-3" style="height: 2.5rem; max-width: 65%; overflow: auto; vertical-align: middle;"></span>
                 </summary>
                 <form id="add-course-directory" method="POST" action="/admin/courses" data-editor-success-inline data-editor-label="New course">
                     <%- include('partials/course-form', { course: null, prefix: 'new-course', facilities, sports }) %>
+                    <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
                     <button class="btn btn-primary" type="submit">Add course</button>
                 </form>
             </details>
@@ -37,63 +77,97 @@
             </div>
             <div data-course-list>
                 <% if (!courses.length) { %><p class="text-muted">No courses have been added yet.</p><% } %>
-                <% courses.forEach(course => { %>
-                    <article id="course-<%= course.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3 position-relative" data-course-guid="<%= course.guid %>" data-course-name="<%= course.name %>">
+                <%
+                    const courseGroups = sports.map(sport => ({
+                        key: sport.guid, name: sport.name,
+                        courses: courses.filter(course => course.sport_guids.length === 1 && course.sport_guids[0] === sport.guid)
+                    }));
+                    courseGroups.push(
+                        { key: 'multisports', name: 'Multisports', courses: courses.filter(course => course.sport_guids.length > 1) },
+                        { key: 'unassigned', name: 'Sport assignment needed', courses: courses.filter(course => !course.sport_guids.length ||
+                            (course.sport_guids.length === 1 && !sports.some(sport => sport.guid === course.sport_guids[0]))) }
+                    );
+                    courseGroups.filter(group => group.courses.length)
+                        .sort((a, b) => a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base' }))
+                        .forEach(group => {
+                %>
+                <section class="mb-4" data-course-sport-group="<%= group.key %>" aria-labelledby="course-group-<%= group.key %>">
+                    <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-course-group-disclosure>
+                    <summary class="admin-card-summary mb-3">
+                        <h2 id="course-group-<%= group.key %>" class="h5 d-inline mb-0"><%= group.name %></h2>
+                        <span class="badge badge-info ml-2"><%= group.courses.length %></span>
+                    </summary>
+                <% group.courses.forEach(course => { %>
+                    <article id="course-<%= course.guid %>" class="admin-course-card bg-white rounded shadow-sm p-4 mb-3 position-relative" data-course-guid="<%= course.guid %>" data-course-name="<%= course.name %>">
                         <details class="admin-disclosure" data-course-edit data-editor-disclosure>
                             <summary class="admin-card-summary" style="padding-right: 6rem;">
                                 <h3 class="h5 d-inline mb-0 text-break"><%= course.name %></h3>
                                 <% if (!course.sport_guids.length) { %><span class="badge badge-warning align-middle ml-2">Sport assignment needed</span><% } %>
+                                <span data-course-delete-slot class="ml-2"></span>
                             </summary>
                             <form method="POST" action="/admin/courses/update" data-editor-preview="false" data-editor-label="Edit <%= course.name %>">
                                 <input type="hidden" name="guid" value="<%= course.guid %>">
                                 <%- include('partials/course-form', { course, prefix: 'course-' + course.guid, facilities, sports }) %>
+                                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit data-cancel-immediate>Cancel</button>
                                 <button class="btn btn-primary" type="submit">Save changes</button>
-                                <button class="btn btn-outline-secondary ml-1" type="button" data-cancel-edit>Cancel</button>
                             </form>
-                            <section class="admin-form-section mt-4 mb-0" aria-labelledby="course-runs-heading-<%= course.guid %>">
-                                <h4 id="course-runs-heading-<%= course.guid %>" class="admin-form-section-title">Facility runs (<%= (course.runs || []).length %>)</h4>
-                                <% if (!(course.runs || []).length) { %><p class="text-muted">No facility runs yet. Add one below.</p><% } %>
+                            <details class="admin-disclosure admin-form-section mt-4 mb-0" data-course-runs-disclosure>
+                                <summary class="admin-card-summary">
+                                    <h4 id="course-runs-heading-<%= course.guid %>" class="admin-form-section-title course-runs-title d-inline mb-0">3. Course runs</h4>
+                                    <span class="badge badge-info ml-2"><%= (course.runs || []).length %></span>
+                                    <span class="small text-muted d-block mt-1">Expand to manage runs. Each run has its own location, schedule, price and spaces.</span>
+                                </summary>
+                                <div class="mt-3">
+                                <% if (!(course.runs || []).length) { %><p class="text-muted">No course runs yet. Add one below.</p><% } %>
                                 <% (course.runs || []).forEach(run => { %>
-                                    <div class="border rounded p-3 mb-3">
-                                        <h5 class="h6"><%= run.name %> — <%= run.facility_name %></h5>
-                                        <% if (!run.published) { %>
-                                            <p class="text-warning">Draft: complete the price, spaces and sessions before this run appears to customers.</p>
-                                            <% if (course.start_date || course.end_date) { %><p class="small">Previous course dates: <%= course.start_date || 'Not set' %> to <%= course.end_date || 'Not set' %>. Use these to complete the schedule.</p><% } %>
-                                        <% } else { %>
-                                            <p>Full price: &pound;<%= (run.full_price_pence / 100).toFixed(2) %>. Current price: &pound;<%= (run.current_price_pence / 100).toFixed(2) %>.
-                                                <%= run.remaining_sessions %> of <%= run.total_sessions %> sessions remaining. Maximum spaces: <%= run.capacity %>.</p>
-                                        <% } %>
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-run-<%= run.guid %>">Edit run</button>
-                                        <form class="d-inline" method="POST" action="/admin/courses/runs/destroy">
+                                    <div class="admin-run-card rounded p-2 mb-2" data-admin-run-card data-run-guid="<%= run.guid %>">
+                                        <div class="d-flex flex-wrap justify-content-between align-items-center" style="gap: 0.5rem;">
+                                        <h5 class="h6 mb-0 text-break"><%= run.name %> — <%= run.facility_name %></h5>
+                                        <div class="d-flex align-items-center flex-shrink-0">
+                                        <form class="d-inline" method="POST" action="/admin/courses/runs/destroy" data-run-delete-confirm="Delete course run &quot;<%= run.name %>&quot; for &quot;<%= course.name %>&quot; at <%= run.facility_name %>? This removes the run and all its sessions. This cannot be undone.">
                                             <input type="hidden" name="guid" value="<%= run.guid %>">
                                             <input type="hidden" name="course_guid" value="<%= course.guid %>">
                                             <button class="btn btn-outline-danger btn-sm" type="submit">Delete run</button>
                                         </form>
+                                        <button class="btn btn-outline-secondary btn-sm ml-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-run-<%= run.guid %>">Edit run</button>
+                                        </div>
+                                        </div>
+                                        <% if (!run.published) { %>
+                                            <p class="small text-warning mt-1 mb-0">Draft: complete the price, spaces and sessions before this run appears to customers.</p>
+                                            <% if (course.start_date || course.end_date) { %><p class="small mt-1 mb-0">Previous course dates: <%= course.start_date || 'Not set' %> to <%= course.end_date || 'Not set' %>. Use these to complete the schedule.</p><% } %>
+                                        <% } else { %>
+                                            <p class="small mt-1 mb-0">Full price: &pound;<%= (run.full_price_pence / 100).toFixed(2) %>. Current price: &pound;<%= (run.current_price_pence / 100).toFixed(2) %>.
+                                                <%= run.remaining_sessions %> of <%= run.total_sessions %> sessions remaining. Maximum spaces: <%= run.capacity %>.</p>
+                                        <% } %>
                                         <div id="edit-run-<%= run.guid %>" data-edit-panel hidden>
                                             <form method="POST" action="/admin/courses/runs/update" class="mt-3" data-editor-preview="false">
                                                 <%- include('partials/course-run-form', { course, run, facilities, prefix: 'run-' + run.guid }) %>
+                                                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                                                 <button class="btn btn-primary btn-sm" type="submit">Save run</button>
-                                                <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
                                             </form>
                                         </div>
                                     </div>
                                 <% }); %>
-                                <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-run-<%= course.guid %>">Add facility run</button>
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-run-<%= course.guid %>">Add course run</button>
                                 <div id="add-run-<%= course.guid %>" data-edit-panel hidden>
                                     <form method="POST" action="/admin/courses/runs" class="mt-3" data-editor-preview="false">
                                         <%- include('partials/course-run-form', { course, run: null, facilities, prefix: 'new-run-' + course.guid }) %>
+                                        <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                                         <button class="btn btn-primary btn-sm" type="submit">Add run</button>
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-cancel-edit>Cancel</button>
                                     </form>
                                 </div>
-                            </section>
+                                </div>
+                            </details>
                         </details>
                         <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
-                        <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/courses/destroy">
+                        <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/courses/destroy" data-course-delete>
                             <input type="hidden" name="guid" value="<%= course.guid %>">
                             <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
                         </form>
                     </article>
+                <% }); %>
+                    </details>
+                </section>
                 <% }); %>
             </div>
             <output class="alert alert-success" data-course-feedback aria-live="polite" aria-atomic="true" hidden></output>

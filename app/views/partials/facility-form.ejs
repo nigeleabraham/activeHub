@@ -81,6 +81,6 @@
             <input class="form-control" id="<%= fieldId('external-booking-url') %>" name="external_booking_url" type="url" maxlength="2048" value="<%= facility.external_booking_url || '' %>" placeholder="https://example.com/book" <%= external ? 'required' : '' %>>
         </div>
     </fieldset>
+    <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
     <button class="btn btn-primary" type="submit"><%= editing ? 'Save changes' : 'Create facility' %></button>
-    <button class="btn btn-outline-secondary ml-2" type="button" data-cancel-edit>Cancel</button>
 </form>

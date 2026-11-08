@@ -6,12 +6,28 @@ function sections(value) {
     return value.map(section => {
         if (!section || typeof section.id !== 'string' || !UUID.test(section.id) || ids.has(section.id) ||
             typeof section.heading !== 'string' || section.heading.length > 160 ||
-            typeof section.text !== 'string' || !section.text.trim() || section.text.length > 10000) {
+            typeof section.text !== 'string' || !section.text.trim() ||
+            section.text.length > (value.length === 1 && section.heading === '' ? 1020000 : 10000)) {
             throw new Error('Invalid description section');
         }
         ids.add(section.id);
         return { id: section.id, heading: section.heading.trim(), text: section.text.trim() };
     });
+}
+
+function combineSections(items) {
+    return items.map(item => [item.heading ? `<bold>${item.heading}</bold>` : '', item.text]
+        .filter(Boolean).join('\n')).join('\n\n');
+}
+
+function courseDescriptionText(course, defaults = []) {
+    return [course.description_sport_guid ? '' : course.description,
+        combineSections(resolveDescription(course, defaults))].filter(Boolean).join('\n\n');
+}
+
+function hasCustomDescription(course) {
+    return !course.description_sport_guid || Object.keys(course.description_overrides || {}).length > 0 ||
+        (course.description_sections || []).length > 0;
 }
 
 function descriptionConfig(source, overrides, extra, sportGuids) {
@@ -42,4 +58,5 @@ function orderedItems(items, order, key = 'id') {
     return order.map(id => byId.get(id));
 }
 
-module.exports = { sections, descriptionConfig, resolveDescription, orderedItems };
+module.exports = { sections, descriptionConfig, resolveDescription, orderedItems,
+    combineSections, courseDescriptionText, hasCustomDescription };

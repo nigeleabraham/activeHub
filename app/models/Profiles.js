@@ -69,6 +69,11 @@ async function initialize() {
     await pool.query('CREATE INDEX IF NOT EXISTS profiles_name_prefix_idx ON profiles (LOWER(name) text_pattern_ops)');
     await pool.query('CREATE INDEX IF NOT EXISTS profiles_email_prefix_idx ON profiles (LOWER(email) text_pattern_ops)');
     await pool.query(`
+        CREATE INDEX IF NOT EXISTS profiles_name_words_idx ON profiles USING gin (
+            array_to_tsvector(array_remove(regexp_split_to_array(LOWER(name), '\\s+'), ''))
+        ) WHERE deleted_at IS NULL
+    `);
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS profile_roles (
             profile_guid uuid NOT NULL REFERENCES profiles(guid) ON DELETE CASCADE,
             role text NOT NULL REFERENCES roles(name) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -119,19 +124,18 @@ async function search(query, limit = 20) {
     const normalized = query.trim().toLowerCase().replace(/\s+/g, ' ');
     const escapeLike = value => value.replace(/[\\%_]/g, '\\$&');
     const prefix = `${escapeLike(normalized)}%`;
-    const terms = normalized.split(' ').map(term => `${escapeLike(term)}%`);
+    // Literal whitespace-delimited words preserve punctuation and surname-prefix matching.
+    const terms = normalized.split(' ').map(term => `'${term.replace(/['\\]/g, '\\$&')}':*`).join(' & ');
     const { rows } = await pool.query(
-        `SELECT guid, name, email, role, ${assignedRoles} FROM profiles
+        `WITH matches AS MATERIALIZED (
+         SELECT guid, name, email, role FROM profiles
          WHERE deleted_at IS NULL AND (LOWER(name) LIKE $1 OR LOWER(email) LIKE $1 OR
-             NOT EXISTS (
-                 SELECT 1 FROM unnest($3::text[]) AS terms(pattern)
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM regexp_split_to_table(LOWER(name), '\\s+') AS words(word)
-                     WHERE words.word LIKE terms.pattern
-                 )
-             ))
-         ORDER BY CASE WHEN LOWER(name) LIKE $1 THEN 0 ELSE 1 END, LOWER(name)
-         LIMIT $2`,
+             array_to_tsvector(array_remove(regexp_split_to_array(LOWER(name), '\\s+'), '')) @@ $3::tsquery)
+         ORDER BY CASE WHEN LOWER(name) LIKE $1 THEN 0 ELSE 1 END, LOWER(name), guid
+         LIMIT $2
+         )
+         SELECT guid, name, email, role, ${assignedRoles} FROM matches AS profiles
+         ORDER BY CASE WHEN LOWER(name) LIKE $1 THEN 0 ELSE 1 END, LOWER(name), guid`,
         [prefix, limit, terms]
     );
     return rows;

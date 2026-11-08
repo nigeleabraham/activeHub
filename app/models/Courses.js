@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const { parseRunInput, priceForRemainingSessions, compareCourses, compareRuns } = require('../courseRuns');
-const { descriptionConfig, resolveDescription } = require('../courseDescriptions');
+const { descriptionConfig, resolveDescription, courseDescriptionText, hasCustomDescription } = require('../courseDescriptions');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
@@ -105,6 +105,8 @@ async function findAll({ availableOnly = false } = {}) {
     `, [availableOnly]);
     const runs = await findRuns({ availableOnly });
     return rows.sort(compareCourses).map(course => ({ ...course,
+        description_text: courseDescriptionText(course, course.default_sections),
+        description_custom: hasCustomDescription(course),
         resolved_sections: resolveDescription(course, course.default_sections),
         runs: runs.filter(run => run.course_guid === course.guid) }));
 }
@@ -240,6 +242,39 @@ async function findFaqs() {
     return (await pool.query('SELECT * FROM sport_course_faqs ORDER BY sort_order NULLS LAST, created_at, guid')).rows;
 }
 
+async function saveFaqText(sportGuid, text) {
+    if (typeof text !== 'string' || text.length > 1020000) throw new RangeError('FAQ text exceeds the maximum length.');
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows: sports } = await client.query('SELECT guid FROM sports WHERE guid=$1 FOR UPDATE', [sportGuid]);
+        if (!sports.length) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+        const { rows: existing } = await client.query(`SELECT guid FROM sport_course_faqs WHERE sport_guid=$1
+            ORDER BY sort_order NULLS LAST, created_at, guid FOR UPDATE`, [sportGuid]);
+        const answer = text.trim();
+        if (!answer) {
+            await client.query('DELETE FROM sport_course_faqs WHERE sport_guid=$1', [sportGuid]);
+        } else if (existing.length) {
+            await client.query("UPDATE sport_course_faqs SET question='',answer=$2,sort_order=0 WHERE guid=$1",
+                [existing[0].guid, answer]);
+            await client.query('DELETE FROM sport_course_faqs WHERE sport_guid=$1 AND guid<>$2', [sportGuid, existing[0].guid]);
+        } else {
+            await client.query("INSERT INTO sport_course_faqs (sport_guid,question,answer,sort_order) VALUES ($1,'',$2,0)",
+                [sportGuid, answer]);
+        }
+        await client.query('COMMIT');
+        return { sport_guid: sportGuid };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
 async function saveFaq(guid, { sport_guid, question, answer }) {
     const { rows } = guid ? await pool.query(
         'UPDATE sport_course_faqs SET sport_guid = $2, question = $3, answer = $4 WHERE guid = $1 RETURNING *',
@@ -297,4 +332,4 @@ async function changeFaqOrder(sportGuid, guid, direction, order) {
     }
 }
 
-module.exports = { initialize, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, removeFaq, moveFaq, reorderFaqs };
+module.exports = { initialize, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, saveFaqText, removeFaq, moveFaq, reorderFaqs };

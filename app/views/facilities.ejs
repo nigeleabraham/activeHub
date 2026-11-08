@@ -12,6 +12,36 @@
     <%- include('partials/accessibility-styles') %>
     <style>
         main .facility-details-fields .form-control { max-width: none; }
+        main .admin-facility-card {
+            border-color: var(--camden-border);
+            border-top: 4px solid var(--camden-navy);
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        [data-facility-edit] > summary { padding-right: 7rem; }
+        [data-facility-delete-name] { position: absolute; top: 1.5rem; right: 1rem; }
+        [data-facility-edit-feedback] {
+            display: inline-block;
+            vertical-align: middle;
+            width: 12rem;
+            max-width: 100%;
+            height: 1.5rem;
+        }
+        [data-facility-edit-feedback] > output {
+            font-size: 0.75rem;
+            line-height: 1.4;
+            padding: 0.125rem 0.375rem !important;
+            white-space: nowrap;
+        }
+        .admin-facility-card:has(> [data-facility-edit]:not([open])) { padding: 0.75rem 1rem !important; }
+        #add-facility-panel:not([open]) { padding: 0.75rem 1rem !important; }
+        [data-facility-edit]:not([open]) > summary,
+        #add-facility-panel:not([open]) > summary { min-height: 1.75rem; margin-bottom: 0 !important; }
+        [data-facility-edit]:not([open]) [data-facility-edit-feedback] { height: 1.5rem !important; }
+        .admin-facility-card:has(> [data-facility-edit]:not([open])) > [data-facility-delete-name] {
+            top: 0.625rem !important;
+            right: 1rem !important;
+        }
     </style>
 </head>
 
@@ -20,15 +50,11 @@
     <a class="skip-link" href="#facility-directory">Skip to facility directory</a>
     <%- include('partials/navigation') %>
     <main class="container py-5">
-        <header class="mb-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-end">
-                <div>
-                    <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                    <div class="d-flex flex-wrap align-items-center">
-                        <h1 class="h2 mb-1 mr-3">Facilities</h1>
-                    </div>
-                    <p class="text-muted mb-0">Facility directory</p>
-                </div>
+        <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
+            <div>
+                <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
+                <h1 class="h2 mb-1">Facilities</h1>
+                <p class="text-muted mb-0">Manage facilities and their booking arrangements</p>
             </div>
         </header>
 
@@ -38,24 +64,26 @@
         <div class="row">
             <section id="add-facility-section" tabindex="-1" class="col-12 mb-4" aria-labelledby="add-facility-heading">
                 <details id="add-facility-panel" class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
-                    <summary class="h5 mb-0"><h2 id="add-facility-heading" class="h5 d-inline mb-0">Add facility</h2></summary>
+                    <summary class="admin-card-summary"><h2 id="add-facility-heading" class="h5 d-inline mb-0">Add facility</h2></summary>
                     <%- include('partials/facility-form', { facility: {} }) %>
                 </details>
             </section>
 
-            <section id="facility-directory" tabindex="-1" class="col-12" aria-labelledby="facility-list-heading">
+            <section id="facility-directory" tabindex="-1" class="col-12" aria-labelledby="facility-list-heading" data-facilities-directory>
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <h2 id="facility-list-heading" class="h5 mb-0">Directory</h2>
-                    <span class="badge badge-secondary"><%= facilities.length %></span>
+                    <span class="badge badge-secondary" data-facility-count><%= facilities.length %></span>
                 </div>
-
+                <output class="sr-only" data-facility-feedback aria-live="polite" aria-atomic="true"></output>
+                <div class="alert alert-danger" data-facility-error role="alert" tabindex="-1" hidden></div>
+                <div data-facility-list>
                 <% if (facilities.length) { %>
                     <% facilities.forEach(facility => { %>
-                        <article id="facility-<%= facility.guid %>" class="bg-white border rounded shadow-sm p-4 mb-3 position-relative" tabindex="-1">
+                        <article id="facility-<%= facility.guid %>" class="admin-facility-card bg-white rounded shadow-sm p-4 mb-3 position-relative" tabindex="-1" data-facility-guid="<%= facility.guid %>" data-facility-name="<%= facility.name %>">
                             <details class="admin-disclosure" data-facility-edit data-editor-disclosure>
-                                <summary class="admin-card-summary pr-5">
+                                <summary class="admin-card-summary">
                                     <h3 class="h5 d-inline mb-0 text-break"><%= facility.name %></h3>
-                                    <span data-facility-edit-feedback class="d-inline-block align-middle ml-3" style="height: 2.5rem; max-width: 65%; overflow: auto; vertical-align: middle;"></span>
+                                    <span data-facility-edit-feedback class="ml-3"></span>
                                 </summary>
                                 <%- include('partials/facility-form', { facility }) %>
                                 <% if (facility.courses.length) { %>
@@ -83,17 +111,16 @@
                                 <% } %>
                             </details>
                             <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
-                            <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/facilities/destroy">
+                            <form method="POST" action="/admin/facilities/destroy" data-facility-delete-name="<%= facility.name %>">
                                 <input type="hidden" name="guid" value="<%= facility.guid %>">
-                                <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Remove <%= facility.name %>">
-                                    <i class="fa fa-trash" aria-hidden="true"></i>
-                                </button>
+                                <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete facility: <%= facility.name %>">Delete facility</button>
                             </form>
                         </article>
                     <% }); %>
                 <% } else { %>
                     <p class="text-muted border-top pt-3">No facilities have been added.</p>
                 <% } %>
+                </div>
             </section>
         </div>
     </main>

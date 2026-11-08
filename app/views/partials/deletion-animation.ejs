@@ -1,10 +1,11 @@
-    async function animateDeletion(row) {
+    async function animateDeletion(row, holdMs = 0, durationMs = 800) {
         row.style.backgroundColor = '#f8d7da';
+        if (holdMs) await new Promise(resolve => window.setTimeout(resolve, holdMs));
         if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             await row.animate([
                 { backgroundColor: '#f8d7da', opacity: 1, offset: 0 },
                 { backgroundColor: '#f8d7da', opacity: 1, offset: 0.55 },
                 { backgroundColor: '#f8d7da', opacity: 0, offset: 1 }
-            ], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished;
+            ], { duration: durationMs, easing: 'ease-out', fill: 'forwards' }).finished;
         }
     }

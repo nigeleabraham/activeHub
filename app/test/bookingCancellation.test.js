@@ -31,7 +31,7 @@ test('booking cancellations wait for the shared fade, update counts and refresh 
                     if (selector === '[data-booking-count]') return count;
                     if (selector === '[data-bookings-table]') return { remove() {} };
                     if (selector === '[data-no-bookings]') return empty;
-                    if (selector === 'summary') return focusTarget;
+                    if (selector === 'summary, #booking-search-heading') return focusTarget;
                     if (selector === '[data-booking-calendar]') return { dispatchEvent() { refreshed = true; } };
                     assert.fail(selector);
                 }

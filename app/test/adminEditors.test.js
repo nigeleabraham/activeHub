@@ -16,6 +16,413 @@ const locals = {
     switchableRoles: []
 };
 
+test('collapsed bookings management cards use compact spacing without changing expanded cards', async () => {
+    const source = await readFile(path.join(__dirname, '../views/bookings.ejs'), 'utf8');
+    assert.match(source, /\[data-booking-management-card\] \{ padding: 0\.75rem 1rem !important; \}/);
+    assert.match(source, /\[data-booking-management-card\] > \[data-facility-bookings\] > summary \{ min-height: 1\.75rem; \}/);
+    assert.match(source, /> summary \{ min-height: 1\.75rem; margin-bottom: 0 !important; \}/);
+    assert.match(source, /<section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="facility-<%= facility.guid %>" data-booking-management-card>/);
+    const flow = await readFile(path.join(__dirname, '../views/partials/booking-flow.ejs'), 'utf8');
+    assert.match(flow, /<details class="admin-disclosure" data-facility-bookings/);
+    assert.match(flow, /facility.name %> — Bookings<\/h2>/);
+    assert.doesNotMatch(flow, />Bookings<\/summary>/);
+});
+
+test('facility deletion explains its effects and cancellation prevents submission', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf('        if (form.matches(\'form[action="/admin/facilities/destroy"]\'))');
+    const script = source.slice(start, source.indexOf('        const facilityDelete =', start));
+    for (const accepted of [false, true]) {
+        let prevented = false;
+        let focused = false;
+        let prompt;
+        const context = vm.createContext({
+            form: {
+                matches() { return true; },
+                dataset: { facilityDeleteName: 'Hall & "courts"' },
+                querySelector() { return { focus() { focused = true; } }; }
+            },
+            event: { preventDefault() { prevented = true; } },
+            window: { confirm(message) { prompt = message; return accepted; } }
+        });
+        vm.runInContext(`(function () { ${script} })()`, context);
+        assert.ok(prompt.includes('Delete facility "Hall & "courts""?'));
+        assert.match(prompt, /bookings, booking resources and options, sport assignments, and course runs and sessions/);
+        assert.match(prompt, /Shared course details and runs at other facilities are kept/);
+        assert.match(prompt, /does not issue refunds and cannot be undone/);
+        assert.match(prompt, /Select Cancel to keep this facility/);
+        assert.equal(prevented, !accepted);
+        assert.equal(focused, !accepted);
+    }
+});
+
+test('sport deletion confirmation names the current sport and cancellation prevents deletion', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf('            if (sportDelete) {', source.indexOf('const directoryDelete ='));
+    const script = source.slice(start, source.indexOf('            const button =', start));
+    for (const accepted of [false, true]) {
+        let focused = false;
+        let proceeded = false;
+        let prompt;
+        const context = vm.createContext({
+            sportDelete: true,
+            form: {
+                closest() { return { dataset: { sportName: 'Renamed Tennis' } }; },
+                querySelector() { return { focus() { focused = true; } }; }
+            },
+            window: { confirm(message) { prompt = message; return accepted; } },
+            proceed() { proceeded = true; }
+        });
+        vm.runInContext(`(function () { ${script}\nproceed(); })()`, context);
+        assert.match(prompt, /Delete sport "Renamed Tennis"\?/);
+        assert.match(prompt, /standard course description, FAQs and facility assignments/);
+        assert.match(prompt, /Select Cancel to keep this sport/);
+        assert.equal(proceeded, accepted);
+        assert.equal(focused, !accepted);
+    }
+});
+
+test('course deletion confirmation names the course and cancellation stops deletion', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf('            if (form.matches(\'form[action="/admin/courses/destroy"]\'))');
+    const script = source.slice(start, source.indexOf('            if (runDelete', start));
+    for (const accepted of [false, true]) {
+        let focused = false;
+        let proceeded = false;
+        let prompt;
+        vm.runInNewContext(`(function () { ${script} proceed(); })()`, {
+            form: {
+                matches() { return true; },
+                closest() { return { dataset: { courseName: 'Junior tennis' } }; },
+                querySelector() { return { focus() { focused = true; } }; }
+            },
+            window: { confirm(message) { prompt = message; return accepted; } },
+            proceed() { proceeded = true; }
+        });
+        assert.match(prompt, /Delete course "Junior tennis"\?/);
+        assert.match(prompt, /all its runs and sessions at every facility/);
+        assert.match(prompt, /Facilities, sports and their shared descriptions and FAQs are kept/);
+        assert.match(prompt, /does not issue refunds and cannot be undone/);
+        assert.match(prompt, /Select Cancel to keep this course/);
+        assert.equal(proceeded, accepted);
+        assert.equal(focused, !accepted);
+    }
+    assert.match(source, /operation === 'deleted' && sourceRow[\s\S]*?course deletion could not be confirmed[\s\S]*?await animateDeletion\(sourceRow\)/);
+});
+
+test('deleted course shows its title in a banner that stays inside the fading card', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf('            const deletionNotice =', source.indexOf('    async function refreshCourses('));
+    const script = source.slice(start, source.indexOf('\n        }', start));
+    let notice;
+    let animated = false;
+    const row = {
+        dataset: { courseName: 'Tennis & <beginners>' },
+        querySelector(selector) {
+            assert.equal(selector, '[data-course-delete-slot]');
+            return { append(value) { notice = value; } };
+        }
+    };
+    await vm.runInNewContext(`(async () => { ${script} })()`, {
+        sourceRow: row,
+        document: { createElement(tag) {
+            assert.equal(tag, 'output');
+            return { setAttribute(name, value) { this[name] = value; } };
+        } },
+        async animateDeletion(value) {
+            assert.equal(value, row);
+            assert.equal(notice.textContent, '"Tennis & <beginners>" deleted successfully.');
+            assert.match(notice.className, /alert-danger/);
+            assert.equal(notice.title, notice.textContent);
+            assert.equal(notice['aria-live'], 'polite');
+            assert.equal(notice['data-course-delete-feedback'], '');
+            animated = true;
+        }
+    });
+    assert.equal(animated, true);
+});
+
+test('sport deletion adds a red title banner and border before the card animation', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf("        if (type === 'sport') {", source.indexOf('    async function refreshDirectory('));
+    const script = source.slice(start, source.indexOf('        await animateDeletion(row,', start));
+    assert.match(source, /await animateDeletion\(row, type === 'sport' \? 1000 : 0, type === 'sport' \? 800 \/ 0\.75 : 800\)/);
+    let notice;
+    const classes = new Set();
+    vm.runInNewContext(script, {
+        type: 'sport',
+        row: {
+            querySelector(selector) {
+                assert.equal(selector, '[data-sport-edit-feedback]');
+                return { replaceChildren(value) { notice = value; } };
+            },
+            classList: { add(value) { classes.add(value); } }
+        },
+        document: { createElement() { return { setAttribute(name, value) { this[name] = value; } }; } }
+    });
+    assert.equal(notice.textContent, 'Sport deleted.');
+    assert.equal(notice.className, 'alert alert-danger mb-0');
+    assert.equal(notice['aria-live'], 'polite');
+    assert.ok(classes.has('admin-sport-deleting'));
+    const styles = await readFile(path.join(__dirname, '../views/sports.ejs'), 'utf8');
+    assert.match(styles, /border-color: #dc3545 !important;\s*outline: 3px solid #dc3545/);
+});
+
+test('facility deletion verifies removal before animating and focuses the remaining card or Add facility', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    async function refreshDirectory('), source.indexOf("<%- include('card-order-behaviour')"));
+    for (const last of [false, true]) {
+        let removed = false;
+        let animated = false;
+        let focused = false;
+        let replaced = false;
+        let confirmed = false;
+        const target = { focus() { focused = true; } };
+        const remaining = { querySelector() { return target; } };
+        const row = {
+            getAttribute(name) { return name === 'data-facility-guid' ? 'deleted-guid' : 'Town hall'; },
+            remove() { assert.equal(animated, true); removed = true; }
+        };
+        const count = {};
+        const feedback = {};
+        const newList = { querySelectorAll() { return confirmed ? [] : [row]; } };
+        const list = { replaceWith(value) { assert.equal(value, newList); replaced = true; } };
+        const directory = {
+            querySelectorAll() { return removed ? (last ? [] : [remaining]) : [row, ...(last ? [] : [remaining])]; },
+            querySelector(selector) {
+                if (selector === '[data-facility-count]') return count;
+                if (selector === '[data-facility-feedback]') return feedback;
+                if (selector === '[data-facility-list]') return list;
+                return last ? null : remaining;
+            }
+        };
+        const form = { closest(selector) {
+            if (selector === '[data-facilities-directory]') return directory;
+            assert.equal(selector, '[data-facility-guid]');
+            return row;
+        } };
+        const context = vm.createContext({
+            form, response: { async text() { return ''; } }, entries: [], active: null,
+            DOMParser: class { parseFromString() { return { querySelector(selector) {
+                if (selector === '[data-facility-list]') return newList;
+                if (selector === '[data-facility-count]') return { textContent: last ? '0' : '1' };
+                return null;
+            } }; } },
+            async animateDeletion(value) { assert.equal(value, row); animated = true; },
+            document: { querySelector(selector) { assert.equal(selector, '#add-facility-panel > summary'); return target; } }
+        });
+        vm.runInContext(script, context);
+        await assert.rejects(vm.runInContext("refreshDirectory(form, response, 'facility')", context), /deletion could not be confirmed/);
+        assert.equal(animated, false);
+        confirmed = true;
+        await vm.runInContext("refreshDirectory(form, response, 'facility')", context);
+        assert.equal(removed, true);
+        assert.equal(focused, true);
+        assert.equal(replaced, last);
+        assert.equal(count.textContent, last ? '0' : '1');
+        assert.equal(feedback.textContent, '"Town hall" deleted successfully.');
+    }
+});
+
+test('formatted text saves collapse and focus their panel with a quick green outline', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    const textSaveCleanups ='), source.indexOf('    async function animateRunDeletion('));
+    const classes = new Set();
+    let focused = false;
+    let cleanup;
+    let notice;
+    let fades = 0;
+    const listeners = new Set();
+    const entry = {
+        form: { action: 'http://localhost/admin/courses/faqs/save' },
+        toggle: {
+            focus() { focused = true; },
+            querySelector(selector) {
+                return selector === '[data-text-save-slot]' ? { append(value) { notice = value; } } : notice;
+            }
+        },
+        details: {
+            open: true,
+            addEventListener(type, listener) { assert.equal(type, 'animationend'); listeners.add(listener); },
+            removeEventListener(type, listener) { listeners.delete(listener); },
+            scrollIntoView(options) { assert.equal(options.behavior, 'instant'); },
+            classList: { add(name) { classes.add(name); }, remove(name) { classes.delete(name); } }
+        }
+    };
+    const context = vm.createContext({
+        entry, active: entry, close(item) { item.details.open = false; },
+        URL,
+        document: { createElement(tag) {
+            assert.equal(tag, 'output');
+            return { setAttribute() {} };
+        } },
+        resetNoticeFade(value, fade) {
+            assert.equal(value, notice);
+            assert.equal(fade, false);
+            fades++;
+        },
+        window: {
+            matchMedia() { return { matches: false }; },
+            clearTimeout() {},
+            setTimeout(callback, delay) { assert.equal(delay, 1500); cleanup = callback; }
+        }
+    });
+    vm.runInContext(script, context);
+    vm.runInContext('finishTextSave(entry)', context);
+    assert.equal(entry.details.open, false);
+    assert.equal(focused, true);
+    assert.equal(context.active, null);
+    assert.equal(notice.textContent, 'FAQs saved.');
+    assert.equal(notice.hidden, false);
+    for (const [action, message] of [
+        ['/admin/sports/update', 'Sport details updated.'],
+        ['/admin/sports/course-defaults', 'Course defaults saved.']
+    ]) {
+        entry.form.action = `http://localhost${action}`;
+        vm.runInContext('finishTextSave(entry)', context);
+        assert.equal(notice.textContent, message);
+    }
+    assert.equal(fades, 3);
+    assert.match(source, /\[data-text-save-feedback\]\[hidden\] \{ display: none !important; \}/);
+    assert.deepEqual([...classes], ['admin-text-saved']);
+    assert.equal(cleanup, undefined);
+    assert.equal(listeners.size, 1);
+    const finishAnimation = [...listeners][0];
+    finishAnimation({ target: notice, animationName: 'admin-text-notice-saved' });
+    assert.equal(notice.hidden, false);
+    finishAnimation({ target: entry.details, animationName: 'admin-text-saved' });
+    assert.equal(classes.size, 0);
+    assert.equal(notice.hidden, true);
+    assert.equal(listeners.size, 0);
+    context.window.matchMedia = () => ({ matches: true });
+    vm.runInContext('finishTextSave(entry)', context);
+    assert.equal(notice.hidden, false);
+    cleanup();
+    assert.equal(notice.hidden, true);
+    assert.equal(classes.size, 0);
+    assert.equal(listeners.size, 0);
+    assert.match(source, /\.admin-text-saved \[data-text-save-feedback\] \{ animation: admin-text-notice-saved 1\.5s ease-in-out both; \}/);
+    assert.match(source, /\[data-text-save-feedback\] \{\s*transition: none;/);
+    assert.match(source, /@keyframes admin-text-notice-saved \{\s*0%, 25% \{ opacity: 1; \}\s*100% \{ opacity: 0; \}/);
+    assert.match(source, /form\[action="\/admin\/sports\/update"\]'\)\) \{\s*finishTextSave\(entry\)/);
+    assert.match(source, /row\.querySelector\('\[data-sport-details\] > summary h3'\)\.textContent = name/);
+    assert.match(source, /field\.tagName === 'INPUT' && field\.name === 'name'/);
+});
+
+test('run deletion clears save feedback and holds a visible red outline before fading', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    async function animateRunDeletion('), source.indexOf('    function focusSavedCourseRun('));
+    const classes = new Set(['admin-run-saved']);
+    const panel = { hidden: false };
+    let release;
+    let faded = false;
+    let scrolled = false;
+    const run = {
+        classList: {
+            add(name) { classes.add(name); },
+            remove(name) { classes.delete(name); }
+        },
+        querySelector(selector) {
+            return selector === '[data-edit-panel]' ? panel : {
+                setAttribute(name, value) {
+                    assert.equal(name, 'aria-expanded');
+                    assert.equal(value, 'false');
+                }
+            };
+        },
+        scrollIntoView(options) {
+            assert.equal(options.behavior, 'instant');
+            scrolled = true;
+        }
+    };
+    const context = vm.createContext({
+        run,
+        window: { setTimeout(callback, delay) {
+            assert.equal(delay, 1200);
+            release = callback;
+        } },
+        async animateDeletion(node) { assert.equal(node, run); faded = true; }
+    });
+    vm.runInContext(script, context);
+    const completion = vm.runInContext('animateRunDeletion(run)', context);
+    assert.equal(panel.hidden, true);
+    assert.equal(scrolled, true);
+    assert.deepEqual([...classes], ['admin-run-deleting']);
+    assert.equal(faded, false);
+    release();
+    await completion;
+    assert.equal(faded, true);
+    assert.match(source, /\.admin-run-deleting \{ animation: none; border-color: #dc3545; box-shadow: 0 0 0 3px #dc3545; \}/);
+});
+
+test('saved course runs close their editor and focus the run inside expanded ancestors', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    function focusSavedCourseRun('), source.indexOf('    async function refreshCourses('));
+    const group = { tagName: 'DETAILS', open: false, parentElement: null };
+    const course = { tagName: 'DETAILS', open: false, parentElement: group };
+    const runs = { tagName: 'DETAILS', open: false, parentElement: course };
+    const panel = { hidden: false };
+    let focused = false;
+    let scrolled = false;
+    let finishHighlight;
+    const highlighted = new Set();
+    const toggle = {
+        setAttribute(name, value) {
+            assert.equal(name, 'aria-expanded');
+            assert.equal(value, 'false');
+        },
+        focus(options) {
+            assert.equal(options.preventScroll, true);
+            focused = true;
+        }
+    };
+    const run = {
+        dataset: { runGuid: 'saved-run' }, parentElement: runs,
+        classList: {
+            add(name) { highlighted.add(name); },
+            remove(name) { highlighted.delete(name); }
+        },
+        querySelector(selector) {
+            if (selector === '[data-edit-panel]') return panel;
+            assert.equal(selector, '[data-edit-toggle]');
+            return toggle;
+        },
+        scrollIntoView(options) {
+            assert.equal(options.block, 'nearest');
+            scrolled = true;
+        }
+    };
+    const row = {
+        querySelectorAll(selector) {
+            assert.equal(selector, '[data-admin-run-card]');
+            return [{ dataset: { runGuid: 'other-run' } }, run];
+        }
+    };
+    const context = vm.createContext({
+        row,
+        window: { setTimeout(callback, delay) {
+            assert.equal(delay, 1500);
+            finishHighlight = callback;
+        } }
+    });
+    vm.runInContext(script, context);
+    vm.runInContext("focusSavedCourseRun(row, 'saved-run')", context);
+    assert.equal(panel.hidden, true);
+    assert.equal(focused, true);
+    assert.equal(scrolled, true);
+    assert.ok(group.open && course.open && runs.open);
+    assert.deepEqual([...highlighted], ['admin-run-saved']);
+    finishHighlight();
+    assert.equal(highlighted.size, 0);
+    assert.match(source, /@keyframes admin-run-border-saved \{\s*0%, 25% \{ border-color: #28a745; box-shadow: 0 0 0 2px #28a745; \}\s*100% \{ border-color: #dee2e6; box-shadow: 0 0 0 2px transparent; \}/);
+    assert.match(source, /\.admin-run-saved \{ animation: admin-run-border-saved 1\.5s ease-in-out; \}/);
+    assert.match(source, /\.admin-run-saved \{ animation: none; border-color: #28a745; box-shadow: 0 0 0 2px #28a745; \}/);
+    assert.throws(() => vm.runInContext("focusSavedCourseRun(row, 'missing')", context), /saved course run could not be found/);
+    assert.match(source, /const runSave = \['\/admin\/courses\/runs', '\/admin\/courses\/runs\/update'\]/);
+    assert.match(source, /else if \(runSave\) \{\s*focusSavedCourseRun\(changed, savedRunGuid\);/);
+    assert.match(source, /!previousRunGuids\.has\(run\.dataset\.runGuid\)/);
+});
+
 test('FAQ additions highlight only the confirmed new card and announce beside the heading', async () => {
     const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
     const script = source.slice(source.indexOf('    function highlightAddedCard('), source.indexOf('    async function save('));
@@ -76,7 +483,7 @@ test('FAQ additions highlight only the confirmed new card and announce beside th
             },
             window: {
                 setTimeout(callback, delay) {
-                    assert.equal(delay, 2500);
+                    assert.equal(delay, 1500);
                     finishHighlight = callback;
                 }
             }
@@ -106,7 +513,7 @@ test('FAQ additions highlight only the confirmed new card and announce beside th
         assert.equal(highlighted.size, 0);
     }
     const sports = await readFile(path.join(__dirname, '../views/sports.ejs'), 'utf8');
-    assert.match(sports, /<summary[^>]*>.*<output[^>]*data-faq-add-feedback.*aria-live="polite".*<\/summary>/);
+    assert.match(sports, /action="\/admin\/courses\/faqs\/save"/);
     assert.match(sports, /@media \(prefers-reduced-motion: reduce\) \{\s*\.sports-admin \.section-added-highlight > details \{ animation: none; background-color: #d4edda;/);
 });
 
@@ -202,6 +609,10 @@ test('facility, sport and template confirmations fade alongside names without re
         let focused = false;
         let scrolled = false;
         let finishFade;
+        let finishHighlight;
+        let animationEnd;
+        const reducedMotion = hash === 'edit-another-item';
+        const highlights = new Set();
         const notice = {
             style: {},
             classList: { add() {} },
@@ -211,6 +622,9 @@ test('facility, sport and template confirmations fade alongside names without re
         };
         const facilityName = 'Riverside & <Sports> Hall';
         const card = {
+            addEventListener(event, callback) { assert.equal(event, 'animationend'); animationEnd = callback; },
+            removeEventListener(event, callback) { assert.equal(callback, animationEnd); animationEnd = null; },
+            classList: { add(name) { highlights.add(name); }, remove(name) { highlights.delete(name); } },
             dataset: { sportName: facilityName, profileName: facilityName },
             matches: selector => selector === (['sport', 'profile'].includes(type) ? `[data-${type}-guid]` : 'article'),
             querySelector(selector) {
@@ -231,6 +645,8 @@ test('facility, sport and template confirmations fade alongside names without re
                 finishFade = onHidden;
             },
             window: {
+                setTimeout(callback, delay) { assert.equal(delay, 1500); finishHighlight = callback; },
+                matchMedia() { return { matches: reducedMotion }; },
                 sessionStorage: { getItem() { return null; }, removeItem() {} },
                 location: { href: `http://localhost/admin/${type === 'profile' ? 'profiles' : type === 'sport' ? 'sports' : type === 'template' ? 'opening-hours' : 'facilities'}?admin_saved=${type}-updated&admin_saved_target=${type}-one#${hash}` },
                 history: { state: null, replaceState(_state, _title, url) { consumed = new URL(url); } },
@@ -243,13 +659,25 @@ test('facility, sport and template confirmations fade alongside names without re
             }
         });
         assert.equal(inserted, notice);
-        assert.equal(notice.textContent, `"${facilityName}" updated successfully.`);
+        assert.equal(notice.textContent, type === 'facility' ? 'Facility updated.' : `"${facilityName}" updated successfully.`);
         assert.equal(consumed.search, '');
         assert.equal(consumed.hash, `#${hash}`);
         onLoad();
         assert.equal(focused, true);
         assert.equal(scrolled, true);
-        finishFade();
+        assert.equal(highlights.has('admin-facility-saved'), type === 'facility');
+        if (type === 'facility') {
+            assert.equal(finishFade, undefined);
+            if (reducedMotion) finishHighlight();
+            else {
+                assert.equal(finishHighlight, undefined);
+                animationEnd({ target: notice, animationName: 'admin-text-notice-saved' });
+                assert.notEqual(notice.style.visibility, 'hidden');
+                animationEnd({ target: card, animationName: 'admin-facility-saved' });
+            }
+            assert.equal(highlights.size, 0);
+            assert.equal(animationEnd, null);
+        } else finishFade();
         assert.equal(notice.style.visibility, 'hidden');
         assert.notEqual(notice.hidden, true);
     }
@@ -369,27 +797,47 @@ test('sports directory exposes deletion feedback and keeps an empty replacement 
             const summary = disclosure.match(/<summary class="admin-card-summary"[^>]*>([\s\S]*?)<\/summary>/)[1];
             assert.match(summary, /<h3 class="h5 d-inline mb-0 text-break">Tennis<\/h3>\s*<span data-sport-edit-feedback/);
             assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Tennis');
-            assert.match(disclosure, /<details class="admin-disclosure admin-form-section" data-editor-disclosure>\s*<summary class="admin-card-summary"><h4[^>]*>Sport details<\/h4><\/summary>/);
+            assert.match(disclosure, /<details class="admin-disclosure admin-form-section" data-editor-disclosure>\s*<summary class="admin-card-summary"><h4[^>]*>Sport details<\/h4> <span data-text-save-slot><\/span><\/summary>/);
             assert.match(disclosure, /<h4 id="sport-details-heading-sport-one" class="h6 d-inline mb-0">Sport details/);
             assert.match(disclosure, /<h4 class="h6 d-inline mb-0" id="course-defaults-heading-sport-one">Course defaults/);
             assert.match(disclosure, /<h4 class="h6 d-inline mb-0">FAQs<\/h4>/);
-            assert.match(disclosure, /<details id="course-defaults-sport-one" class="admin-disclosure admin-form-section" data-sport-section-details>\s*<summary class="admin-card-summary"><h4[^>]*>Course defaults/);
+            assert.match(disclosure, /<details id="course-defaults-sport-one" class="admin-disclosure admin-form-section" data-sport-section-details data-editor-disclosure>\s*<summary class="admin-card-summary"><h4[^>]*>Course defaults/);
             assert.doesNotMatch(disclosure, /data-editor-inline|data-edit-toggle|data-edit-panel|>Edit course defaults</);
-            assert.match(disclosure, /action="\/admin\/sports\/course-sections\/create"/);
+            assert.match(disclosure, /action="\/admin\/sports\/course-defaults"/);
             assert.match(disclosure, /<label for="edit-sport-name-sport-one">Sport name<\/label>/);
             assert.match(disclosure, />Update<\/button>/);
+            const nameForm = disclosure.match(/<form[^>]*action="\/admin\/sports\/update"[\s\S]*?<\/form>/)[0];
+            assert.ok(nameForm.indexOf('data-cancel-edit') < nameForm.indexOf('type="submit"'));
             assert.doesNotMatch(disclosure, /action="\/admin\/sports\/destroy"/);
             assert.match(card, /<\/details>\s*<form method="POST" action="\/admin\/sports\/destroy" data-sport-delete>[\s\S]*aria-label="Delete sport: Tennis">Delete sport<\/button>/);
             assert.equal((card.replace(disclosure, '').match(/<button/g) || []).length, 1);
             assert.doesNotMatch(html, /aria-controls="edit-sport-/);
-            assert.doesNotMatch(disclosure, /action="\/admin\/sports\/course-defaults"|>Save course defaults</);
-            assert.match(disclosure, /data-editor-disclosure>\s*<summary[^>]*><h5 class="h6 d-inline mb-0">Add section<\/h5><\/summary>/);
-            assert.doesNotMatch(html.match(/action="\/admin\/sports\/update"[\s\S]*?<\/form>/)[0], /description-sections/);
+            assert.match(disclosure, />Save course defaults</);
+            assert.doesNotMatch(disclosure, />Add section<\/h5>/);
+            assert.doesNotMatch(html.match(/<form[^>]*action="\/admin\/sports\/update"[\s\S]*?<\/form>/)[0], /description-sections/);
             assert.match(html, /select, textarea, \[data-description-sections\]/);
         }
         else assert.match(html, /No sports have been added/);
-        assert.match(html, /<details id="add-sport-panel"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0"><h2 id="add-sport-heading"[^>]*>Add sport<\/h2><\/summary>\s*<form method="POST" action="\/admin\/sports"/);
+        assert.match(html, /<details id="add-sport-panel"[^>]*data-editor-disclosure>\s*<summary class="admin-card-summary"><h2 id="add-sport-heading"[^>]*>Add sport<\/h2><\/summary>\s*<p class="small text-muted">All fields are required unless marked optional.<\/p>\s*<form method="POST" action="\/admin\/sports"/);
         assert.match(html, /document\.querySelector\('#add-sport-panel > summary'\)/);
+        assert.match(html, /\.sports-admin #add-sport-panel:not\(\[open\]\) \{ padding: 0\.75rem 1rem !important; \}/);
+        assert.match(html, /\.sports-admin #add-sport-panel:not\(\[open\]\) > summary,\s*\.sports-admin \[data-sport-details\]:not\(\[open\]\) > summary \{ min-height: 1\.75rem; \}/);
+        const addForm = html.match(/<form[^>]*action="\/admin\/sports"[\s\S]*?<\/form>/)[0];
+        assert.match(addForm, /<fieldset class="admin-form-section">\s*<legend class="admin-form-section-title">Sport details<\/legend>/);
+        assert.match(html, /\.sports-admin main \.form-control \{ max-width: none; \}/);
+        const nameForm = html.match(/<form[^>]*action="\/admin\/sports\/update"[\s\S]*?<\/form>/);
+        if (nameForm) {
+            assert.doesNotMatch(nameForm[0], /form-row|col-auto|form-group col/);
+            assert.match(nameForm[0], /d-flex justify-content-end/);
+        }
+        assert.ok(addForm.indexOf('</fieldset>') < addForm.indexOf('data-cancel-edit'));
+        assert.match(addForm, /<legend class="admin-form-section-title">Course defaults <small class="text-muted">Optional<\/small><\/legend>/);
+        assert.match(addForm, /<label for="new-sport-description">Course description <small class="text-muted">Optional<\/small><\/label>/);
+        assert.match(addForm, /<label for="new-sport-faqs">FAQs <small class="text-muted">Optional<\/small><\/label>/);
+        assert.match(addForm, /id="new-sport-description" name="course_description"/);
+        assert.match(addForm, /id="new-sport-faqs" name="faq_text"/);
+        assert.match(addForm, /d-flex justify-content-end/);
+        assert.ok(addForm.indexOf('data-cancel-edit>Cancel') < addForm.indexOf('type="submit">Add sport'), 'Cancel precedes Add sport');
     }
 });
 
@@ -470,6 +918,33 @@ test('shared deletion animation waits for fade completion and respects reduced m
     }
 });
 
+test('deletion reading interval precedes animation and also applies with reduced motion', async () => {
+    const helper = await readFile(path.join(__dirname, '../views/partials/deletion-animation.ejs'), 'utf8');
+    for (const reduced of [false, true]) {
+        let release;
+        let animated = false;
+        let completed = false;
+        const animate = vm.runInNewContext(`${helper}\nanimateDeletion`, {
+            window: {
+                setTimeout(callback, delay) { assert.equal(delay, 1000); release = callback; },
+                matchMedia() { return { matches: reduced }; }
+            }
+        });
+        const row = { style: {}, animate(frames, options) {
+            assert.equal(options.duration, 800 / 0.75);
+            animated = true;
+            return { finished: Promise.resolve() };
+        } };
+        const pending = animate(row, 1000, 800 / 0.75).then(() => { completed = true; });
+        assert.equal(animated, false);
+        assert.equal(completed, false);
+        release();
+        await pending;
+        assert.equal(animated, !reduced);
+        assert.equal(completed, true);
+    }
+});
+
 test('admin navigation groups every page once and marks the current page and section', async () => {
     const html = await ejs.renderFile(navigation, { ...locals, activePage: 'court-configuration' });
     const nav = html.match(/<nav[\s\S]*?<\/nav>/)[0];
@@ -478,7 +953,7 @@ test('admin navigation groups every page once and marks the current page and sec
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
         ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
-        ['/admin/bookings', '/admin/credit-requests', '/admin/credit-refunds', '/admin/refunds'],
+        ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds', '/admin/refunds'],
         ['/admin/profiles', '/admin/roles', '/admin/audit', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
@@ -504,7 +979,45 @@ test('course cards expand from the title to the edit form with runs below and de
         ...locals, activePage: 'courses', courses: [course], facilities: [facility],
         sports: [{ guid: 'sport-one', name: 'Tennis' }], faqs: [], error: ''
     });
-    assert.match(html, /<details id="add-course-panel-directory"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0">\s*<h2 id="add-course-heading"[^>]*>Add course<\/h2>\s*<span data-course-add-feedback/);
+
+    test('course directory groups single-sport courses once and categorises multiple sports as Multisports', async () => {
+        const courses = [
+            { guid: 'tennis-course', name: 'Tennis class', sport_guids: ['tennis'] },
+            { guid: 'swimming-course', name: 'Swimming class', sport_guids: ['swimming'] },
+            { guid: 'mixed-course', name: 'Mixed class', sport_guids: ['tennis', 'swimming'] },
+            { guid: 'unassigned-course', name: 'Unassigned class', sport_guids: [] }
+        ];
+        const html = await ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
+            ...locals, activePage: 'courses', courses, facilities: [],
+            sports: [{ guid: 'tennis', name: 'Tennis' }, { guid: 'swimming', name: 'Swimming' },
+                { guid: 'archery', name: 'Archery' }]
+        });
+        for (const [group, course] of [
+            ['tennis', 'tennis-course'], ['swimming', 'swimming-course'],
+            ['multisports', 'mixed-course'], ['unassigned', 'unassigned-course']
+        ]) {
+            const section = html.split(`data-course-sport-group="${group}"`)[1].split('<section class="mb-4" data-course-sport-group=')[0];
+            assert.ok(section.includes(`data-course-guid="${course}"`));
+            assert.equal((html.match(new RegExp(`data-course-guid="${course}"`, 'g')) || []).length, 1);
+        }
+        assert.match(html, /id="course-group-multisports"[^>]*>Multisports<\/h2>/);
+        assert.match(html, /data-course-count>4<\/span>/);
+        assert.deepEqual([...html.matchAll(/data-course-sport-group="([^"]+)"/g)].map(match => match[1]),
+            ['multisports', 'unassigned', 'swimming', 'tennis']);
+        assert.doesNotMatch(html, /data-course-sport-group="archery"/);
+        assert.equal((html.match(/<details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-course-group-disclosure>/g) || []).length, 4);
+        assert.match(html, /\[data-course-group-disclosure\]:not\(\[open\]\) \{ padding: 0\.75rem 1rem !important; \}/);
+        assert.doesNotMatch(html, /<details[^>]*data-course-group-disclosure[^>]*\bopen\b/);
+    });
+    assert.match(html, /<details id="add-course-panel-directory"[^>]*data-editor-disclosure>\s*<summary class="admin-card-summary">\s*<h2 id="add-course-heading"[^>]*>Add course<\/h2>\s*<span data-course-add-feedback/);
+    assert.match(html, /#add-course-panel-directory:not\(\[open\]\) \{ padding: 0\.75rem 1rem !important; \}/);
+    assert.match(html, /data-admin-save-placeholder>You can add, remove, and edit courses and course runs here\. Assign sports and descriptions to courses, and configure locations, sessions, prices and spaces for each run\./);
+    assert.match(html, /#add-course-panel-directory:not\(\[open\]\) > summary \{ min-height: 1\.75rem; margin-bottom: 0 !important; \}/);
+    assert.match(html, /\.admin-course-card:has\(> \[data-course-edit\]:not\(\[open\]\)\) \{ padding: 0\.75rem 1rem !important; \}/);
+    assert.match(html, /\[data-course-edit\]:not\(\[open\]\) > summary \{ min-height: 1\.75rem; margin-bottom: 0 !important; \}/);
+    assert.match(html, /<span data-course-delete-slot class="ml-2"><\/span>/);
+    assert.match(html, /\[data-course-delete-feedback\] \{\s*position: absolute;\s*top: 50%;\s*transform: translateY\(-50%\);/);
+    assert.match(html, /> \[data-course-delete\] \{\s*top: 0\.625rem !important;\s*right: 1rem !important;/);
     assert.match(html, /id="add-course-directory"[^>]*data-editor-success-inline/);
     assert.match(html, /data-course-facility/);
     assert.match(html, /data-course-list/);
@@ -513,6 +1026,10 @@ test('course cards expand from the title to the edit form with runs below and de
     assert.match(html, /data-course-count/);
     const addForm = html.match(/<form[^>]*id="add-course-directory"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(addForm, /data-course-add-feedback/);
+    assert.match(addForm, /<div class="mb-2" data-formatting-help>/);
+    assert.match(addForm, /list-unstyled d-flex flex-wrap small text-muted/);
+    assert.doesNotMatch(addForm, /<summary[^>]*>Formatting help<\/summary>/);
+    assert.ok(addForm.indexOf('data-cancel-edit') < addForm.indexOf('type="submit"'));
     assert.doesNotMatch(html, /data-edit-toggle[^>]*aria-controls="(?:add-course-panel|edit-course)-/);
     const card = html.match(/<article id="course-course-one"[\s\S]*?<\/article>/)[0];
     const disclosure = card.match(/<details class="admin-disclosure" data-course-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
@@ -521,18 +1038,49 @@ test('course cards expand from the title to the edit form with runs below and de
     assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Tennis coaching');
     assert.ok(!card.includes('data-course-description'), 'Course description is not replayed on the card');
     assert.match(disclosure, /<\/summary>\s*<form method="POST" action="\/admin\/courses\/update" data-editor-preview="false" data-editor-label="Edit Tennis coaching">/);
-    assert.match(disclosure, /class="admin-form-section-title">Facility runs \(0\)<\/h4>/);
-    assert.ok(disclosure.indexOf('/admin/courses/update') < disclosure.indexOf('Facility runs'));
+    const runsDisclosure = disclosure.match(/<details[^>]*data-course-runs-disclosure>[\s\S]*?<\/details>/)[0];
+    assert.doesNotMatch(runsDisclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
+    assert.match(runsDisclosure, /<summary class="admin-card-summary">\s*<h4[^>]*>3\. Course runs<\/h4>\s*<span class="badge badge-info ml-2">0<\/span>/);
+    assert.match(runsDisclosure, /Expand to manage runs\. Each run has its own location, schedule, price and spaces\./);
+    assert.match(html, /\.admin-form-section > summary > \.course-runs-title \{\s*font-size: 1\.1rem;\s*font-weight: 600;/);
+    assert.match(runsDisclosure, /action="\/admin\/courses\/runs"/);
+    assert.match(disclosure, /No course runs yet\. Add one below\./);
+    assert.match(disclosure, />Add course run<\/button>/);
+    assert.doesNotMatch(html, /facility runs?/i);
+    assert.ok(disclosure.indexOf('/admin/courses/update') < disclosure.indexOf('Course runs'));
     assert.doesNotMatch(disclosure, /action="\/admin\/courses\/destroy"/);
     assert.match(card.replace(disclosure, ''), /action="\/admin\/courses\/destroy"[\s\S]*aria-label="Delete Tennis coaching">Delete<\/button>/);
     const editForm = html.match(/<form[^>]*action="\/admin\/courses\/update"[\s\S]*?<\/form>/)[0];
     assert.doesNotMatch(editForm, /name="facility_guid"/);
+    assert.ok(editForm.indexOf('data-cancel-edit') < editForm.indexOf('type="submit"'));
+    assert.match(editForm, /data-cancel-edit data-cancel-immediate>Cancel/);
+    assert.doesNotMatch(addForm, /data-cancel-immediate/);
+    assert.match(html, /if \(cancel\.hasAttribute\('data-cancel-immediate'\)\) \{\s*reset\(owner\);\s*proceed\(\{ kind: 'close' \}\);\s*return;/);
     assert.doesNotMatch(editForm, /name="facility_guids"/);
     assert.match(editForm, /name="sport_guids" value="sport-one" checked/);
     assert.match(html, /'\[data-course-edit\] > summary'/);
     assert.match(html, /card\.querySelector\('#add-course-panel-directory > summary'\)/);
     assert.match(html, /\{ kind: 'collapse', entry \}/);
     assert.match(html, /main \.form-control,\s*main \.custom-select \{ max-width: none; \}/);
+    const template = await readFile(path.join(__dirname, '../views/courses.ejs'), 'utf8');
+    assert.match(template, /class="admin-run-card rounded p-2 mb-2" data-admin-run-card/);
+    assert.match(template, /class="h6 mb-0 text-break"/);
+    assert.match(template, /class="small mt-1 mb-0">Full price:/);
+    assert.match(template, /data-run-delete-confirm="Delete course run &quot;<%= run\.name %>&quot; for &quot;<%= course\.name %>&quot; at <%= run\.facility_name %>\?/);
+    assert.match(html, /if \(runDelete && !window\.confirm\(form\.dataset\.runDeleteConfirm\)\) return;/);
+    assert.match(html, /await animateRunDeletion\(sourceRun\);/);
+    assert.match(html, /const remainingRuns = Array\.from\(changed\.querySelectorAll\('\[data-admin-run-card\]'\)\)/);
+    assert.match(html, /runDelete && response\.status === 409/);
+    assert.match(html, /if \(operation === 'updated' && changed\) \{\s*changed\.querySelector\('\[data-course-edit\]'\)\.open = false;/);
+    assert.match(html, /if \(operation === 'updated'\) targetRow\?\.scrollIntoView\(\{ block: 'nearest', behavior: 'instant' \}\)/);
+    assert.match(html, /@keyframes admin-course-saved \{\s*0%, 25% \{ border-color: #28a745; outline-color: #28a745; \}\s*100% \{ border-color: #dee2e6; outline-color: transparent; \}/);
+    assert.match(card, /class="admin-course-card bg-white rounded/);
+    assert.match(html, /targetRow\?\.scrollIntoView\(\{ block: 'nearest', behavior: 'instant' \}\);\s*if \(operation === 'updated' && changed\) \{\s*changed\.classList\.add\('admin-course-highlight'\)/);
+    for (const action of ['/admin/courses/runs/update', '/admin/courses/runs']) {
+        const runForm = [...template.matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/g)]
+            .find(match => match[0].includes(`action="${action}"`))[0];
+        assert.ok(runForm.indexOf('data-cancel-edit') < runForm.indexOf('type="submit"'));
+    }
 });
 
 test('course updates accept sport and facility assignments', async t => {
@@ -679,7 +1227,7 @@ test('facility creation drops down from a single card title with grouped fields 
     const html = await ejs.renderFile(path.join(__dirname, '../views/facilities.ejs'), {
         ...locals, facilities: [], sports: [], openingHoursTemplates: []
     });
-    assert.match(html, /<details id="add-facility-panel"[^>]*data-editor-disclosure>\s*<summary class="h5 mb-0"><h2 id="add-facility-heading"[^>]*>Add facility<\/h2><\/summary>/);
+    assert.match(html, /<details id="add-facility-panel"[^>]*data-editor-disclosure>\s*<summary class="admin-card-summary"><h2 id="add-facility-heading"[^>]*>Add facility<\/h2><\/summary>/);
     const disclosure = html.match(/<details id="add-facility-panel"[\s\S]*?<\/form>\s*<\/details>/)[0];
     assert.doesNotMatch(disclosure, /data-edit-panel|data-edit-toggle|facility-add-toggle|fa-chevron-down/);
     assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
@@ -731,6 +1279,7 @@ test('facility add and edit share grouped controls, preserve values and keep del
         assert.match(form, /type="radio" name="booking_mode" value="in_app"/);
         assert.match(form, /type="radio" name="booking_mode" value="external"/);
         assert.match(form, /data-cancel-edit/);
+        assert.ok(form.indexOf('data-cancel-edit') < form.indexOf('type="submit"'), 'Cancel precedes the primary facility action');
         assert.match(form, /data-editor-preview="false"/);
         assert.doesNotMatch(form, /\/destroy/);
     }
@@ -752,13 +1301,31 @@ test('facility add and edit share grouped controls, preserve values and keep del
     assert.match(forms[1], /value="external" checked required/);
     assert.match(forms[1], /name="external_booking_url"[^>]*value="https:\/\/example.test\/book"[^>]*required/);
     assert.match(forms[2], /value="in_app" checked required/);
-    assert.equal((html.match(/action="\/admin\/facilities\/destroy"/g) || []).length, 2);
+    assert.equal((html.match(/<form[^>]*action="\/admin\/facilities\/destroy"/g) || []).length, 2);
+    assert.equal((html.match(/data-facility-delete-name="Hall &amp; courts"/g) || []).length, 2);
+    for (const attribute of ['data-facilities-directory', 'data-facility-list', 'data-facility-count', 'data-facility-feedback', 'data-facility-error']) {
+        assert.ok(html.includes(attribute));
+    }
+    assert.match(html, /data-facility-guid="123e4567-e89b-42d3-a456-426614174000" data-facility-name="Hall &amp; courts"/);
+    assert.match(html, /class="admin-facility-card bg-white rounded/);
+    assert.match(html, /\.admin-facility-card:has\(> \[data-facility-edit\]:not\(\[open\]\)\) \{ padding: 0\.75rem 1rem !important; \}/);
+    assert.match(html, /#add-facility-panel:not\(\[open\]\) \{ padding: 0\.75rem 1rem !important; \}/);
+    assert.match(html, /\[data-facility-edit\]:not\(\[open\]\) > summary,\s*#add-facility-panel:not\(\[open\]\) > summary \{ min-height: 1\.75rem; margin-bottom: 0 !important; \}/);
+    assert.match(html, /\[data-facility-edit\]:not\(\[open\]\) \[data-facility-edit-feedback\] \{ height: 1\.5rem !important; \}/);
+    assert.match(html, /\.admin-course-highlight, \.admin-facility-saved \{ outline: 3px solid transparent; animation: admin-course-saved 1\.5s ease-in-out; \}/);
+    assert.match(html, /\.admin-facility-saved \[data-admin-save-confirmation\] \{ transition: none; animation: admin-text-notice-saved 1\.5s ease-in-out both; \}/);
+    assert.match(html, /event\.target === facilityCard && event\.animationName === 'admin-facility-saved'/);
+    assert.match(html, /border-top: 4px solid var\(--camden-navy\)/);
+    assert.match(html, /border-radius: 0 !important;\s*box-shadow: none !important/);
+    assert.match(html, /aria-label="Delete facility: Hall &amp; courts">Delete facility<\/button>/);
+    assert.match(html, /Manage facilities and their booking arrangements/);
+    assert.match(html, /\[data-facility-edit-feedback\] > output \{\s*font-size: 0\.75rem;/);
     const cards = [...html.matchAll(/<article id="facility-[\s\S]*?<\/article>/g)].map(match => match[0]);
     assert.equal(cards.length, 2);
     for (const card of cards) {
         const disclosure = card.match(/<details class="admin-disclosure" data-facility-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
         assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
-        const summary = disclosure.match(/<summary class="admin-card-summary pr-5">([\s\S]*?)<\/summary>/)[1];
+        const summary = disclosure.match(/<summary class="admin-card-summary">([\s\S]*?)<\/summary>/)[1];
         assert.match(summary, /<h3 class="h5 d-inline mb-0 text-break">Hall &amp; courts<\/h3>/);
         assert.match(summary, /data-facility-edit-feedback/);
         assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Hall &amp; courts');
