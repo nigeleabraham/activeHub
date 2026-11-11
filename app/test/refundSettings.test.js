@@ -84,7 +84,6 @@ test('stale or direct refund submissions return explicit 403 and never report su
     for (const [handler, body] of [
         [resident, { credit_guid: GUID }],
         [adminHandler('/credit-refunds/decide'), { request_guid: GUID, decision: 'approve' }],
-        [adminHandler('/refunds/refund'), { facility_guid: GUID, booking_guid: GUID, method: 'external' }]
     ]) {
         const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; } };
         await handler({ body, profile: { guid: GUID, name: 'Admin' } }, res);
@@ -106,5 +105,5 @@ test('disabled refund queue keeps requests visible but blocks completion and has
     assert.match(html, /value="approve" disabled/);
     assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
     assert.match(html, /1 awaiting action/);
-    assert.match(html, /Search refund history/);
+    assert.match(html, /Search bank refund history/);
 });

@@ -135,7 +135,7 @@ test('course permission grants all course actions without opening unrelated admi
     const dashboardHtml = await dashboard.text();
     assert.match(dashboardHtml, /href="\/admin\/courses"/);
     assert.doesNotMatch(dashboardHtml, /href="\/admin\/(?:profiles|roles|settings|facilities|bookings|refunds)"/);
-    for (const url of ['/admin/profiles', '/admin/roles', '/admin/settings', '/admin/facilities', '/admin/bookings', '/admin/refunds']) {
+    for (const url of ['/admin/profiles', '/admin/roles', '/admin/settings', '/admin/facilities', '/admin/bookings']) {
         assert.equal((await call(url, 'Coach', true)).status, 403);
     }
     assert.equal((await call('/admin/profiles/destroy', 'Coach', true, body)).status, 403);

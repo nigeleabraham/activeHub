@@ -230,10 +230,10 @@ test('profile credit panel renders balances, booking references and every refund
     };
     for (const [status, expected] of [
         [null, 'Request bank refund of £6.00'],
-        ['pending', 'Refund requested &mdash; pending review'],
+        ['pending', 'Bank refund requested &mdash; pending review'],
         ['approved', 'Bank refund accepted: £6.00'],
         ['declined', 'Bank refund declined.'],
-        ['spent', 'Refund request closed: credit fully spent.']
+        ['spent', 'Bank refund request closed: credit fully spent.']
     ]) {
         const html = await ejs.renderFile(path.join(__dirname, '../views/resident-credits.ejs'), {
             ...defaults, credits: [{ ...baseCredit, refund_status: status, refunded_pence: 600, decline_comment: '<Not eligible>' }],
@@ -261,7 +261,7 @@ test('profile credit panel renders balances, booking references and every refund
         if (status === 'pending') {
             assert.ok(html.includes('Your bank refund request for £6.00 is waiting'));
             assert.ok(html.includes('You do not need to request it again.'));
-            assert.equal((html.match(/Refund requested &mdash; pending review/g) || []).length, 1);
+            assert.equal((html.match(/Bank refund requested &mdash; pending review/g) || []).length, 1);
         }
     }
     const disabled = await ejs.renderFile(path.join(__dirname, '../views/resident-credits.ejs'), {

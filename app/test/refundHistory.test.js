@@ -100,19 +100,22 @@ test('refund history view starts empty and pagination preserves both dates', asy
     const view = path.join(__dirname, '../views/credit-refunds.ejs');
     const initial = await ejs.renderFile(view, values);
     const queue = await ejs.renderFile(view, { ...values, historyPage: false });
-    assert.match(queue, /href="\/admin\/credit-refunds\/history\?from_queue=1">Search refund history/);
+    assert.match(queue, /<title>Bank refund requests \| ActiveHub<\/title>/);
+    assert.match(queue, /<h1 class="h2 mb-1">Bank refund requests<\/h1>/);
+    assert.match(queue, /href="\/admin\/credit-refunds\/history\?from_queue=1">Search bank refund history/);
     assert.doesNotMatch(queue, /id="refund-profile-search"|aria-labelledby="closed-refunds"/);
-    assert.match(initial, /<title>Refund history \| ActiveHub<\/title>/);
-    assert.match(initial, /<h1 class="h2 mb-1">Refund history<\/h1>/);
+    assert.match(initial, /<title>Bank refund history \| ActiveHub<\/title>/);
+    assert.match(initial, /<h1 class="h2 mb-1">Bank refund history<\/h1>/);
     assert.doesNotMatch(initial, /Credit refunds/);
-    assert.match(initial, /Select From and To dates to load refund history/);
+    assert.match(initial, /Select From and To dates to load bank refund history/);
     assert.doesNotMatch(initial, /aria-labelledby="pending-refunds"/);
     assert.match(initial, /class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="closed-refunds"/);
     assert.equal((initial.match(/<header class="border-bottom pb-3 mb-4">/g) || []).length, 1);
-    assert.doesNotMatch(initial, /Back to pending refund requests/);
+    assert.doesNotMatch(initial, /Back to pending bank refund requests/);
     const fromQueue = await ejs.renderFile(view, { ...values, fromQueue: true, searched: true, page: 2,
-        filters: { from: '2026-11-01', to: '2026-11-05' }, history: { entries: [], total: 101, pageSize: 50 } });
-    assert.match(fromQueue, /Back to pending refund requests/);
+        filters: { from: '2026-11-01', to: '2026-11-05' }, history: { entries: [], total: 101, pageSize: 50 }         });
+
+    assert.match(fromQueue, /Back to pending bank refund requests/);
     assert.match(fromQueue, /name="from_queue" value="1"/);
     assert.match(fromQueue, /history\?from_queue=1">Clear/);
     assert.match(fromQueue, /from_queue=1&amp;page=3#closed-refunds/);

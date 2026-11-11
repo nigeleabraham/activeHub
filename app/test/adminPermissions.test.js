@@ -29,13 +29,13 @@ test('each management permission allows only its area, dashboard and documented 
         assert.equal(auth.canAccessAdmin(profile, '/booking-search'), permission === 'bookings.manage');
         assert.equal(auth.canAccessAdmin(profile, '/profiles/search'), ['profiles.manage', 'bookings.manage'].includes(permission));
         assert.equal(auth.canAccessAdmin(profile, '/facilities/courses/destroy'), permission === 'courses.manage');
-        for (const target of ['/settings', '/settings/logo', '/refunds', '/credit-requests/decide', '/credit-refunds/decide', '/unknown']) {
+        for (const target of ['/settings', '/settings/logo', '/credit-requests/decide', '/credit-refunds/decide', '/unknown']) {
             assert.equal(auth.canAccessAdmin(profile, target), false);
         }
     }
     assert.equal(auth.canAccessAdmin({ role: 'Resident', permissions: [] }), false);
     assert.equal(auth.canAccessAdmin(null), false);
-    for (const target of ['/settings', '/refunds', '/roles', '/']) {
+    for (const target of ['/settings', '/roles', '/']) {
         assert.equal(auth.canAccessAdmin({ role: 'Administrator' }, target), true);
     }
 });
@@ -51,7 +51,7 @@ test('dashboard menu hides unavailable areas for every configured permission', a
         for (const [, target] of areas) {
             assert.equal(html.includes(`href="/admin${target}"`), target === area);
         }
-        for (const target of ['/settings', '/refunds', '/credit-requests', '/credit-refunds']) {
+        for (const target of ['/settings', '/credit-requests', '/credit-refunds']) {
             assert.equal(html.includes(`href="/admin${target}"`), false);
         }
         assert.equal(html.includes('href="/admin/booking-search"'), permission === 'bookings.manage');

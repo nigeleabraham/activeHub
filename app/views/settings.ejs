@@ -152,9 +152,9 @@
             <p class="text-muted">Manage bank refunds, account-credit time limits and weather credit auto-approval together. Save each setting separately.</p>
             <div class="admin-form-section" data-credit-settings-item>
             <h3 id="refunds-heading" class="h6">Bank and external refunds</h3>
-            <p>Master control overriding all other refund settings, including individual credit eligibility and weather approvals. Disabling blocks new bank refund requests, completion of pending bank refunds and external booking refunds. Account-credit awards and spending are unaffected. Pending requests remain visible but cannot be marked as done while disabled. Refund requests cannot be declined. Existing eligibility is preserved if refunds are re-enabled.</p>
+            <p>Master control overriding all other refund settings, including individual credit eligibility and weather approvals. Disabling blocks new bank refund requests, completion of pending bank refunds and external booking refunds. Account-credit awards and spending are unaffected. Pending requests remain visible but cannot be marked as done while disabled. Bank refund requests cannot be declined. Existing eligibility is preserved if refunds are re-enabled.</p>
             <form method="POST" action="/admin/settings/refunds" data-editor-label="Bank and external refunds" data-editor-preview="false" data-editor-inline>
-                <label for="refunds-enabled">Refunds</label>
+                <label for="refunds-enabled">Bank and external refunds</label>
                 <div class="settings-field-actions">
                 <select class="form-control" id="refunds-enabled" name="enabled">
                     <option value="1" <%= locals.refundsEnabled !== false ? 'selected' : '' %>>Enabled</option>

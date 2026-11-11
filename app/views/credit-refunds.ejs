@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= locals.historyPage ? 'Refund history' : 'Refund requests' %> | ActiveHub</title>
+    <title><%= locals.historyPage ? 'Bank refund history' : 'Bank refund requests' %> | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
@@ -15,20 +15,20 @@
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1"><%= locals.historyPage ? 'Refund history' : 'Refund requests' %></h1>
-                <p class="text-muted"><%= locals.historyPage ? 'Search completed refund requests.' : 'Requests to transfer refundable booking credit to a bank account.' %></p>
+                <h1 class="h2 mb-1"><%= locals.historyPage ? 'Bank refund history' : 'Bank refund requests' %></h1>
+                <p class="text-muted"><%= locals.historyPage ? 'Search completed bank refund requests.' : 'Resident requests to transfer refundable booking credit to a bank account.' %></p>
             </div>
         </header>
         <% if (!locals.historyPage) { %>
-        <p>Action the bank transfer outside ActiveHub, then mark the request as done to record completion and deduct the current remaining credit. Check the remaining amount before transferring: it may decrease if credit is spent; fully spent requests close automatically. Refund requests cannot be declined.</p>
-        <p><a href="/admin/credit-refunds/history?from_queue=1">Search refund history</a></p>
-        <% } else if (locals.fromQueue) { %><p><a href="/admin/credit-refunds">Back to pending refund requests</a></p><% } %>
-        <% if (locals.corrected) { %><output class="alert alert-success" aria-live="polite">Declined refund request reopened. It is now in Pending action.</output><% } %>
+        <p>Action the bank transfer outside ActiveHub, then mark the request as done to record completion and deduct the current remaining credit. Check the remaining amount before transferring: it may decrease if credit is spent; fully spent requests close automatically. Bank refund requests cannot be declined.</p>
+        <p><a href="/admin/credit-refunds/history?from_queue=1">Search bank refund history</a></p>
+        <% } else if (locals.fromQueue) { %><p><a href="/admin/credit-refunds">Back to pending bank refund requests</a></p><% } %>
+        <% if (locals.corrected) { %><output class="alert alert-success" aria-live="polite">Declined bank refund request reopened. It is now in Pending action.</output><% } %>
         <% if (locals.refundsEnabled === false) { %>
             <output class="alert alert-warning" aria-live="polite">Bank and external refunds are disabled system-wide. Pending requests remain visible but cannot be marked as done until refunds are enabled in Settings.</output>
         <% } %>
         <% if (decision === 'approved') { %>
-            <output class="alert alert-success" aria-live="polite">Refund marked as done and the remaining credit deducted. <a href="/admin/credit-refunds/history?from_queue=1">Search refund history</a> using today's date to check the exact completed amount.</output>
+            <output class="alert alert-success" aria-live="polite">Bank refund marked as done and the remaining credit deducted. <a href="/admin/credit-refunds/history?from_queue=1">Search bank refund history</a> using today's date to check the exact completed amount.</output>
         <% } %>
         <% if (error) { %>
             <div class="alert alert-warning" role="alert">This request can no longer be actioned. It may already be decided or its credit fully spent.</div>
@@ -46,7 +46,7 @@
                             <span class="badge badge-info"><%= history.total %> matching this period</span>
                         <% } %>
                     </div>
-                    <p class="small text-muted mt-2 mb-0"><%= pending ? 'Action the refund requests below, then mark them as done.' : 'Completed requests are kept separate from the action queue. Choose a date range to search them.' %></p>
+                    <p class="small text-muted mt-2 mb-0"><%= pending ? 'Action the bank refund requests below, then mark them as done.' : 'Completed requests are kept separate from the action queue. Choose a date range to search them.' %></p>
                 </header>
                 <% if (!pending) { %>
                     <p class="small text-muted">Search by completion date (Europe/London), including both dates. Maximum 62 days; 50 results per page.</p>
@@ -60,7 +60,7 @@
                             <label for="refund-profile-search">Username</label>
                             <input class="form-control" id="refund-profile-search" type="search" value="<%= chosen ? chosen.name : '' %>" placeholder="Search by first name, surname or email" autocomplete="off" aria-describedby="refund-profile-help">
                             <small class="form-text text-muted" id="refund-profile-help">Enter at least 2 characters. Names work in either order. The best match is selected automatically; check the selection before searching history.</small>
-                            <div class="profile-choice-list" data-refund-profile-choices role="radiogroup" aria-label="Refund history profile">
+                            <div class="profile-choice-list" data-refund-profile-choices role="radiogroup" aria-label="Bank refund history profile">
                                 <label><input type="radio" name="refund-profile-choice" value="<%= chosen ? chosen.guid : '' %>" checked> <%= chosen ? chosen.name : 'All profiles' %></label>
                             </div>
                             <output class="sr-only" data-refund-profile-status aria-live="polite"></output>
@@ -104,7 +104,7 @@
                                                     <p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p>
                                                     <form method="POST" action="/admin/credit-refunds/reopen" class="mt-2">
                                                         <%- include('partials/request-history-fields', { request }) %>
-                                                        <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Reverse this decline and return the refund request to Pending action? No credit is deducted until it is marked as done.">Reopen request</button>
+                                                        <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Reverse this decline and return the bank refund request to Pending action? No credit is deducted until it is marked as done.">Reopen request</button>
                                                     </form>
                                                 <% } %>
                                             <% } %>
@@ -115,12 +115,12 @@
                             </tbody>
                         </table>
                     </div>
-                <% } else { %><p class="text-muted"><%= pending ? 'No refunds are waiting for action.' : searched ? 'No completed refund requests found for this period.' : 'Select From and To dates to load refund history.' %></p><% } %>
+                <% } else { %><p class="text-muted"><%= pending ? 'No bank refunds are waiting for action.' : searched ? 'No completed bank refund requests found for this period.' : 'Select From and To dates to load bank refund history.' %></p><% } %>
                 <% if (!pending && searched && history.total > history.pageSize) {
                     const totalPages = Math.ceil(history.total / history.pageSize);
                     const pageLink = target => '/admin/credit-refunds/history?' + new URLSearchParams({ ...filters, ...(locals.fromQueue ? { from_queue: '1' } : {}), page: target }).toString() + '#closed-refunds';
                 %>
-                    <nav aria-label="Refund history pages" class="d-flex align-items-center mt-3">
+                    <nav aria-label="Bank refund history pages" class="d-flex align-items-center mt-3">
                         <% if (page > 1) { %><a class="btn btn-outline-secondary btn-sm mr-2" href="<%= pageLink(page - 1) %>">Previous</a><% } %>
                         <span class="small mr-2">Page <%= page %> of <%= totalPages %></span>
                         <% if (page < totalPages) { %><a class="btn btn-outline-secondary btn-sm" href="<%= pageLink(page + 1) %>">Next</a><% } %>

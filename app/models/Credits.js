@@ -311,7 +311,7 @@ async function findExpiredPendingRefunds(profileGuid) {
 }
 
 function decideRefund(requestGuid, approve, byName) {
-    if (approve !== true) return Promise.reject(new Error('Refund requests cannot be declined'));
+    if (approve !== true) return Promise.reject(new Error('Bank refund requests cannot be declined'));
     return transaction(async client => {
         await Settings.assertRefundsEnabled(client);
         // Every balance mutation locks the profile first, serializing checkout and review.

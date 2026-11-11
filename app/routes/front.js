@@ -149,8 +149,7 @@ const ADMIN_LINKS = [
     { href: '/admin/booking-search', title: 'Booking search', text: 'Find existing bookings and manage cancellations' },
     { href: '/admin/court-configuration', title: 'Court configuration', text: 'Configure courts, shared resources and seasonal booking months' },
     { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
-    { href: '/admin/credit-refunds', title: 'Refund requests', text: 'Review requests to transfer booking credit to a bank account' },
-    { href: '/admin/refunds', title: 'Refunds', text: 'Find a booking and refund it as account credit' },
+    { href: '/admin/credit-refunds', title: 'Bank refund requests', text: 'Review resident requests to transfer booking credit to a bank account' },
     { href: '/admin/profiles', title: 'Profiles', text: 'People and the role each one holds' },
     { href: '/admin/roles', title: 'Roles', text: 'Create roles and assign responsibilities' },
     { href: '/admin/settings', title: 'Settings', text: 'The title and logo shown on the public home page' },
@@ -590,9 +589,6 @@ const residentPayHandler = async (req, res) => {
 // Only paid bookings that belong to a profile can be refunded, and only for what was paid.
 const isRefundable = booking =>
     Boolean(booking.profile_guid) && booking.amount_paid_pence > 0 && !booking.credited_at;
-// Only the card portion can be refunded outside ActiveHub; credit that was spent stays as credit.
-const externalRefundPence = booking => booking.amount_paid_pence - (booking.credit_applied_pence || 0);
-const isExternallyRefundable = booking => externalRefundPence(booking) > 0 && !booking.credited_at;
 
 const cancelBookingHandler = async (req, res) => {
     if (req.body.credit === '1' && !auth.isAdministrator(req.profile)) return res.sendStatus(403);
@@ -634,84 +630,6 @@ const cancelBookingHandler = async (req, res) => {
         return res.sendStatus(500);
     }
 };
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-admin.get('/refunds', async (req, res) => {
-    try {
-        const refundsEnabled = Settings.refundsEnabled(await Settings.getAll());
-        const text = name => typeof req.query[name] === 'string' ? req.query[name].trim().slice(0, 100) : '';
-        const date = name => DATE_PATTERN.test(req.query[name] || '') && !Number.isNaN(Date.parse(req.query[name])) ? req.query[name] : '';
-        const filters = { reference: text('reference'), profile: text('profile'), location: text('location'), from: date('from'), to: date('to') };
-        const searched = Object.values(filters).some(Boolean);
-        const results = searched ? await Bookings.search(filters) : { bookings: [], truncated: false };
-        res.render('refunds', {
-            activePage: 'refunds',
-            refundsEnabled,
-            filters,
-            searched,
-            bookings: results.bookings.map(booking => ({
-                ...booking,
-                refundable: !booking.refunded_at && isRefundable(booking),
-                externallyRefundable: refundsEnabled && !booking.refunded_at && isExternallyRefundable(booking),
-                externalPence: externalRefundPence(booking)
-            })),
-            truncated: results.truncated,
-            done: ['credit', 'external'].includes(req.query.done) ? req.query.done : '',
-            doneRef: typeof req.query.ref === 'string' ? req.query.ref.slice(0, 20) : '',
-            doneAmount: /^£\d+\.\d{2}$/.test(req.query.amount || '') ? req.query.amount : '',
-            error: typeof req.query.error === 'string' ? req.query.error : ''
-        });
-    } catch (error) {
-        res.sendStatus(500);
-    }
-});
-
-admin.post('/refunds/refund', async (req, res) => {
-    const { facility_guid, booking_guid } = req.body;
-    const external = req.body.method === 'external';
-    const returnQuery = typeof req.body.return_to === 'string' && req.body.return_to.startsWith('/admin/refunds?')
-        ? new URLSearchParams(req.body.return_to.slice('/admin/refunds?'.length).split('#')[0])
-        : new URLSearchParams();
-    const withParams = params => {
-        const query = new URLSearchParams();
-        for (const key of ['reference', 'profile', 'location', 'from', 'to']) {
-            if (returnQuery.has(key)) query.set(key, returnQuery.get(key));
-        }
-        for (const [key, value] of Object.entries(params)) query.set(key, value);
-        return query.toString();
-    };
-    if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(booking_guid || '')) return res.sendStatus(400);
-    try {
-        const booking = await Bookings.findBooking(facility_guid, booking_guid);
-        if (!booking) return res.redirect('/admin/refunds?' + withParams({ error: 'not-found' }));
-        const details = { reference: booking.booking_ref, option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_for: booking.profile_name };
-        if (external) {
-            if (!isExternallyRefundable(booking)) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
-            const pence = externalRefundPence(booking);
-            if (!await Bookings.cancelWithExternalRefund(facility_guid, booking_guid, pence, req.profile.name)) {
-                return res.redirect('/admin/refunds?' + withParams({ error: 'not-found' }));
-            }
-            await recordAudit(req.profile, {
-                action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
-                details: { ...details, refunded_externally: formatPounds(pence) }
-            });
-            return res.redirect('/admin/refunds?' + withParams({ done: 'external', ref: booking.booking_ref, amount: formatPounds(pence) }));
-        }
-        if (!isRefundable(booking)) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
-        const credited = await Bookings.addCreditToBooking(facility_guid, booking_guid, req.profile.name, req.body.refundable === '1');
-        if (!credited) return res.redirect('/admin/refunds?' + withParams({ error: 'not-refundable' }));
-        await recordAudit(req.profile, {
-            action: 'booking.credit', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
-            details: { ...details, credited: formatPounds(credited), card_portion_refundable: req.body.refundable === '1' }
-        });
-        return res.redirect('/admin/refunds?' + withParams({ done: 'credit', ref: booking.booking_ref, amount: formatPounds(credited) }));
-    } catch (error) {
-        if (error.code === 'REFUNDS_DISABLED') return res.status(403).send(error.message);
-        console.error('Unable to refund booking:', error);
-        return res.sendStatus(500);
-    }
-});
 
 function correctionReturn(req, path) {
     const query = new URLSearchParams();
@@ -998,7 +916,7 @@ admin.get('/credit-refunds/history', async (req, res) => {
 admin.post('/credit-refunds/decide', async (req, res) => {
     const { request_guid, decision } = req.body;
     if (!GUID_PATTERN.test(request_guid || '') || decision !== 'approve') {
-        return res.status(400).send('Refund requests can only be marked as done; they cannot be declined.');
+        return res.status(400).send('Bank refund requests can only be marked as done; they cannot be declined.');
     }
     try {
         const result = await Credits.decideRefund(request_guid, true, req.profile.name);

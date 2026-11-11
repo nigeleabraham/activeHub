@@ -42,7 +42,7 @@
             <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
             <h1 class="mb-2">Credits and refunds</h1>
-            <p class="lead mb-0">Your booking credit, refund requests and recent past bookings.</p>
+            <p class="lead mb-0">Your booking credit, bank refund requests and recent past bookings.</p>
         </div>
     </header>
 
@@ -76,7 +76,7 @@
                             <span class="badge badge-<%= credit.refundable ? 'info' : 'secondary' %>"><%= credit.refundable ? 'Refundable' : 'Non-refundable' %></span>
                             <% if (credit.refund_status === 'pending') { %>
                                 <output class="alert alert-warning mt-2 mb-0" aria-live="polite">
-                                    <strong>Refund requested &mdash; pending review</strong>
+                                    <strong>Bank refund requested &mdash; pending review</strong>
                                     <span class="d-block mb-0">Your bank refund request for £<%= (credit.remaining_pence / 100).toFixed(2) %> is waiting for an administrator's decision. You do not need to request it again. You can still spend this credit while you wait; the refund amount will reduce accordingly.</span>
                                 </output>
                             <% } else if (credit.refund_status === 'approved') { %>
@@ -85,7 +85,7 @@
                                 <span class="d-block small mt-1">Bank refund declined. Any remaining credit can still be used for bookings.</span>
                                 <p class="mb-0">Decline reason: <%= credit.decline_comment || 'No reason recorded for this older decision.' %></p>
                             <% } else if (credit.refund_status === 'spent') { %>
-                                <span class="d-block small mt-1">Refund request closed: credit fully spent.</span>
+                                <span class="d-block small mt-1">Bank refund request closed: credit fully spent.</span>
                             <% } else if (locals.refundsEnabled !== false && credit.refundable && credit.remaining_pence > 0) { %>
                                 <form method="POST" action="/credits-and-refunds/credit-refunds" class="mt-2">
                                     <input type="hidden" name="credit_guid" value="<%= credit.guid %>">

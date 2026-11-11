@@ -561,7 +561,7 @@ test('admin header uses the configured logo or title and links to admin home', a
 
 test('all admin pages place navigation before main content in document order', async () => {
     for (const view of ['admin-home', 'facilities', 'courses', 'sports', 'opening-hours', 'bookings',
-        'credit-requests', 'credit-refunds', 'refunds', 'profiles', 'roles', 'audit', 'settings']) {
+        'credit-requests', 'credit-refunds', 'profiles', 'roles', 'audit', 'settings']) {
         const source = await readFile(path.join(__dirname, `../views/${view}.ejs`), 'utf8');
         assert.equal((source.match(/include\('partials\/navigation'\)/g) || []).length, 1, view);
         assert.ok(source.indexOf("include('partials/navigation')") < source.indexOf('<main'), view);
@@ -953,7 +953,7 @@ test('admin navigation groups every page once and marks the current page and sec
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
         ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
-        ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds', '/admin/refunds'],
+        ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds'],
         ['/admin/profiles', '/admin/roles', '/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
