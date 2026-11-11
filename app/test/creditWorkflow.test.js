@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const express = require('express');
 const ejs = require('ejs');
@@ -37,7 +38,7 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
         guid: GUID, name: 'Hall', max_resident_bookings: 2
     }]);
     t.mock.method(Bookings, 'findOptions', async () => [{
-        guid: GUID, name: 'Court', allowed_months: Array.from({ length: 12 }, (_, i) => i + 1)
+        guid: GUID, name: 'Court', price_pence: 1000, allowed_months: Array.from({ length: 12 }, (_, i) => i + 1)
     }]);
     t.mock.method(Bookings, 'findUpcomingForProfile', async () => [
         { facility_guid: GUID, starts_at: '2027-01-01T10:00:00Z', ends_at: '2027-01-01T11:00:00Z' },
@@ -111,6 +112,65 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
     }
 });
 
+test('checkout prices each court independently and allocates credit across the recorded booking amounts', async t => {
+    const secondGuid = '123e4567-e89b-42d3-a456-426614174001';
+    const resident = { ...profile, credit_pence: 600 };
+    t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
+    t.mock.method(Settings, 'getLogo', async () => null);
+    t.mock.method(Bookings, 'findInAppFacilities', async () => [{
+        guid: GUID, name: 'Hall', max_resident_bookings: 8
+    }]);
+    t.mock.method(Bookings, 'findOptions', async () => [
+        { guid: GUID, name: 'Court one', price_pence: 500, allowed_months: Array.from({ length: 12 }, (_, i) => i + 1) },
+        { guid: secondGuid, name: 'Court two', price_pence: 800, allowed_months: Array.from({ length: 12 }, (_, i) => i + 1) }
+    ]);
+    t.mock.method(Bookings, 'countUpcomingForProfile', async () => 0);
+    t.mock.method(Profiles, 'findByGuid', async () => resident);
+    t.mock.method(OpeningHours, 'isBookingWithinHours', async () => true);
+    const create = t.mock.method(Bookings, 'createBookings', async items => items.map(item => ({ ...item, guid: crypto.randomUUID() })));
+    t.mock.method(AuditLog, 'record', async () => {});
+    const starts = new Date(Date.now() + 86400000);
+    const slots = [GUID, secondGuid].map((option_guid, index) => ({
+        option_guid,
+        starts_at: new Date(starts.getTime() + index * 3600000).toISOString(),
+        ends_at: new Date(starts.getTime() + (index + 1) * 3600000).toISOString()
+    }));
+    const body = { facility_guid: GUID, slots: JSON.stringify(slots) };
+    const handler = (url) => router.stack.findLast(
+        layer => layer.route?.path === url && layer.route.methods.post
+    ).route.stack[0].handle;
+
+    let checkout;
+    await handler('/bookings/checkout')({ profile: resident, body }, {
+        status(status) { assert.equal(status, 200); return this; },
+        render(view, values) { assert.equal(view, 'resident-checkout'); checkout = values; },
+        redirect(location) { assert.fail(`Unexpected redirect to ${location}`); },
+        sendStatus(status) { assert.fail(`Unexpected HTTP ${status}`); }
+    });
+    assert.equal(checkout.total, '£13.00');
+    assert.equal(checkout.credit, '£6.00');
+    assert.equal(checkout.due, '£7.00');
+    assert.deepEqual(checkout.items.map(item => [item.option_name, item.price]), [
+        ['Court one', '£5.00'], ['Court two', '£8.00']
+    ]);
+
+    let redirect;
+    await handler('/bookings/pay')({
+        profile: resident,
+        body: { ...body, card_name: 'Resident', card_number: '4111111111111111', card_expiry: '12/99', card_cvc: '123' }
+    }, {
+        redirect(location) { redirect = location; },
+        status(status) { assert.equal(status, 200); return this; },
+        render(view) { assert.fail(`Unexpected render of ${view}`); },
+        sendStatus(status) { assert.fail(`Unexpected HTTP ${status}`); }
+    });
+    assert.match(redirect, /^\/bookings\?created=2&paid=%C2%A37\.00&credit=%C2%A36\.00$/);
+    const created = create.mock.calls[0].arguments[0];
+    assert.deepEqual(created.map(item => item.amount_pence), [500, 800]);
+    assert.deepEqual(created.map(item => item.amount_paid_pence), [500, 800]);
+    assert.deepEqual(created.map(item => item.credit_applied_pence), [500, 100]);
+});
+
 test('checkout distinguishes available balance, credit deduction and card remainder', async () => {
     for (const [availableCredit, credit, due] of [
         ['£50.00', '£10.00', '£0.00'],
@@ -120,7 +180,7 @@ test('checkout distinguishes available balance, credit deduction and card remain
         const html = await ejs.renderFile(path.join(__dirname, '../views/resident-checkout.ejs'), {
             siteTitle: 'ActiveHub', hasLogo: false, currentProfile: profile, isAdmin: false,
             canSwitchRole: false, activePage: 'bookings', facility: { guid: GUID, name: 'Hall' },
-            items: [], slotsJson: '[]', unitPrice: '£10.00', total: '£10.00',
+            items: [], slotsJson: '[]', total: '£10.00',
             availableCredit, credit, due, fullyCovered: due === '£0.00', cardError: null, values: {}
         });
         assert.ok(html.includes(`You have <strong>${availableCredit}</strong> credit in your account.`));
@@ -352,7 +412,9 @@ test('administrator queue only allows marking pending refunds done and preserves
     const historyHtml = await ejs.renderFile(view, { ...values, historyPage: true });
 
     assert.equal((html.match(/action="\/admin\/credit-refunds\/decide"/g) || []).length, 1);
+    assert.doesNotMatch(html, /Requested amount/);
     assert.ok(historyHtml.includes('Done £6.00'));
+    assert.match(historyHtml, /Requested amount/);
     assert.match(html, />Mark as done<\/button>/);
     assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
     assert.match(historyHtml, /Declined/);

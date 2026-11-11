@@ -140,6 +140,10 @@
                                                 <input class="form-control form-control-sm" id="option-name-<%= facility.guid %>" name="name" type="text" maxlength="120" required>
                                             </div>
                                             <div class="form-group">
+                                                <label for="option-price-<%= facility.guid %>">Price per one-hour slot (&pound;)</label>
+                                                <input class="form-control form-control-sm" id="option-price-<%= facility.guid %>" name="price" type="number" min="0" max="999999.99" step="0.01" required>
+                                            </div>
+                                            <div class="form-group">
                                                 <label for="option-sport-<%= facility.guid %>">Sport</label>
                                                 <select class="form-control form-control-sm" id="option-sport-<%= facility.guid %>" name="sport_guid" required>
                                                     <% facility.sports.forEach(sport => { %>
@@ -170,13 +174,17 @@
                             <% facility.options.forEach(option => { %>
                                 <article class="bg-white border rounded p-3 mb-2 position-relative">
                                     <details class="admin-disclosure" data-editor-disclosure>
-                                        <summary class="admin-card-summary" style="padding-right: 5rem;"><h4 class="h6 d-inline mb-0 text-break"><%= option.name %> <span class="text-muted font-weight-normal">· <%= option.sport_name %></span></h4></summary>
+                                        <summary class="admin-card-summary" style="padding-right: 5rem;"><h4 class="h6 d-inline mb-0 text-break"><%= option.name %> <span class="text-muted font-weight-normal">· <%= option.sport_name %> · &pound;<%= (option.price_pence / 100).toFixed(2) %> per hour</span></h4></summary>
                                         <form method="POST" action="/admin/bookings/options/update" data-editor-preview="false" data-editor-label="Edit <%= option.name %>">
                                             <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                                             <input type="hidden" name="guid" value="<%= option.guid %>">
                                             <div class="form-group">
                                                 <label for="edit-option-name-<%= option.guid %>">Court name</label>
                                                 <input class="form-control form-control-sm" id="edit-option-name-<%= option.guid %>" name="name" type="text" maxlength="120" value="<%= option.name %>" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit-option-price-<%= option.guid %>">Price per one-hour slot (&pound;)</label>
+                                                <input class="form-control form-control-sm" id="edit-option-price-<%= option.guid %>" name="price" type="number" min="0" max="999999.99" step="0.01" value="<%= (option.price_pence / 100).toFixed(2) %>" required>
                                             </div>
                                             <div class="form-group">
                                                 <label for="edit-option-sport-<%= option.guid %>">Sport</label>

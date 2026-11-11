@@ -1384,7 +1384,7 @@ test('court configuration facilities, sports, resources and courts expand from t
     const facility = {
         guid: 'centre', name: 'Sports centre', address: '1 High Street', postcode: 'SW1A 1AA',
         sports: [sport], resources: [resource],
-        options: [{ guid: 'court-one', name: 'Court 1', sport_guid: 'tennis', sport_name: 'Tennis', resources: [resource] }],
+        options: [{ guid: 'court-one', name: 'Court 1', sport_guid: 'tennis', sport_name: 'Tennis', price_pence: 750, resources: [resource] }],
         bookings: []
     };
     const html = await ejs.renderFile(path.join(__dirname, '../views/bookings.ejs'), {
@@ -1399,7 +1399,7 @@ test('court configuration facilities, sports, resources and courts expand from t
     }
     for (const [title, action] of [
         ['Tennis', 'sports/months'], ['Add resource', 'resources'], ['Net A', 'resources/update'],
-        ['Add bookable court', 'options'], ['Court 1 <span class="text-muted font-weight-normal">· Tennis</span>', 'options/update']
+        ['Add bookable court', 'options'], ['Court 1 <span class="text-muted font-weight-normal">· Tennis · &pound;7.50 per hour</span>', 'options/update']
     ]) {
         const pattern = new RegExp(`<details class="admin-disclosure" data-editor-disclosure>\\s*<summary class="admin-card-summary"[^>]*><h4 class="h6 d-inline mb-0[^"]*">${title}</h4>[\\s\\S]*?</summary>\\s*<form method="POST" action="/admin/bookings/${action}"`);
         assert.match(card, pattern, title);

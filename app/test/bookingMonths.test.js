@@ -13,7 +13,7 @@ test('booking management and court configuration load and render only their own 
     const facility = { guid: GUID, name: 'Hall', address: 'High Street', postcode: 'AB1 2CD' };
     const sports = [{ guid: GUID, name: 'Tennis', allowed_months: [1, 2] }];
     const resources = [{ guid: GUID, name: 'Court resource', claim_count: 0 }];
-    const options = [{ guid: GUID, name: 'Court one', sport_guid: GUID, sport_name: 'Tennis', resources }];
+    const options = [{ guid: GUID, name: 'Court one', sport_guid: GUID, sport_name: 'Tennis', price_pence: 1250, resources }];
     t.mock.method(Bookings, 'findInAppFacilities', async () => [facility]);
     const sportQuery = t.mock.method(Bookings, 'findFacilitySports', async () => sports);
     const resourceQuery = t.mock.method(Bookings, 'findResources', async () => resources);
@@ -45,6 +45,8 @@ test('booking management and court configuration load and render only their own 
             assert.match(html, /action="\/admin\/bookings\/resources"/);
             assert.match(html, /action="\/admin\/bookings\/options"/);
             assert.match(html, /action="\/admin\/bookings\/sports\/months"/);
+            assert.match(html, /Price per one-hour slot \(&pound;\)/);
+            assert.match(html, /Court one[\s\S]*&pound;12\.50 per hour/);
             assert.doesNotMatch(html, /<(?:div|form)[^>]*\s(?:data-booking-calendar|data-booking-form|data-cancel-booking|data-calendar-slots)(?:\s|>)/);
         } else {
             assert.match(html, /<h1[^>]*>Bookings management<\/h1>/);
@@ -104,10 +106,10 @@ test('creating a court does not override the site sport season', async t => {
     const create = t.mock.method(Bookings, 'createOption', async () => ({ guid: GUID }));
     const admin = router.stack.find(layer => layer.handle.stack).handle;
     const handler = admin.stack.findLast(layer => layer.route?.path === '/bookings/options').route.stack[0].handle;
-    const body = { facility_guid: GUID, sport_guid: GUID, name: 'Seasonal court', resource_guids: [GUID] };
-    async function submit(months) {
+    const body = { facility_guid: GUID, sport_guid: GUID, name: 'Seasonal court', price: '12.34', resource_guids: [GUID] };
+    async function submit(months, price = body.price) {
         let result;
-        await handler({ body: { ...body, allowed_months: months } }, {
+        await handler({ body: { ...body, price, allowed_months: months } }, {
             redirect(location) { result = location; },
             sendStatus(status) { result = status; }
         });
@@ -115,7 +117,11 @@ test('creating a court does not override the site sport season', async t => {
     }
     assert.equal(await submit(['9', '4', '4']), '/admin/court-configuration');
     assert.equal(create.mock.calls[0].arguments[0].allowed_months, undefined);
+    assert.equal(create.mock.calls[0].arguments[0].price_pence, 1234);
     assert.equal(await submit(undefined), '/admin/court-configuration');
     assert.equal(create.mock.calls[1].arguments[0].allowed_months, undefined);
+    for (const price of ['', '-1', '1.234', '1000000', '01.00', 'not-a-price']) {
+        assert.equal(await submit(undefined, price), 400);
+    }
     assert.equal(create.mock.callCount(), 2);
 });

@@ -82,15 +82,21 @@ function parseResourceInput(body) {
 function parseBookableOptionInput(body) {
     const { facility_guid, guid, sport_guid } = body;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const price = typeof body.price === 'string' ? body.price.trim() : '';
+    const priceMatch = price.match(/^(?:0|[1-9]\d{0,5})(?:\.(\d{1,2}))?$/);
+    const pricePence = priceMatch
+        ? Number(price.split('.')[0]) * 100 + Number((priceMatch[1] || '').padEnd(2, '0'))
+        : null;
     const resourceGuids = body.resource_guids === undefined
         ? []
         : Array.isArray(body.resource_guids) ? body.resource_guids : [body.resource_guids];
     if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(sport_guid || '') ||
         (guid !== undefined && !GUID_PATTERN.test(guid)) || !name || name.length > 120 ||
+        !Number.isInteger(pricePence) || pricePence < 0 || pricePence > 99999999 ||
         !resourceGuids.length || resourceGuids.some(resourceGuid => !GUID_PATTERN.test(resourceGuid))) {
         return null;
     }
-    return { facility_guid, guid, sport_guid, name, resource_guids: [...new Set(resourceGuids)] };
+    return { facility_guid, guid, sport_guid, name, price_pence: pricePence, resource_guids: [...new Set(resourceGuids)] };
 }
 
 async function parseFacilityForm(body) {
@@ -340,9 +346,6 @@ const MAX_BATCH_BOOKINGS = 50;
 
 const BOOKINGS_PATH = '/admin/bookings';
 
-// Placeholder price until real pricing exists; payments are simulated.
-const SIMULATED_SLOT_PRICE_PENCE = 500;
-
 const formatPounds = pence => `£${(pence / 100).toFixed(2)}`;
 
 // Validates a batch of slots. Returns { status }, { redirect } or { facility, bookings, assigneesByGuid }.
@@ -394,6 +397,8 @@ async function prepareBatch(req, { resident }) {
             !option.allowed_months.includes(Number(monthFormatter.format(new Date(new Date(booking.ends_at).getTime() - 1))))) {
             return { redirect: `${bookingsPath}?error=month-unavailable` };
         }
+        booking.option_name = option.name;
+        booking.amount_pence = option.price_pence;
     }
     if (resident && req.profile.role === 'Resident') {
         const existing = await Bookings.countUpcomingForProfile(req.profile.guid, facility_guid);
@@ -449,33 +454,31 @@ const createBatchHandler = async (req, res) => {
 };
 
 // Applies the profile's credit first; the remainder (if any) goes to the card.
-function priceBatch(count, creditPence) {
-    const total = count * SIMULATED_SLOT_PRICE_PENCE;
+function priceBatch(bookings, creditPence) {
+    const total = bookings.reduce((sum, booking) => sum + booking.amount_pence, 0);
     const credit = Math.min(Math.max(creditPence, 0), total);
     return { total, credit, due: total - credit };
 }
 
 // Spreads the credit over the slots in order so each booking records what it cost and how it was paid.
-function allocateCredit(count, credit) {
+function allocateCredit(bookings, credit) {
     let left = credit;
-    return Array.from({ length: count }, () => {
-        const applied = Math.min(left, SIMULATED_SLOT_PRICE_PENCE);
+    return bookings.map(booking => {
+        const applied = Math.min(left, booking.amount_pence);
         left -= applied;
         return applied;
     });
 }
 
 async function renderCheckout(req, res, prepared, { cardError, values = {} } = {}) {
-    const [settings, hasLogo, options] = await Promise.all([
+    const [settings, hasLogo] = await Promise.all([
         Settings.getAll(),
-        Settings.getLogo().then(Boolean),
-        Bookings.findOptions(prepared.facility.guid)
+        Settings.getLogo().then(Boolean)
     ]);
-    const pricing = priceBatch(prepared.bookings.length, req.profile.credit_pence);
-    const optionsByGuid = new Map(options.map(option => [option.guid, option]));
+    const pricing = priceBatch(prepared.bookings, req.profile.credit_pence);
     const items = [...prepared.bookings]
         .sort((first, second) => first.starts_at.localeCompare(second.starts_at))
-        .map(booking => ({ ...booking, option_name: optionsByGuid.get(booking.option_guid)?.name || 'Court' }));
+        .map(booking => ({ ...booking, price: formatPounds(booking.amount_pence) }));
     return res.status(cardError ? 422 : 200).render('resident-checkout', {
         activePage: 'bookings',
         siteTitle: settings.site_title,
@@ -488,7 +491,6 @@ async function renderCheckout(req, res, prepared, { cardError, values = {} } = {
         availableCredit: formatPounds(req.profile.credit_pence),
         due: formatPounds(pricing.due),
         fullyCovered: pricing.due === 0,
-        unitPrice: formatPounds(SIMULATED_SLOT_PRICE_PENCE),
         cardError,
         values
     });
@@ -542,7 +544,7 @@ const residentPayHandler = async (req, res) => {
         if (prepared.redirect) return res.redirect(prepared.redirect);
         // Re-read the balance so a stale checkout page can't spend credit twice.
         const fresh = await Profiles.findByGuid(req.profile.guid);
-        const pricing = priceBatch(prepared.bookings.length, fresh.credit_pence);
+        const pricing = priceBatch(prepared.bookings, fresh.credit_pence);
         let reference = null;
         if (pricing.due > 0) {
             const payment = simulateCardPayment(req.body);
@@ -556,14 +558,14 @@ const residentPayHandler = async (req, res) => {
         } else {
             reference = `CREDIT-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
         }
-        const allocation = allocateCredit(prepared.bookings.length, pricing.credit);
+        const allocation = allocateCredit(prepared.bookings, pricing.credit);
         const items = prepared.bookings.map((booking, index) => ({
             ...booking,
             payment_status: pricing.due > 0 ? 'paid' : 'credit',
             payment_reference: reference,
-            amount_pence: SIMULATED_SLOT_PRICE_PENCE,
+            amount_pence: booking.amount_pence,
             credit_applied_pence: allocation[index],
-            amount_paid_pence: SIMULATED_SLOT_PRICE_PENCE
+            amount_paid_pence: booking.amount_pence
         }));
         const createdBookings = await Bookings.createBookings(items, { profile_guid: req.profile.guid, pence: pricing.credit });
         for (const [index, booking] of items.entries()) {
@@ -591,7 +593,12 @@ const isRefundable = booking =>
     Boolean(booking.profile_guid) && booking.amount_paid_pence > 0 && !booking.credited_at;
 
 const cancelBookingHandler = async (req, res) => {
-    if (req.body.credit === '1' && !auth.isAdministrator(req.profile)) return res.sendStatus(403);
+    const action = req.body.cancel_action ||
+        (req.body.credit === '1' ? (req.body.refundable === '1' ? 'refundable-credit' : 'credit') : 'cancel');
+    if (!['cancel', 'credit', 'refundable-credit'].includes(action)) return res.sendStatus(400);
+    const creditRequested = action !== 'cancel';
+    const refundableCredit = action === 'refundable-credit';
+    if (creditRequested && !auth.isAdministrator(req.profile)) return res.sendStatus(403);
     const { facility_guid, booking_guid } = req.body;
     if (!GUID_PATTERN.test(facility_guid || '') || !GUID_PATTERN.test(booking_guid || '')) {
         return res.sendStatus(400);
@@ -599,18 +606,25 @@ const cancelBookingHandler = async (req, res) => {
     try {
         const booking = await Bookings.findBooking(facility_guid, booking_guid);
         if (!booking) return res.sendStatus(404);
+        if (creditRequested && !isRefundable(booking)) return res.sendStatus(409);
+        if (refundableCredit && booking.amount_paid_pence - (booking.credit_applied_pence || 0) <= 0) {
+            return res.sendStatus(409);
+        }
+        if (refundableCredit && !Settings.refundsEnabled(await Settings.getAll())) {
+            return res.status(403).send('Bank and external refunds are disabled system-wide. Account credit remains available.');
+        }
         // Credit is capped at what was actually paid (card plus credit), never the court fee, so a free
         // booking made by an admin can't be turned into credit. The amount comes from the stored booking.
-        const creditPence = req.body.credit === '1' && isRefundable(booking) ? booking.amount_paid_pence : 0;
-        const removed = creditPence
-            ? await Bookings.removeBookingWithCredit(facility_guid, booking_guid, booking.profile_guid, creditPence, req.profile.name, req.body.refundable === '1')
+        const creditPence = creditRequested ? booking.amount_paid_pence : 0;
+        const removed = creditRequested
+            ? await Bookings.removeBookingWithCredit(facility_guid, booking_guid, booking.profile_guid, creditPence, req.profile.name, refundableCredit)
             : await Bookings.removeBooking(facility_guid, booking_guid);
         if (!removed) return res.sendStatus(404);
         await recordAudit(req.profile, {
             action: 'booking.cancel', entityType: 'booking', entityGuid: booking_guid, entityLabel: booking.facility_name,
             details: {
                 reference: booking.booking_ref, option: booking.option_name, starts_at: booking.starts_at, ends_at: booking.ends_at, booked_for: booking.profile_name,
-                ...(creditPence ? { credited: formatPounds(creditPence), card_portion_refundable: req.body.refundable === '1' } : {})
+                ...(creditPence ? { credited: formatPounds(creditPence), card_portion_refundable: refundableCredit } : {})
             }
         });
         // In-page cancels update the list without a reload.
@@ -627,6 +641,7 @@ const cancelBookingHandler = async (req, res) => {
         }
         return res.redirect(BOOKINGS_PATH);
     } catch (error) {
+        if (error.code === 'REFUNDS_DISABLED') return res.status(403).send(error.message);
         return res.sendStatus(500);
     }
 };
@@ -2064,8 +2079,8 @@ async function adminBookingsPage(req, res) {
     }
     try {
         if (searching) {
-            const [facilities, maxDays] = await Promise.all([
-                Bookings.findBookingFacilities(), Settings.getBookingSearchDays()
+            const [facilities, maxDays, settings] = await Promise.all([
+                Bookings.findBookingFacilities(), Settings.getBookingSearchDays(), Settings.getAll()
             ]);
             const filters = Object.fromEntries(['facility_guid', 'reference', 'profile', 'from', 'to'].map(key =>
                 [key, typeof req.query[key] === 'string' ? req.query[key].trim() : '']));
@@ -2088,7 +2103,8 @@ async function adminBookingsPage(req, res) {
             }
             return res.render('bookings', {
                 facilities, searchResults: { ...results, filters, searched, searchError, maxDays },
-                error: req.query.error, created: 0, activePage: 'booking-search'
+                error: req.query.error, created: 0, activePage: 'booking-search',
+                refundsEnabled: Settings.refundsEnabled(settings)
             });
         }
         const facilityRows = await Bookings.findInAppFacilities();

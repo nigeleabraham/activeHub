@@ -58,6 +58,7 @@ test('facility booking searches constrain SQL by facility, escaped filters, UK d
 
 test('booking search loads once with optional facility filtering and rejects invalid filters', async t => {
     t.mock.method(Settings, 'getBookingSearchDays', async () => 30);
+    t.mock.method(Settings, 'getAll', async () => Settings.DEFAULTS);
     const admin = router.stack.find(layer => layer.handle.stack).handle;
     const handler = admin.stack.find(layer => layer.route?.path === '/booking-search').route.stack[0].handle;
     t.mock.method(Bookings, 'findBookingFacilities', async () => [{ guid }, { guid: other }]);
@@ -181,6 +182,7 @@ test('search page renders results with cancellation links and its active navigat
                 starts_at: '2026-03-01T12:00Z', ends_at: '2026-03-01T13:00Z', resource_names: [],
                 payment_status: 'not_required' }] }
     });
+
     assert.match(html, /<title>Booking search \| ActiveHub<\/title>/);
     assert.match(html, /href="\/admin\/booking-search" aria-current="page"/);
     assert.match(html, /data-cancel-booking/);
@@ -191,6 +193,54 @@ test('search page renders results with cancellation links and its active navigat
     assert.match(html, /name="search_facility_guid" value=""/);
     assert.match(html, /name="to"[^>]+min="2026-03-01" max="2026-03-31"/);
     assert.doesNotMatch(html, /<(?:div|form)\b[^>]+(?:data-booking-calendar|data-booking-form)/);
+});
+
+test('booking search shows three separately gated cancellation actions', async () => {
+    const booking = {
+        guid: other, facility_guid: guid, facility_name: 'Test facility', booking_ref: 'AH-PAID',
+        option_name: 'Court', sport_name: 'Tennis', starts_at: '2026-03-01T12:00Z',
+        ends_at: '2026-03-01T13:00Z', resource_names: [], payment_status: 'paid',
+        profile_guid: guid, profile_name: 'Rita Resident', amount_pence: 1000,
+        amount_paid_pence: 1000, credit_applied_pence: 200, credited_at: null
+    };
+    const render = (overrides = {}, locals = {}) => ejs.renderFile(
+        path.join(__dirname, '../views/partials/booking-search.ejs'),
+        {
+            results: {
+                maxDays: 30, searched: true,
+                filters: { from: '2026-03-01', to: '2026-03-31', facility_guid: '' },
+                bookings: [{ ...booking, ...overrides }]
+            },
+            facilities: [{ guid, name: 'Test facility' }],
+            moment: require('moment'), isAdmin: true, refundsEnabled: true, ...locals
+        }
+    );
+    const eligible = await render();
+    assert.match(eligible, /class="btn btn-primary btn-sm mb-1 w-100"[^>]+name="cancel_action" value="cancel">Cancel booking<\/button>/);
+    assert.match(eligible, /class="btn btn-primary btn-sm mb-1 w-100"[^>]+name="cancel_action" value="credit">Cancel and credit £10\.00 — non-refundable<\/button>/);
+    assert.match(eligible, /class="btn btn-primary btn-sm mb-1 w-100"[^>]+name="cancel_action" value="refundable-credit">Cancel and credit £10\.00 — bank refund available<\/button>/);
+    assert.doesNotMatch(eligible, /type="checkbox"|name="refundable"/);
+
+    for (const html of [
+        await render({}, { refundsEnabled: false }),
+        await render({ credit_applied_pence: 1000 }),
+        await render({}, { isAdmin: false }),
+        await render({ profile_guid: null, profile_name: null }),
+        await render({ amount_paid_pence: 0 }),
+        await render({ credited_at: '2026-03-02T12:00:00Z' })
+    ]) {
+        assert.match(html, /name="cancel_action" value="cancel"/);
+    }
+    assert.doesNotMatch(await render({}, { refundsEnabled: false }), /value="refundable-credit"/);
+    assert.doesNotMatch(await render({ credit_applied_pence: 1000 }), /value="refundable-credit"/);
+    for (const html of [
+        await render({}, { isAdmin: false }),
+        await render({ profile_guid: null, profile_name: null }),
+        await render({ amount_paid_pence: 0 }),
+        await render({ credited_at: '2026-03-02T12:00:00Z' })
+    ]) {
+        assert.doesNotMatch(html, /value="credit"|value="refundable-credit"/);
+    }
 });
 
 test('non-JavaScript cancellation returns to booking search with filters and cannot redirect externally', async t => {
@@ -214,6 +264,62 @@ test('non-JavaScript cancellation returns to booking search with filters and can
             assert.equal(url.searchParams.get('facility_guid'), filterFacility);
         }
     }
+});
+
+test('cancellation actions enforce authorization and eligibility before mutation', async t => {
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    const handler = admin.stack.find(layer => layer.route?.path === '/bookings/cancel').route.stack[0].handle;
+    let booking = {
+        facility_guid: guid, guid: other, booking_ref: 'AH-PAID', profile_guid: guid,
+        profile_name: 'Rita Resident', amount_paid_pence: 1000, credit_applied_pence: 200,
+        credited_at: null, option_name: 'Court', facility_name: 'Test facility'
+    };
+    t.mock.method(Bookings, 'findBooking', async () => booking);
+    const remove = t.mock.method(Bookings, 'removeBooking', async () => true);
+    const credit = t.mock.method(Bookings, 'removeBookingWithCredit', async () => true);
+    t.mock.method(AuditLog, 'record', async () => {});
+    let refundsEnabled = true;
+    t.mock.method(Settings, 'getAll', async () => ({
+        ...Settings.DEFAULTS, refunds_enabled: refundsEnabled ? '1' : '0'
+    }));
+
+    async function submit(cancelAction, role = 'Administrator') {
+        const response = {};
+        await handler({
+            body: { facility_guid: guid, booking_guid: other, cancel_action: cancelAction },
+            profile: { name: role, role },
+            get() { return 'fetch'; }
+        }, {
+            sendStatus(status) { response.status = status; },
+            status(status) { response.status = status; return this; },
+            send(message) { response.message = message; },
+            redirect() { assert.fail('Fetch cancellation must not redirect'); }
+        });
+        return response;
+    }
+
+    assert.equal((await submit('invalid')).status, 400);
+    assert.equal((await submit('credit', 'Staff')).status, 403);
+    booking = { ...booking, amount_paid_pence: 0 };
+    assert.equal((await submit('credit')).status, 409);
+    booking = { ...booking, amount_paid_pence: 1000, credit_applied_pence: 1000 };
+    assert.equal((await submit('refundable-credit')).status, 409);
+    assert.equal(remove.mock.callCount(), 0);
+    assert.equal(credit.mock.callCount(), 0);
+
+    booking = { ...booking, credit_applied_pence: 200 };
+    assert.equal((await submit('credit')).status, 204);
+    assert.deepEqual(credit.mock.calls.at(-1).arguments, [guid, other, guid, 1000, 'Administrator', false]);
+    assert.equal((await submit('refundable-credit')).status, 204);
+    assert.deepEqual(credit.mock.calls.at(-1).arguments, [guid, other, guid, 1000, 'Administrator', true]);
+    assert.equal((await submit('cancel', 'Staff')).status, 204);
+    assert.deepEqual(remove.mock.calls.at(-1).arguments, [guid, other]);
+
+    refundsEnabled = false;
+    const disabled = await submit('refundable-credit');
+    assert.equal(disabled.status, 403);
+    assert.match(disabled.message, /disabled system-wide/);
+    assert.equal(credit.mock.callCount(), 2);
 });
 
 test('bounded facility search preserves overlap, resource details and limits in PostgreSQL', {

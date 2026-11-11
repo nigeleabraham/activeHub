@@ -82,11 +82,13 @@
                                         <% }); %>
                                         <input type="hidden" name="facility_guid" value="<%= booking.facility_guid %>">
                                         <input type="hidden" name="booking_guid" value="<%= booking.guid %>">
-                                        <button class="btn btn-outline-danger btn-sm" type="submit">Cancel Booking</button>
+                                        <button class="btn btn-primary btn-sm mb-1 w-100" type="submit" name="cancel_action" value="cancel">Cancel booking</button>
                                         <% if (isAdmin && booking.profile_guid && booking.amount_paid_pence > 0 && !booking.credited_at) { %>
-                                            <label class="d-block small mt-1"><input type="checkbox" name="refundable" value="1"> Allow bank refund of the card-paid portion</label>
-                                            <p class="small mb-1">Reissued credits retain their original refund eligibility.</p>
-                                            <button class="btn btn-outline-primary btn-sm mt-1" type="submit" name="credit" value="1">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> paid to <%= booking.profile_name %></button>
+                                            <button class="btn btn-primary btn-sm mb-1 w-100" type="submit" name="cancel_action" value="credit">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> — non-refundable</button>
+                                            <% if (locals.refundsEnabled && booking.amount_paid_pence - (booking.credit_applied_pence || 0) > 0) { %>
+                                                <button class="btn btn-primary btn-sm mb-1 w-100" type="submit" name="cancel_action" value="refundable-credit">Cancel and credit £<%= (booking.amount_paid_pence / 100).toFixed(2) %> — bank refund available</button>
+                                            <% } %>
+                                            <p class="small mb-1">Reused credit retains its original bank-refund eligibility. The refundable option also makes the card-paid portion eligible.</p>
                                         <% } %>
                                     </form>
                                 </td>

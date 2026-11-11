@@ -30,11 +30,31 @@ async function initialize() {
             facility_guid uuid NOT NULL REFERENCES facilities(guid) ON DELETE CASCADE,
             sport_guid uuid NOT NULL,
             name text NOT NULL,
+            price_pence integer NOT NULL DEFAULT 500 CHECK (price_pence >= 0 AND price_pence <= 99999999),
             created_at timestamptz NOT NULL DEFAULT now(),
             FOREIGN KEY (facility_guid, sport_guid)
                 REFERENCES facility_sports(facility_guid, sport_guid)
                 ON DELETE RESTRICT
         )
+    `);
+    await pool.query(`
+        ALTER TABLE bookable_options
+        ADD COLUMN IF NOT EXISTS price_pence integer NOT NULL DEFAULT 500
+    `);
+    await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bookable_options_price_pence_check'
+                    AND conrelid = 'public.bookable_options'::regclass
+            ) THEN
+                ALTER TABLE bookable_options
+                    ADD CONSTRAINT bookable_options_price_pence_check
+                    CHECK (price_pence >= 0 AND price_pence <= 99999999);
+            END IF;
+        END
+        $$
     `);
     await pool.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS bookable_options_facility_name_key
@@ -274,7 +294,7 @@ async function findResources(facilityGuid) {
 async function findOptions(facilityGuid) {
     const { rows } = await pool.query(
         `SELECT options.guid, options.facility_guid, options.sport_guid,
-                options.name, facility_sports.allowed_months, sports.name AS sport_name,
+                options.name, options.price_pence, facility_sports.allowed_months, sports.name AS sport_name,
                 COALESCE(resource_data.resources, '[]'::json) AS resources
          FROM bookable_options AS options
          JOIN sports ON sports.guid = options.sport_guid
@@ -466,15 +486,15 @@ async function replaceOptionResources(client, optionGuid, facilityGuid, resource
     );
 }
 
-async function createOption({ facility_guid, sport_guid, name, resource_guids }) {
+async function createOption({ facility_guid, sport_guid, name, price_pence = 500, resource_guids }) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            `INSERT INTO bookable_options (facility_guid, sport_guid, name)
-             VALUES ($1, $2, $3)
-             RETURNING guid, facility_guid, sport_guid, name`,
-            [facility_guid, sport_guid, name]
+            `INSERT INTO bookable_options (facility_guid, sport_guid, name, price_pence)
+             VALUES ($1, $2, $3, $4)
+             RETURNING guid, facility_guid, sport_guid, name, price_pence`,
+            [facility_guid, sport_guid, name, price_pence]
         );
         await replaceOptionResources(client, rows[0].guid, facility_guid, resource_guids);
         await client.query('COMMIT');
@@ -487,12 +507,21 @@ async function createOption({ facility_guid, sport_guid, name, resource_guids })
     }
 }
 
-async function updateOption({ facility_guid, guid, sport_guid, name, resource_guids }) {
+async function updateOption({ facility_guid, guid, sport_guid, name, price_pence, resource_guids }) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const current = await client.query(
-            'SELECT guid FROM bookable_options WHERE guid = $1 AND facility_guid = $2 FOR UPDATE',
+            `SELECT options.guid, options.sport_guid,
+                    ARRAY(
+                        SELECT resources.resource_guid
+                        FROM bookable_option_resources AS resources
+                        WHERE resources.option_guid = options.guid
+                        ORDER BY resources.resource_guid
+                    ) AS resource_guids
+             FROM bookable_options AS options
+             WHERE options.guid = $1 AND options.facility_guid = $2
+             FOR UPDATE OF options`,
             [guid, facility_guid]
         );
         if (!current.rowCount) {
@@ -504,17 +533,24 @@ async function updateOption({ facility_guid, guid, sport_guid, name, resource_gu
             'SELECT 1 FROM bookings WHERE option_guid = $1 AND ends_at > now() LIMIT 1',
             [guid]
         );
-        if (activeBookings.rowCount) {
+        const submittedResources = [...new Set(resource_guids)].sort();
+        const currentResources = current.rows[0].resource_guids.map(String).sort();
+        const changesBookingRules = current.rows[0].sport_guid !== sport_guid ||
+            submittedResources.length !== currentResources.length ||
+            submittedResources.some((resourceGuid, index) => resourceGuid !== currentResources[index]);
+        if (activeBookings.rowCount && changesBookingRules) {
             throw new Error('Cannot change a court option while it has current or future bookings.');
         }
 
         await client.query(
-            'UPDATE bookable_options SET sport_guid = $2, name = $3 WHERE guid = $1',
-            [guid, sport_guid, name]
+            'UPDATE bookable_options SET sport_guid = $2, name = $3, price_pence = $4 WHERE guid = $1',
+            [guid, sport_guid, name, price_pence]
         );
-        await replaceOptionResources(client, guid, facility_guid, resource_guids);
+        if (changesBookingRules) {
+            await replaceOptionResources(client, guid, facility_guid, submittedResources);
+        }
         await client.query('COMMIT');
-        return { guid, facility_guid, sport_guid, name };
+        return { guid, facility_guid, sport_guid, name, price_pence };
     } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -755,6 +791,7 @@ function removeBookingWithCredit(facilityGuid, bookingGuid, profileGuid, creditP
         [facilityGuid, bookingGuid]);
         const booking = found.rows[0];
         if (!booking || booking.profile_guid !== profileGuid || creditPence !== booking.amount_paid_pence || creditPence <= 0) return false;
+        if (refundable) await Settings.assertRefundsEnabled(client);
         await snapshotRefund(client, facilityGuid, bookingGuid, creditPence, refundedByName, 'credit');
         const result = await client.query(
             'DELETE FROM bookings WHERE facility_guid = $1 AND guid = $2 AND credited_at IS NULL',

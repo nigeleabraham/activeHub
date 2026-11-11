@@ -83,13 +83,13 @@
                 <% if (items.length) { %>
                     <div class="table-responsive bg-white border rounded">
                         <table class="table table-sm mb-0">
-                            <thead><tr><th>Booking</th><th>Requested by</th><th>Requested amount</th><th>Remaining credit</th><th>Outcome</th><% if (!pending) { %><th>Completed (UK)</th><% } %></tr></thead>
+                            <thead><tr><th>Booking</th><th>Requested by</th><% if (!pending) { %><th>Requested amount</th><% } %><th>Remaining credit</th><th>Outcome</th><% if (!pending) { %><th>Completed (UK)</th><% } %></tr></thead>
                             <tbody>
                                 <% items.forEach(request => { %>
                                     <tr>
                                         <td><code><%= request.booking_ref || 'Opening balance' %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span><br><%= request.facility_name %></td>
                                         <td><%= request.profile_name %><br><span class="small"><%= request.profile_email %></span></td>
-                                        <td><%= money(request.requested_pence) %></td>
+                                        <% if (!pending) { %><td><%= money(request.requested_pence) %></td><% } %>
                                         <td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund can still be completed</span><% } %></td>
                                         <td>
                                             <% if (pending) { %>

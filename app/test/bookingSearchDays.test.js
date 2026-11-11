@@ -64,6 +64,7 @@ test('invalid database configuration fails explicitly', async t => {
 
 test('page defaults and server validation use a non-default configured range', async t => {
     t.mock.method(Settings, 'getBookingSearchDays', async () => 7);
+    t.mock.method(Settings, 'getAll', async () => Settings.DEFAULTS);
     t.mock.method(Bookings, 'findBookingFacilities', async () => []);
     const search = t.mock.method(Bookings, 'searchBookings', async () => ({ bookings: [], truncated: false }));
     const admin = router.stack.find(layer => layer.handle.stack).handle;
