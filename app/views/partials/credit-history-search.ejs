@@ -1,5 +1,6 @@
 <p class="small text-muted">Search by completion date (Europe/London), including both dates. Maximum 62 days; 50 results per page.</p>
-<form class="form-row align-items-end mb-3" method="GET" action="/admin/credit-requests#decided-heading">
+<form class="form-row align-items-end mb-3" method="GET" action="/admin/credit-requests/history#decided-heading">
+    <% if (locals.fromQueue) { %><input type="hidden" name="from_queue" value="1"><% } %>
     <% const chosen = locals.selectedProfile; %>
     <div class="form-group col-12" data-credit-profile-picker data-guid="<%= chosen ? chosen.guid : '' %>" data-name="<%= chosen ? chosen.name : 'All profiles' %>" data-email="<%= chosen ? chosen.email : '' %>">
         <input type="hidden" name="profile" value="<%= chosen ? chosen.guid : '' %>">
@@ -20,7 +21,7 @@
         <input class="form-control" id="credit-to" name="to" type="date" value="<%= filters.to %>" required>
     </div>
     <div class="form-group col-md-auto">
-        <a class="btn btn-outline-secondary mr-2" href="/admin/credit-requests">Clear</a>
+        <a class="btn btn-outline-secondary mr-2" href="/admin/credit-requests/history<%= locals.fromQueue ? '?from_queue=1' : '' %>">Clear</a>
         <button class="btn btn-primary" type="submit">Search history</button>
     </div>
 </form>

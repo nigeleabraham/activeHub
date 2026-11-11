@@ -124,6 +124,13 @@ test('one search form renders an optional facility selector and empty or truncat
             assert.match(html, new RegExp(`name="${name}"[^>]+required`));
         }
         assert.match(html, /To defaults to From \+30 days/);
+        assert.match(html, /Booking dates <small class="text-muted">Required<\/small>/);
+        assert.match(html, /Both dates are mandatory/);
+        assert.match(html, /31 calendar dates including both ends/);
+        assert.match(html, /Changing From resets To to the new maximum/);
+        assert.match(html, /data-booking-date-range aria-live="polite"/);
+        assert.match(html, /Narrow your search <small class="text-muted">Optional<\/small>/);
+        assert.ok(html.indexOf('name="from"') < html.indexOf('name="facility_guid"'));
         assert.doesNotMatch(html, /<table/);
         assert.ok(html.indexOf('>Clear search</a>') < html.indexOf('>Search bookings</button>'));
         assert.match(html, /<section id="booking-search"[^>]+data-booking-search-panel/);

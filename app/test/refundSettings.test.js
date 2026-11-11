@@ -106,5 +106,5 @@ test('disabled refund queue keeps requests visible but blocks completion and has
     assert.match(html, /value="approve" disabled/);
     assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
     assert.match(html, /1 awaiting action/);
-    assert.match(html, /Search history/);
+    assert.match(html, /Search refund history/);
 });

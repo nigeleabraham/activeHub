@@ -4,11 +4,28 @@
     ? new Date(Date.parse(filters.from) + maxDays * 86400000).toISOString().slice(0, 10) : ''; %>
 <section id="booking-search" data-booking-search-panel aria-labelledby="booking-search-heading">
     <h2 class="h5" id="booking-search-heading" tabindex="-1">Search existing bookings</h2>
-    <p class="small text-muted" id="booking-search-help">From defaults to today. To defaults to From +<%= maxDays %> days and can be shortened, but never before From. Facility, reference and name/email filters are optional. Choose All facilities to search across sites. Dates use UK time.</p>
+    <p class="text-muted" id="booking-search-help">Choose the required dates, then optionally narrow your search by facility, booking reference or person. Results are limited to the latest 100 matching bookings.</p>
     <form method="GET" action="/admin/booking-search" class="mb-3" data-facility-booking-search data-booking-search-days="<%= maxDays %>">
+        <fieldset class="admin-form-section" aria-describedby="booking-date-help booking-date-range">
+            <legend class="admin-form-section-title">Booking dates <small class="text-muted">Required</small></legend>
+            <p class="small mb-3" id="booking-date-help">Both dates are mandatory and use UK time. From defaults to today. To defaults to From +<%= maxDays %> days (<%= maxDays + 1 %> calendar dates including both ends). You can shorten this range, but To cannot be before From or later than the maximum. Changing From resets To to the new maximum.</p>
+            <div class="form-row">
+                <div class="form-group col-md-6">
+                    <label for="booking-from">From date <small class="text-muted">Required</small></label>
+                    <input class="form-control" id="booking-from" name="from" type="date" value="<%= filters.from || '' %>" aria-describedby="booking-date-help" required>
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="booking-to">To date <small class="text-muted">Required</small></label>
+                    <input class="form-control" id="booking-to" name="to" type="date" value="<%= filters.to || '' %>" min="<%= filters.from || '' %>" max="<%= maximumTo %>" aria-describedby="booking-date-help booking-date-range" required>
+                </div>
+            </div>
+            <p class="small mb-0" id="booking-date-range" data-booking-date-range aria-live="polite">Allowed To date: <%= filters.from || 'choose a From date' %> to <%= maximumTo || 'From plus ' + maxDays + ' days' %>, inclusive.</p>
+        </fieldset>
+        <fieldset class="admin-form-section">
+            <legend class="admin-form-section-title">Narrow your search <small class="text-muted">Optional</small></legend>
         <div class="form-group">
             <label for="booking-facility">Facility <small class="text-muted">Optional</small></label>
-            <select class="form-control form-control-sm" id="booking-facility" name="facility_guid">
+            <select class="form-control" id="booking-facility" name="facility_guid">
                 <option value="">All facilities</option>
                 <% facilities.forEach(facility => { %>
                     <option value="<%= facility.guid %>" <%= filters.facility_guid === facility.guid ? 'selected' : '' %>><%= facility.name %></option>
@@ -18,23 +35,18 @@
         <div class="form-row">
             <div class="form-group col-md-6">
                 <label for="booking-reference">Booking reference <small class="text-muted">Optional</small></label>
-                <input class="form-control form-control-sm" id="booking-reference" name="reference" maxlength="100" value="<%= filters.reference || '' %>">
+                <input class="form-control" id="booking-reference" name="reference" maxlength="100" value="<%= filters.reference || '' %>">
             </div>
             <div class="form-group col-md-6">
                 <label for="booking-profile">Booked-for name or email <small class="text-muted">Optional</small></label>
-                <input class="form-control form-control-sm" id="booking-profile" name="profile" maxlength="100" value="<%= filters.profile || '' %>">
-            </div>
-            <div class="form-group col-md-6">
-                <label for="booking-from">From date</label>
-                <input class="form-control form-control-sm" id="booking-from" name="from" type="date" value="<%= filters.from || '' %>" aria-describedby="booking-search-help" required>
-            </div>
-            <div class="form-group col-md-6">
-                <label for="booking-to">To date</label>
-                <input class="form-control form-control-sm" id="booking-to" name="to" type="date" value="<%= filters.to || '' %>" min="<%= filters.from || '' %>" max="<%= maximumTo %>" aria-describedby="booking-search-help" required>
+                <input class="form-control" id="booking-profile" name="profile" maxlength="100" value="<%= filters.profile || '' %>">
             </div>
         </div>
-        <a class="btn btn-outline-secondary btn-sm mr-2" href="/admin/booking-search" data-clear-booking-search>Clear search</a>
-        <button class="btn btn-primary btn-sm" type="submit">Search bookings</button>
+        </fieldset>
+        <div class="d-flex flex-wrap justify-content-end" style="gap: 0.5rem;">
+            <a class="btn btn-outline-secondary" href="/admin/booking-search" data-clear-booking-search>Clear search</a>
+            <button class="btn btn-primary" type="submit">Search bookings</button>
+        </div>
     </form>
     <p class="alert alert-danger" data-booking-search-error role="alert" hidden></p>
     <div data-booking-search-results aria-live="polite">

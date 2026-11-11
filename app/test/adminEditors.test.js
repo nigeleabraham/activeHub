@@ -954,7 +954,7 @@ test('admin navigation groups every page once and marks the current page and sec
         ['/admin', '/'],
         ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
         ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds', '/admin/refunds'],
-        ['/admin/profiles', '/admin/roles', '/admin/audit', '/admin/settings']
+        ['/admin/profiles', '/admin/roles', '/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
     assert.equal((nav.match(/aria-current="page"/g) || []).length, 1);
@@ -1127,7 +1127,35 @@ test('course creation and deletion redirect with action-specific confirmation on
     }
 });
 
-test('settings use title-led facility-style cards and preserve the logo upload workflow', async () => {
+test('settings reveal actions only for changed values and leave the logo separate', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    function snapshot(form) {'), source.indexOf('    function close(entry) {'));
+    const context = vm.createContext({ document: {
+        body: { classList: { contains() { return true; } } }, activeElement: null
+    } });
+    vm.runInContext(`${script}\nthis.snapshot = snapshot; this.update = update;`, context);
+    for (const [type, initial, changed] of [['text', 'Council', 'Library'], ['number', '30', '12'], ['select-one', '1', '0']]) {
+        const field = { name: 'setting', type, value: initial, checked: false, disabled: false,
+            tagName: type === 'select-one' ? 'SELECT' : 'INPUT', selectedOptions: [{ value: initial }] };
+        const actions = { hidden: false, contains() { return false; } };
+        const entry = {
+            form: { elements: [field], classList: { toggle() {} },
+                hasAttribute() { return false; }, querySelector() { return actions; } },
+            status: {}
+        };
+        entry.baseline = context.snapshot(entry.form);
+        for (const [value, isDirty] of [[initial, false], [changed, true], [initial, false]]) {
+            field.value = value;
+            field.selectedOptions[0].value = value;
+            context.update(entry);
+            assert.equal(actions.hidden, !isDirty, `${type}: ${value}`);
+            assert.equal(entry.status.textContent, isDirty ? 'Unsaved changes' : '');
+        }
+    }
+    assert.match(source, /classList\.contains\('settings-admin'\) && form\.hasAttribute\('data-admin-logo'\)/);
+});
+
+test('settings use visible grouped sections and preserve independent forms and logo upload', async () => {
     const html = await ejs.renderFile(path.join(__dirname, '../views/settings.ejs'), {
         ...locals,
         saved: false,
@@ -1154,50 +1182,45 @@ test('settings use title-led facility-style cards and preserve the logo upload w
     assert.ok(logoActions.indexOf('>Remove logo</button>') < logoActions.indexOf('>Upload logo</button>'));
     assert.equal((logoActions.match(/btn-sm/g) || []).length, 3);
     assert.doesNotMatch(html, /getElementById\('logo-upload'\)\.addEventListener/);
-    const identity = html.match(/<section class="mb-3" aria-labelledby="site-identity-heading">[\s\S]*?<\/section>/)[0];
+    const main = html.match(/<main\b[\s\S]*?<\/main>/)[0];
+    assert.doesNotMatch(main, /<details|<summary/);
+    const identity = main.match(/<section[^>]*aria-labelledby="site-identity-heading">[\s\S]*?<\/section>/)[0];
     for (const id of ['site-title-heading', 'organisation-heading', 'site-logo-heading']) {
         assert.ok(identity.includes(`id="${id}"`));
     }
     assert.doesNotMatch(identity, /id="membership-scheme-heading"/);
-    assert.equal((identity.match(/<details\b/g) || []).length, 1);
-    assert.equal((identity.match(/<summary\b/g) || []).length, 1);
     assert.equal((identity.match(/data-editor-inline/g) || []).length, 3);
-    const creditSettings = html.match(/<section class="mb-3" aria-labelledby="credit-request-settings-heading">[\s\S]*?<\/section>/)[0];
-    assert.equal((creditSettings.match(/<details\b/g) || []).length, 1);
-    assert.equal((creditSettings.match(/<summary\b/g) || []).length, 1);
-    assert.equal((creditSettings.match(/data-editor-inline/g) || []).length, 3);
+    const creditSettings = main.match(/<section[^>]*aria-labelledby="credit-request-settings-heading">[\s\S]*?<\/section>/)[0];
+    assert.equal((creditSettings.match(/data-editor-inline/g) || []).length, 4);
     assert.match(creditSettings, />Credit and refund settings<\/h2>/);
     assert.match(creditSettings, /id="refunds-heading"/);
     assert.match(creditSettings, /id="request-window"/);
     assert.match(creditSettings, /id="credit-lifetime-heading"/);
-    const cards = [
-        ...[...identity.matchAll(/<div class="admin-form-section[^"]*" data-settings-item>[\s\S]*?<\/form>/g)].map(match => match[0]),
-        html.match(/<details class="[^"]+" data-editor-disclosure>[\s\S]*?<\/details>/)[0],
-        ...[...creditSettings.matchAll(/<div class="admin-form-section[^"]*" data-credit-settings-item>[\s\S]*?<\/form>/g)].map(match => match[0]),
-        [...html.matchAll(/<details class="[^"]+" data-editor-disclosure>[\s\S]*?<\/details>/g)].at(-1)[0]
-    ];
-    assert.equal(cards.length, 8);
-    const actions = ['', '/organisation', '/logo', '/membership-scheme',
+    assert.match(creditSettings, /id="auto-approval-heading"/);
+    assert.match(creditSettings, /action="\/admin\/settings\/credit-slot-auto-approval"/);
+    const actions = ['', '/organisation', '/logo', '/membership-scheme', '/booking-search-days',
         '/refunds', '/credit-request-period', '/credit-lifetime', '/credit-slot-auto-approval'];
-    const titles = ['Site title', 'Organisation name', 'Logo', 'Membership scheme',
-        'Bank and external refunds', 'Credit request period', 'Credit lifetime', 'Weather credit slot auto-approval'];
-    cards.forEach((card, index) => {
-        if (index < 3 || (index >= 4 && index <= 6)) {
-            assert.match(card, /data-editor-inline/);
-            assert.ok(card.includes(`>${titles[index]}</h3>`));
-            assert.doesNotMatch(card, /<details|<summary/);
-        } else {
-            assert.match(card, /<details class="admin-disclosure[^"]*" data-editor-disclosure>/);
-            assert.ok(card.includes(`>${titles[index]}</h2></summary>`));
+    actions.forEach(action => {
+        const form = main.match(new RegExp(`<form[^>]*action="/admin/settings${action}"[^>]*>[\\s\\S]*?</form>`))[0];
+        assert.match(form, /data-editor-inline/);
+        assert.match(form, /data-editor-label="[^"]+" data-editor-preview="false"/);
+        assert.equal((form.match(/data-cancel-edit/g) || []).length, 1);
+        assert.ok(form.indexOf('data-cancel-edit') < form.indexOf('type="submit"'));
+        if (action !== '/logo') {
+            assert.match(form, /class="settings-field-actions"/);
+            assert.match(form, /class="settings-actions"/);
+            assert.doesNotMatch(form, /class="settings-actions"[^>]*hidden/);
         }
-        assert.ok(card.includes(`action="/admin/settings${actions[index]}"`));
-        assert.match(card, /data-editor-label="[^"]+" data-editor-preview="false"/);
-        assert.equal((card.match(/data-cancel-edit/g) || []).length, 1);
-        assert.ok(card.indexOf('data-cancel-edit') < card.indexOf('type="submit"'));
-        assert.doesNotMatch(card, /<details[^>]*\bopen\b/);
     });
+    for (const id of ['site-identity-heading', 'membership-scheme-heading', 'booking-search-settings-heading', 'credit-request-settings-heading']) {
+        assert.ok(main.includes(`href="#${id}"`));
+        assert.ok(main.includes(`id="${id}"`));
+    }
     assert.match(html, /\.settings-admin main \.form-control \{ max-width: none; \}/);
-    assert.match(html, /data-admin-save-placeholder>Expand a setting to edit it/);
+    assert.match(html, /data-admin-save-placeholder>Edit a setting directly/);
+    assert.match(html, /\.settings-actions\[hidden\] \{ display: none; \}/);
+    assert.match(html, /\.settings-field-actions \{ display: flex; flex-wrap: wrap;/);
+    assert.match(html, /@media \(max-width: 767\.98px\)/);
     assert.match(html, /name="credit-slot-auto-approval"|name="enabled"/);
     assert.match(html, /name="days" type="number" min="1" max="365"/);
     assert.match(html, /name="days" type="number" min="1" max="36500"/);

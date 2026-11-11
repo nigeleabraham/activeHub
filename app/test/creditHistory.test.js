@@ -5,6 +5,7 @@ const Bookings = require('../models/Bookings');
 const Credits = require('../models/Credits');
 const Settings = require('../models/Settings');
 const Profiles = require('../models/Profiles');
+const auth = require('../middleware/auth');
 const router = require('../routes/front');
 const ejs = require('ejs');
 const path = require('node:path');
@@ -31,9 +32,10 @@ test('credit history limits entries and totals to the same dates and selected us
     assert.equal(query.mock.callCount(), count);
 });
 
-test('credit admin loads only pending until searched and rejects invalid filters before querying', async t => {
+test('credit queue and history query independently and preserve old history links', async t => {
     const admin = router.stack.find(layer => layer.handle.stack).handle;
-    const handler = admin.stack.find(layer => layer.route?.path === '/credit-requests').route.stack[0].handle;
+    const queue = admin.stack.find(layer => layer.route?.path === '/credit-requests').route.stack[0].handle;
+    const handler = admin.stack.find(layer => layer.route?.path === '/credit-requests/history').route.stack[0].handle;
     t.mock.method(Settings, 'getAll', async () => ({}));
     t.mock.method(Settings, 'getCreditRequestDays', async () => 7);
     t.mock.method(Bookings, 'findAutoApprovalSlots', async () => []);
@@ -41,11 +43,19 @@ test('credit admin loads only pending until searched and rejects invalid filters
     const pending = t.mock.method(Bookings, 'findCreditRequests', async () => []);
     const history = t.mock.method(Bookings, 'searchCreditHistory', async () => ({ entries: [], total: 0, pageSize: 50 }));
     let data;
-    const res = { render(_view, value) { data = value; }, status(code) { this.code = code; return this; }, send() {} };
+    const res = { render(_view, value) { data = value; }, status(code) { this.code = code; return this; }, send() {},
+        redirect(url) { this.url = url; } };
+    await queue({ query: {} }, res);
+    assert.equal(data.historyPage, false);
+    await queue({ query: { from: '2026-11-01', to: '2026-11-05', profile: GUID, page: '2' } }, res);
+    assert.equal(res.url, `/admin/credit-requests/history?from=2026-11-01&to=2026-11-05&profile=${GUID}&page=2#decided-heading`);
     await handler({ query: {} }, res);
     assert.deepEqual(pending.mock.calls[0].arguments, ['pending']);
     assert.equal(history.mock.callCount(), 0);
     assert.equal(data.searched, false);
+    assert.equal(data.historyPage, true);
+    assert.equal(data.fromQueue, false);
+    assert.equal(data.activePage, 'credit-request-history');
     for (const query of [{ from: '2026-11-01' }, { profile: 'invalid' }, { page: '0' },
         { from: '2026-01-01', to: '2026-03-04' }]) {
         await handler({ query }, res);
@@ -55,19 +65,39 @@ test('credit admin loads only pending until searched and rejects invalid filters
     await handler({ query: { from: '2026-11-01', to: '2026-11-05', profile: GUID, page: '2' } }, res);
     assert.deepEqual(history.mock.calls[0].arguments, [{ from: '2026-11-01', to: '2026-11-05', page: 2, profileGuid: GUID }]);
     assert.equal(data.filters.profile, GUID);
+    assert.equal(pending.mock.callCount(), 1);
+    await handler({ query: { from_queue: '1' } }, res);
+    assert.equal(data.fromQueue, true);
+});
+
+test('credit request history remains administrator-only', () => {
+    assert.equal(auth.canAccessAdmin({ role: 'Administrator' }, '/credit-requests/history'), true);
+    for (const permission of ['bookings.manage', 'profiles.manage', 'audit.view']) {
+        assert.equal(auth.canAccessAdmin({ role: 'Staff', permissions: [permission] }, '/credit-requests/history'), false);
+    }
 });
 
 test('credit history starts empty, renders the shared finder and preserves pagination filters', async () => {
     const values = {
         currentProfile: null, isAdmin: false, canSwitchRole: false, activePage: 'credit-requests',
-        decision: '', declineError: false, error: false, requests: [], searched: false,
+        decision: '', declineError: false, error: false, requests: [], searched: false, historyPage: true,
         autoApprovalEnabled: false, creditRequestDays: 7, autoApprovalSlots: [],
         filters: { from: '', to: '' }, history: { entries: [], total: 0, pageSize: 50 }, page: 1
     };
     const view = path.join(__dirname, '../views/credit-requests.ejs');
     const initial = await ejs.renderFile(view, values);
+    const queue = await ejs.renderFile(view, { ...values, historyPage: false });
+    assert.match(queue, /href="\/admin\/credit-requests\/history\?from_queue=1">Search credit request history/);
+    assert.doesNotMatch(initial, /Back to pending credit requests/);
+    const fromQueue = await ejs.renderFile(view, { ...values, fromQueue: true, searched: true, page: 2,
+        filters: { from: '2026-11-01', to: '2026-11-05' }, history: { entries: [], total: 101, pageSize: 50 } });
+    assert.match(fromQueue, /Back to pending credit requests/);
+    assert.match(fromQueue, /name="from_queue" value="1"/);
+    assert.match(fromQueue, /history\?from_queue=1">Clear/);
+    assert.match(fromQueue, /from_queue=1&amp;page=3#decided-heading/);
+    assert.doesNotMatch(queue, /aria-labelledby="decided-heading"|id="credit-profile-search"/);
     assert.match(initial, /Select From and To dates to load credit history/);
-    assert.match(initial, /p-4 mb-5" aria-labelledby="pending-heading"/);
+    assert.doesNotMatch(initial, /aria-labelledby="pending-heading"|aria-labelledby="auto-slots-heading"/);
     assert.match(initial, /p-4 mb-4" aria-labelledby="decided-heading"/);
     assert.doesNotMatch(initial, /<table/);
     assert.match(initial, /class="sr-only" data-credit-profile-status/);
@@ -77,7 +107,8 @@ test('credit history starts empty, renders the shared finder and preserves pagin
         history: { entries: [], total: 101, pageSize: 50 } });
     assert.match(html, /Page 2 of 3/);
     assert.ok(html.includes(`profile=${GUID}&amp;page=3#decided-heading`));
-    const declined = await ejs.renderFile(view, { ...values, searched: true,
+    assert.match(html, /action="\/admin\/credit-requests\/history#decided-heading"/);
+    const declined = await ejs.renderFile(view, { ...values, searched: true, fromQueue: true,
         filters: { from: '2026-11-01', to: '2026-11-05', profile: GUID },
         history: { entries: [{ guid: GUID, booking_ref: 'AH-DECLINED', status: 'declined',
             starts_at: '2026-11-01T10:00:00Z', decided_at: '2026-11-02T10:00:00Z',
@@ -86,5 +117,6 @@ test('credit history starts empty, renders the shared finder and preserves pagin
     assert.match(declined, />Reopen request<\/button>/);
     assert.match(declined, /&lt;Original reason&gt;/);
     assert.ok(declined.includes(`name="profile" value="${GUID}"`));
+    assert.equal((declined.match(/name="from_queue" value="1"/g) || []).length, 2);
     assert.doesNotMatch(declined, /action="\/admin\/credit-requests\/refundability"/);
 });

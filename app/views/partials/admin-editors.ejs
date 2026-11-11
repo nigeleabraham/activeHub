@@ -276,6 +276,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const changed = dirty(entry);
         entry.form.classList.toggle('admin-editor-dirty', changed);
         entry.status.textContent = changed ? 'Unsaved changes' : '';
+        if (document.body.classList.contains('settings-admin') && !entry.form.hasAttribute('data-admin-logo')) {
+            const actions = entry.form.querySelector('.settings-actions');
+            if (actions) {
+                if (!changed && actions.contains(document.activeElement)) {
+                    entry.form.querySelector('input:not([type="hidden"]), select, textarea')?.focus({ preventScroll: true });
+                }
+                actions.hidden = !changed;
+            }
+        }
     }
 
     function close(entry) {
@@ -1107,6 +1116,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const decision = action?.name ? `${action.name}-${action.value}` : '';
             form.id = `admin-editor-${new URL(form.action).pathname.replaceAll('/', '-')}-${identity}-${decision}`;
         }
+        if (document.body.classList.contains('settings-admin') && form.hasAttribute('data-admin-logo') && !form.closest('[data-edit-panel]')) {
+            const row = document.createElement('div');
+            row.className = 'settings-value-row';
+            const value = document.createElement('div');
+            value.className = 'settings-current-value';
+            const current = document.createElement('strong');
+            current.textContent = 'Site logo';
+            value.append(current);
+            const help = form.querySelector('.form-text');
+            if (help) {
+                const description = document.createElement('p');
+                description.className = 'small text-muted mb-0 mt-1';
+                description.textContent = help.textContent;
+                value.append(description);
+            }
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'btn btn-outline-secondary btn-sm';
+            edit.textContent = 'Change logo';
+            edit.setAttribute('aria-label', `Change ${form.dataset.editorLabel}`);
+            edit.setAttribute('data-edit-toggle', '');
+            const editor = document.createElement('div');
+            editor.id = `${form.id}-panel`;
+            editor.setAttribute('data-edit-panel', '');
+            edit.setAttribute('aria-controls', editor.id);
+            edit.setAttribute('aria-expanded', 'false');
+            row.append(value, edit);
+            form.before(row, editor);
+            editor.append(form);
+        }
         const panel = form.closest('[data-edit-panel]');
         let toggle = panel ? document.querySelector(`[data-edit-toggle][aria-controls="${panel.id}"]`) : null;
         let details = null;
@@ -1172,6 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const entry = { form, panel, toggle, details, status, error, label, baseline: snapshot(form) };
         entries.push(entry);
         close(entry);
+        update(entry);
         if (form.hasAttribute('data-editor-inline')) {
             form.addEventListener('focusin', () => {
                 if (active !== entry) guard({ kind: 'editor', entry });

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credit requests | ActiveHub</title>
+    <title><%= locals.historyPage ? 'Credit request history' : 'Credit requests' %> | ActiveHub</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
@@ -17,8 +17,8 @@
         <header class="d-flex flex-wrap justify-content-between align-items-end mb-4">
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
-                <h1 class="h2 mb-1">Credit requests</h1>
-                <p class="text-muted mb-0">Weather and discretionary credit requests for past bookings</p>
+                <h1 class="h2 mb-1"><%= locals.historyPage ? 'Credit request history' : 'Credit requests' %></h1>
+                <p class="text-muted mb-0"><%= locals.historyPage ? 'Search completed credit requests.' : 'Weather and discretionary credit requests for past bookings' %></p>
             </div>
         </header>
 
@@ -31,8 +31,8 @@
         <% } %>
 
         <% const money = pence => '£' + (pence / 100).toFixed(2); %>
-        <% const pending = requests.filter(request => request.status === 'pending'); %>
-        <% const decided = history.entries; %>
+        <% if (!locals.historyPage) { const pending = requests.filter(request => request.status === 'pending'); %>
+        <p><a href="/admin/credit-requests/history?from_queue=1">Search credit request history</a></p>
 
         <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="auto-slots-heading">
             <h2 id="auto-slots-heading" class="h5">Auto-approved weather time slots (last <%= creditRequestDays %> days)</h2>
@@ -113,6 +113,8 @@
             <% } %>
         </section>
 
+        <% } else { const decided = history.entries; %>
+            <% if (locals.fromQueue) { %><p><a href="/admin/credit-requests">Back to pending credit requests</a></p><% } %>
             <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="decided-heading">
                 <header class="border-bottom pb-3 mb-4">
                     <div class="d-flex flex-wrap align-items-center justify-content-between">
@@ -164,7 +166,7 @@
                 <% } else { %><p class="text-muted"><%= searched ? 'No completed credit requests found for this period.' : 'Select From and To dates to load credit history.' %></p><% } %>
                 <% if (searched && history.total > history.pageSize) {
                     const totalPages = Math.ceil(history.total / history.pageSize);
-                    const pageLink = target => '/admin/credit-requests?' + new URLSearchParams({ ...filters, page: target }).toString() + '#decided-heading';
+                    const pageLink = target => '/admin/credit-requests/history?' + new URLSearchParams({ ...filters, ...(locals.fromQueue ? { from_queue: '1' } : {}), page: target }).toString() + '#decided-heading';
                 %>
                     <nav aria-label="Credit history pages" class="d-flex align-items-center mt-3">
                         <% if (page > 1) { %><a class="btn btn-outline-secondary btn-sm mr-2" href="<%= pageLink(page - 1) %>">Previous</a><% } %>
@@ -173,6 +175,7 @@
                     </nav>
                 <% } %>
             </section>
+        <% } %>
     </main>
 
     <script>

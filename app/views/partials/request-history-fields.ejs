@@ -3,3 +3,4 @@
     <input type="hidden" name="<%= field %>" value="<%= filters[field] || '' %>">
 <% } %>
 <input type="hidden" name="page" value="<%= page %>">
+<% if (locals.fromQueue) { %><input type="hidden" name="from_queue" value="1"><% } %>

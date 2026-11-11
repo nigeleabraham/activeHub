@@ -336,7 +336,7 @@ test('administrator queue only allows marking pending refunds done and preserves
         guid: GUID, booking_ref: 'AH-SOURCE', facility_name: 'Hall', profile_name: 'Resident',
         profile_email: 'resident@example.test', requested_pence: 1000, remaining_pence: 600
     };
-    const html = await ejs.renderFile(path.join(__dirname, '../views/credit-refunds.ejs'), {
+    const values = {
         currentProfile: { ...profile, role: 'Administrator' }, isAdmin: true, canSwitchRole: false,
         activePage: 'credit-refunds', area: 'admin', decision: '', error: false, declineError: false,
         requests: [{ ...baseRequest, status: 'pending' }],
@@ -346,16 +346,19 @@ test('administrator queue only allows marking pending refunds done and preserves
             { ...baseRequest, status: 'declined', decided_at: '2026-11-05' },
             { ...baseRequest, status: 'spent', decided_at: '2026-11-05' }
         ] }
-    });
+    };
+    const view = path.join(__dirname, '../views/credit-refunds.ejs');
+    const html = await ejs.renderFile(view, values);
+    const historyHtml = await ejs.renderFile(view, { ...values, historyPage: true });
 
     assert.equal((html.match(/action="\/admin\/credit-refunds\/decide"/g) || []).length, 1);
-    assert.ok(html.includes('Done £6.00'));
+    assert.ok(historyHtml.includes('Done £6.00'));
     assert.match(html, />Mark as done<\/button>/);
     assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
-    assert.match(html, /Declined/);
-    assert.match(html, /action="\/admin\/credit-refunds\/reopen"/);
-    assert.match(html, />Reopen request<\/button>/);
-    assert.ok(html.includes('Closed: credit fully spent'));
+    assert.match(historyHtml, /Declined/);
+    assert.match(historyHtml, /action="\/admin\/credit-refunds\/reopen"/);
+    assert.match(historyHtml, />Reopen request<\/button>/);
+    assert.ok(historyHtml.includes('Closed: credit fully spent'));
 });
 
 test('resident credit request validates and tracks weather and discretionary reasons', async t => {
@@ -413,7 +416,7 @@ test('weather slot controls and history render only as appropriate', async () =>
         amount_paid_pence: 1000, reason: 'weather', status: 'pending', note: null
     };
     for (const enabled of [false, true]) {
-        const html = await ejs.renderFile(path.join(__dirname, '../views/credit-requests.ejs'), {
+        const values = {
             currentProfile: profile, isAdmin: true, canSwitchRole: false, area: 'admin', activePage: 'credit-requests',
             declineError: false, decision: '', error: false, autoApprovalEnabled: enabled, creditRequestDays: 7,
             autoApprovalSlots: [{ ...request, refundable: true, approved_by_name: '<Admin>' }],
@@ -421,9 +424,12 @@ test('weather slot controls and history render only as appropriate', async () =>
             history: { entries: [{ ...request, status: 'approved', auto_approved: true, decided_at: new Date() }], total: 1, pageSize: 50 },
             requests: [request, { ...request, reason: 'discretionary', note: 'Court closed' },
                 { ...request, status: 'approved', auto_approved: true }]
-        });
+        };
+        const view = path.join(__dirname, '../views/credit-requests.ejs');
+        const html = await ejs.renderFile(view, values);
+        const historyHtml = await ejs.renderFile(view, { ...values, historyPage: true });
         assert.equal((html.match(/name="approve_slot"/g) || []).length, enabled ? 1 : 0);
-        assert.equal((html.match(/name="refundable"/g) || []).length, 3);
+        assert.equal((html.match(/name="refundable"/g) || []).length, 2);
         assert.doesNotMatch(html, /type="checkbox" name="refundable"/);
         const approvalForm = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/g)
             .find(form => form.includes('<input type="hidden" name="decision" value="approve">'));
@@ -436,9 +442,9 @@ test('weather slot controls and history render only as appropriate', async () =>
         assert.ok(!html.includes('name="refundable" value="1" checked'));
         assert.ok(html.includes('last 7 days'));
         assert.ok(html.includes('&lt;Admin&gt;'));
-        assert.ok(html.includes('Auto-approved weather slot'));
-        assert.match(html, /action="\/admin\/credit-requests\/refundability"/);
-        assert.match(html, />Update refund eligibility<\/button>/);
+        assert.ok(historyHtml.includes('Auto-approved weather slot'));
+        assert.match(historyHtml, /action="\/admin\/credit-requests\/refundability"/);
+        assert.match(historyHtml, />Update refund eligibility<\/button>/);
         const slotsTable = html.match(/<section[^>]*aria-labelledby="auto-slots-heading"[\s\S]*?<\/section>/)[0];
         assert.deepEqual([...slotsTable.matchAll(/<th>(.*?)<\/th>/g)].map(match => match[1]), [
             'Start', 'End', 'Approved by'

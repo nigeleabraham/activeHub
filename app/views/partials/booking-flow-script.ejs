@@ -5,16 +5,22 @@
         const fromDate = form.querySelector('[name="from"]');
         const toDate = form.querySelector('[name="to"]');
         const maxDays = Number(form.dataset.bookingSearchDays);
+        const rangeHint = form.querySelector('[data-booking-date-range]');
+        const rangeDateFormat = new Intl.DateTimeFormat('en-GB', {
+            day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'
+        });
         function updateDateRange(resetTo) {
             toDate.min = fromDate.value;
             if (!fromDate.value || !fromDate.validity.valid) {
                 toDate.max = '';
+                rangeHint.textContent = `Choose a valid From date. To must be on or after From and no more than ${maxDays} days later.`;
                 return;
             }
             const maximum = new Date(`${fromDate.value}T00:00:00Z`);
             maximum.setUTCDate(maximum.getUTCDate() + maxDays);
             toDate.max = maximum.toISOString().slice(0, 10);
             if (resetTo) toDate.value = toDate.max;
+            rangeHint.textContent = `Allowed To date: ${rangeDateFormat.format(new Date(`${fromDate.value}T00:00:00Z`))} to ${rangeDateFormat.format(maximum)}, inclusive. You may shorten this range.`;
         }
         updateDateRange(false);
         fromDate.addEventListener('input', () => updateDateRange(true));

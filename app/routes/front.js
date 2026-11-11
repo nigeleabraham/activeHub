@@ -13,6 +13,7 @@ const Roles = require('./../models/Roles');
 const Settings = require('./../models/Settings');
 const { PERMISSIONS, PERMISSION_KEYS } = require('./../permissions');
 const AuditLog = require('./../models/AuditLog');
+const auditEvents = require('../auditEvents');
 const auth = require('./../middleware/auth');
 const { parseFacilityInput, resolveFacilityCoordinates } = require('./../facilityUtils');
 const { isValidEmail, parseDeclineComment, parseBookingMonths, isValidDateRange } = require('./../validation');
@@ -717,6 +718,7 @@ function correctionReturn(req, path) {
     for (const key of ['from', 'to', 'profile', 'page']) {
         if (typeof req.body[key] === 'string') query.set(key, req.body[key].slice(0, 100));
     }
+    if (req.body.from_queue === '1') query.set('from_queue', '1');
     query.set('corrected', '1');
     return path + '?' + query.toString();
 }
@@ -728,7 +730,7 @@ admin.post('/credit-requests/reopen', async (req, res) => {
         await recordAudit(req.profile, { action: 'credit-request.reopen', entityType: 'booking',
             entityGuid: result.booking_guid, entityLabel: result.booking_ref,
             details: { from: 'declined', to: 'pending', previous_decline_comment: result.decline_comment } });
-        return res.redirect(correctionReturn(req, '/admin/credit-requests'));
+        return res.redirect(correctionReturn(req, '/admin/credit-requests/history') + '#decided-heading');
     } catch (error) {
         if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
         console.error('Unable to reopen credit request:', error);
@@ -742,7 +744,7 @@ admin.post('/credit-requests/refundability', async (req, res) => {
         const result = await Credits.changeRequestRefundability(req.body.request_guid, req.body.refundable === '1');
         await recordAudit(req.profile, { action: 'credit.refundability', entityType: 'credit-request',
             entityGuid: req.body.request_guid, entityLabel: result.booking_ref, details: result });
-        return res.redirect(correctionReturn(req, '/admin/credit-requests'));
+        return res.redirect(correctionReturn(req, '/admin/credit-requests/history') + '#decided-heading');
     } catch (error) {
         if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
         console.error('Unable to change credit refund eligibility:', error);
@@ -757,7 +759,7 @@ admin.post('/credit-refunds/reopen', async (req, res) => {
         await recordAudit(req.profile, { action: 'credit-refund.reopen', entityType: 'credit',
             entityGuid: result.credit_guid, entityLabel: result.booking_ref,
             details: { from: 'declined', to: 'pending', previous_decline_comment: result.decline_comment } });
-        return res.redirect(correctionReturn(req, '/admin/credit-refunds'));
+        return res.redirect(correctionReturn(req, '/admin/credit-refunds/history') + '#closed-refunds');
     } catch (error) {
         if (error.code === 'CREDIT_CORRECTION_CONFLICT') return res.status(409).send(error.message);
         console.error('Unable to reopen refund request:', error);
@@ -766,6 +768,37 @@ admin.post('/credit-refunds/reopen', async (req, res) => {
 });
 
 admin.get('/credit-requests', async (req, res) => {
+    if (['from', 'to', 'profile', 'page'].some(key => req.query[key] !== undefined)) {
+        const query = new URLSearchParams();
+        for (const key of ['from', 'to', 'profile', 'page']) {
+            if (req.query[key] !== undefined) {
+                for (const value of Array.isArray(req.query[key]) ? req.query[key] : [req.query[key]]) {
+                    if (typeof value !== 'string') return res.status(400).send('Select valid credit history filters.');
+                    query.append(key, value);
+                }
+            }
+        }
+        return res.redirect(`/admin/credit-requests/history?${query}#decided-heading`);
+    }
+    try {
+        const [settings, requests, autoApprovalSlots, creditRequestDays] = await Promise.all([
+            Settings.getAll(), Bookings.findCreditRequests('pending'), Bookings.findAutoApprovalSlots(), Settings.getCreditRequestDays()
+        ]);
+        return res.render('credit-requests', {
+            activePage: 'credit-requests', historyPage: false, requests,
+            corrected: req.query.corrected === '1', declineError: req.query.error === 'comment',
+            autoApprovalEnabled: settings.credit_slot_auto_approval === '1', autoApprovalSlots, creditRequestDays,
+            decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
+            decisionRef: typeof req.query.ref === 'string' ? req.query.ref.slice(0, 20) : '',
+            error: req.query.error === '1'
+        });
+    } catch (error) {
+        console.error('Unable to load credit requests:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.get('/credit-requests/history', async (req, res) => {
     const from = req.query.from === undefined ? '' : req.query.from;
     const to = req.query.to === undefined ? '' : req.query.to;
     const searched = from !== '' || to !== '';
@@ -786,19 +819,11 @@ admin.get('/credit-requests', async (req, res) => {
         if (profileGuid && !selectedProfile) return res.status(400).send('The selected profile is no longer available.');
         const history = searched ? await Bookings.searchCreditHistory({ from, to, page, profileGuid })
             : { entries: [], total: 0, pageSize: 50 };
-        const settings = await Settings.getAll();
         res.render('credit-requests', {
-            activePage: 'credit-requests',
+            activePage: 'credit-request-history', historyPage: true, fromQueue: req.query.from_queue === '1',
             corrected: req.query.corrected === '1',
-            declineError: req.query.error === 'comment',
-            requests: await Bookings.findCreditRequests('pending'),
             history, selectedProfile, searched, page, filters: { from, to, ...(profileGuid ? { profile: profileGuid } : {}) },
-            autoApprovalEnabled: settings.credit_slot_auto_approval === '1',
-            autoApprovalSlots: await Bookings.findAutoApprovalSlots(),
-            creditRequestDays: await Settings.getCreditRequestDays(),
-            decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
-            decisionRef: typeof req.query.ref === 'string' ? req.query.ref.slice(0, 20) : '',
-            error: req.query.error === '1'
+            declineError: false, decision: '', error: false
         });
     } catch (error) {
         console.error('Unable to load credit requests:', error);
@@ -910,6 +935,34 @@ admin.post('/settings/refunds', async (req, res) => {
 });
 
 admin.get('/credit-refunds', async (req, res) => {
+    if (['from', 'to', 'profile', 'page'].some(key => req.query[key] !== undefined)) {
+        const query = new URLSearchParams();
+        for (const key of ['from', 'to', 'profile', 'page']) {
+            if (req.query[key] !== undefined) {
+                for (const value of Array.isArray(req.query[key]) ? req.query[key] : [req.query[key]]) {
+                    if (typeof value !== 'string') return res.status(400).send('Select valid refund history filters.');
+                    query.append(key, value);
+                }
+            }
+        }
+        return res.redirect(`/admin/credit-refunds/history?${query}#closed-refunds`);
+    }
+    try {
+        const [requests, settings] = await Promise.all([
+            Credits.findRefundRequests({ pendingOnly: true }), Settings.getAll()
+        ]);
+        return res.render('credit-refunds', {
+            activePage: 'credit-refunds', historyPage: false, requests,
+            corrected: req.query.corrected === '1', refundsEnabled: Settings.refundsEnabled(settings),
+            decision: req.query.decision === 'approved' ? 'approved' : '', error: req.query.error === '1'
+        });
+    } catch (error) {
+        console.error('Unable to load credit refund requests:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.get('/credit-refunds/history', async (req, res) => {
     const profileGuid = req.query.profile === undefined || req.query.profile === '' ? null : req.query.profile;
     if (profileGuid !== null && (typeof profileGuid !== 'string' || !GUID_PATTERN.test(profileGuid))) {
         return res.status(400).send('Select a valid refund history profile.');
@@ -928,18 +981,13 @@ admin.get('/credit-refunds', async (req, res) => {
     try {
         const selectedProfile = profileGuid ? await Profiles.findByGuid(profileGuid) : null;
         if (profileGuid && !selectedProfile) return res.status(400).send('The selected profile is no longer available.');
-        const [requests, history] = await Promise.all([
-            Credits.findRefundRequests({ pendingOnly: true }),
-            searched ? Credits.searchRefundHistory({ from, to, page, profileGuid })
-                : { entries: [], total: 0, pageSize: Credits.REFUND_HISTORY_PAGE_SIZE }
-        ]);
+        const history = searched ? await Credits.searchRefundHistory({ from, to, page, profileGuid })
+            : { entries: [], total: 0, pageSize: Credits.REFUND_HISTORY_PAGE_SIZE };
         res.render('credit-refunds', {
-            activePage: 'credit-refunds',
+            activePage: 'refund-history', historyPage: true, fromQueue: req.query.from_queue === '1',
             corrected: req.query.corrected === '1',
-            refundsEnabled: Settings.refundsEnabled(await Settings.getAll()),
-            requests, history, filters: { from, to, ...(profileGuid ? { profile: profileGuid } : {}) }, selectedProfile, searched, page,
-            decision: req.query.decision === 'approved' ? 'approved' : '',
-            error: req.query.error === '1'
+            history, filters: { from, to, ...(profileGuid ? { profile: profileGuid } : {}) }, selectedProfile, searched, page,
+            decision: '', error: false
         });
     } catch (error) {
         console.error('Unable to load credit refund requests:', error);
@@ -1568,18 +1616,39 @@ admin.get('/audit', async (req, res) => {
     const profileGuid = GUID_PATTERN.test(req.query.profile || '') ? req.query.profile : null;
     const action = typeof req.query.action === 'string' && req.query.action.length <= 60 ? req.query.action || null : null;
     const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    let sort = req.query.sort === undefined ? 'time' : req.query.sort;
+    let direction = req.query.direction === undefined ? 'desc' : req.query.direction;
+    if (!AuditLog.isValidSort(sort, direction)) return res.status(400).send('Select a valid audit sort order.');
+    if (req.query.filter_submit === '1' &&
+        (req.query.previous_from !== from || req.query.previous_to !== to ||
+         req.query.previous_profile !== (profileGuid || '') || req.query.previous_action !== (action || ''))) {
+        sort = 'time';
+        direction = 'desc';
+    }
     if ((req.query.page !== undefined && (typeof req.query.page !== 'string' || !/^[1-9][0-9]*$/.test(req.query.page))) ||
         !Number.isSafeInteger(page) || !Number.isSafeInteger((page - 1) * AuditLog.PAGE_SIZE)) {
         return res.status(400).send('Select a valid audit page.');
     }
+    if (req.query.filter_submit === '1') {
+        const parameters = new URLSearchParams({
+            ...(searched ? { from, to } : {}),
+            ...(profileGuid ? { profile: profileGuid } : {}),
+            ...(action ? { action } : {}),
+            sort, direction
+        });
+        return res.redirect(`/admin/audit?${parameters}${searched ? '#audit-list-heading' : ''}`);
+    }
     try {
         const [result, actions, profiles] = await Promise.all([
-            searched ? AuditLog.search({ profileGuid, action, page, from, to })
+            searched ? AuditLog.search({ profileGuid, action, page, from, to, sort, direction })
                 : { entries: [], total: 0, pageSize: AuditLog.PAGE_SIZE },
-            searched ? AuditLog.findActions(from, to) : [],
+            AuditLog.findActions(),
             Profiles.findAll()
         ]);
-        res.render('audit', { ...result, actions, profiles, filters: { profile: profileGuid, action, from, to }, page, activePage: 'audit' });
+        const eventTypes = [...new Set([...auditEvents.currentActions, ...actions, ...(action ? [action] : [])])]
+            .sort((a, b) => auditEvents.actionLabel(a).localeCompare(auditEvents.actionLabel(b)) || a.localeCompare(b));
+        res.render('audit', { ...result, actions: eventTypes, profiles, filters: { profile: profileGuid, action, from, to },
+            auditEvents, maxRangeDays: AuditLog.MAX_RANGE_DAYS, page, sort, direction, activePage: 'audit' });
     } catch (error) {
         console.error('Unable to load audit:', error);
         res.sendStatus(500);

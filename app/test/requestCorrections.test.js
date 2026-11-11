@@ -31,15 +31,16 @@ test('corrections validate, audit and preserve bounded history filters on the fi
         assert.equal(response.code, 400);
         assert.equal(change.mock.callCount(), 0);
         await handler(route)({ profile: { guid: GUID }, body: {
-            request_guid: GUID, ...extra, from: '2026-11-01', to: '2026-11-05', page: '2', profile: GUID, return_to: '//evil.test'
+            request_guid: GUID, ...extra, from: '2026-11-01', to: '2026-11-05', page: '2', profile: GUID, from_queue: '1', return_to: '//evil.test'
         } }, response);
         assert.deepEqual(change.mock.calls[0].arguments, expected);
         const url = new URL(response.url, 'https://activehub.test');
         assert.equal(url.origin, 'https://activehub.test');
-        assert.equal(url.pathname, route.startsWith('/credit-refunds') ? '/admin/credit-refunds' : '/admin/credit-requests');
+        assert.equal(url.pathname, route.startsWith('/credit-refunds') ? '/admin/credit-refunds/history' : '/admin/credit-requests/history');
         assert.equal(url.searchParams.get('profile'), GUID);
         assert.equal(url.searchParams.get('page'), '2');
         assert.equal(url.searchParams.get('corrected'), '1');
+        assert.equal(url.searchParams.get('from_queue'), '1');
         assert.ok(audit.mock.calls.at(-1).arguments[1].action);
         change.mock.mockImplementation(async () => { const error = new Error('Pending refund blocks change'); error.code = 'CREDIT_CORRECTION_CONFLICT'; throw error; });
         await handler(route)({ body: { request_guid: GUID, ...extra } }, response);

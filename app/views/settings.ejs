@@ -10,6 +10,17 @@
     <%- include('partials/accessibility-styles') %>
     <style>
         .settings-admin main .form-control { max-width: none; }
+        .settings-field-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+        .settings-field-actions > .form-control { flex: 1 1 16rem; width: auto; min-width: 0; }
+        .settings-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .settings-actions[hidden] { display: none; }
+        .settings-value-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .settings-current-value { min-width: 0; overflow-wrap: anywhere; }
+        .settings-value-row > button { flex-shrink: 0; }
+        .settings-value-row:has(+ [data-edit-panel]:not([hidden])) { display: none; }
+        @media (max-width: 767.98px) {
+            .settings-field-actions > .form-control { flex-basis: 100%; width: 100%; }
+        }
     </style>
 </head>
 
@@ -33,22 +44,32 @@
         <% if (lifetimeError) { %><div class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 36500.</div><% } %>
 
         <div class="admin-save-feedback mb-4">
-            <p class="alert text-muted mb-0" data-admin-save-placeholder>Expand a setting to edit it. Each setting is saved separately.</p>
+            <p class="alert text-muted mb-0" data-admin-save-placeholder>Edit a setting directly. Save or Cancel appears when its value changes; each setting is saved separately.</p>
         </div>
 
-        <section class="mb-3" aria-labelledby="site-identity-heading">
-            <details class="admin-disclosure bg-white border rounded shadow-sm p-4">
-                <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="site-identity-heading">Site identity</h2></summary>
+        <nav class="mb-4 d-flex flex-wrap" style="gap: 0.5rem 1.5rem;" aria-label="Settings sections">
+            <a href="#site-identity-heading">Site identity</a>
+            <a href="#membership-scheme-heading">Membership</a>
+            <a href="#booking-search-settings-heading">Booking search</a>
+            <a href="#credit-request-settings-heading">Credits and refunds</a>
+        </nav>
+
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="site-identity-heading">
+            <h2 class="h5 mb-3" id="site-identity-heading">Site identity</h2>
         <div class="admin-form-section" data-settings-item>
             <h3 class="h6" id="site-title-heading">Site title</h3>
             <form method="POST" action="/admin/settings" data-editor-label="Site title" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="site_title">Title shown at the top of the home page</label>
-                    <input class="form-control" id="site_title" name="site_title" type="text" maxlength="<%= maxLength %>" required value="<%= siteTitle %>" aria-describedby="site-title-help">
+                    <div class="settings-field-actions">
+                        <input class="form-control" id="site_title" name="site_title" type="text" maxlength="<%= maxLength %>" required value="<%= siteTitle %>" aria-describedby="site-title-help">
+                        <div class="settings-actions">
+                            <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                            <button class="btn btn-primary" type="submit">Save</button>
+                        </div>
+                    </div>
                     <small class="form-text text-muted" id="site-title-help">Up to <%= maxLength %> characters.</small>
                 </div>
-                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary" type="submit">Save</button>
             </form>
         </div>
         <div class="admin-form-section" data-settings-item>
@@ -56,11 +77,15 @@
             <form method="POST" action="/admin/settings/organisation" data-editor-label="Organisation name" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="organisation-name">Organisation name</label>
-                    <input class="form-control" id="organisation-name" name="organisation_name" type="text" maxlength="<%= maxLength %>" required value="<%= organisationName %>" aria-describedby="organisation-help">
+                    <div class="settings-field-actions">
+                        <input class="form-control" id="organisation-name" name="organisation_name" type="text" maxlength="<%= maxLength %>" required value="<%= organisationName %>" aria-describedby="organisation-help">
+                        <div class="settings-actions">
+                            <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                            <button class="btn btn-primary" type="submit">Save organisation name</button>
+                        </div>
+                    </div>
                     <small class="form-text text-muted" id="organisation-help">Used in the credit and refund guidance. Defaults to Peck'em.</small>
                 </div>
-                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary" type="submit">Save organisation name</button>
             </form>
         </div>
         <div class="admin-form-section mb-0" data-settings-item>
@@ -88,51 +113,58 @@
                 <form id="remove-site-logo" method="POST" action="/admin/settings/logo/remove" hidden></form>
             <% } %>
         </div>
-            </details>
         </section>
-        <section class="mb-3" aria-labelledby="membership-scheme-heading">
-            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
-            <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="membership-scheme-heading">Membership scheme</h2></summary>
-            <form method="POST" action="/admin/settings/membership-scheme" data-editor-label="Membership scheme" data-editor-preview="false">
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="membership-scheme-heading">
+            <h2 class="h5 mb-3" id="membership-scheme-heading">Membership scheme</h2>
+            <form method="POST" action="/admin/settings/membership-scheme" data-editor-label="Membership scheme" data-editor-preview="false" data-editor-inline>
                 <div class="form-group">
                     <label for="membership-scheme">Membership scheme name</label>
-                    <input class="form-control" id="membership-scheme" name="membership_scheme" type="text" maxlength="<%= maxLength %>" required value="<%= locals.membershipScheme || 'GLL Better Card' %>" aria-describedby="membership-scheme-help">
+                    <div class="settings-field-actions">
+                        <input class="form-control" id="membership-scheme" name="membership_scheme" type="text" maxlength="<%= maxLength %>" required value="<%= locals.membershipScheme || 'GLL Better Card' %>" aria-describedby="membership-scheme-help">
+                        <div class="settings-actions">
+                            <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                            <button class="btn btn-primary" type="submit">Save membership scheme</button>
+                        </div>
+                    </div>
                     <small class="form-text text-muted" id="membership-scheme-help">Used before "membership number" in My membership. Changing the scheme name does not change saved membership numbers.</small>
                 </div>
-                <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary" type="submit">Save membership scheme</button>
             </form>
-            </details>
         </section>
-        <section class="mb-3" aria-labelledby="booking-search-settings-heading">
-            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure <%= locals.bookingSearchError ? 'open' : '' %>>
-                <summary class="admin-card-summary"><h2 class="h5 d-inline mb-0" id="booking-search-settings-heading">Booking search range</h2></summary>
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="booking-search-settings-heading">
+                <h2 class="h5 mb-3" id="booking-search-settings-heading">Booking search range</h2>
                 <% if (locals.bookingSearchError) { %><p class="alert alert-danger" role="alert">Enter a whole number of days from 1 to 365.</p><% } %>
-                <form method="POST" action="/admin/settings/booking-search-days" data-editor-label="Booking search range" data-editor-preview="false">
+                <form method="POST" action="/admin/settings/booking-search-days" data-editor-label="Booking search range" data-editor-preview="false" data-editor-inline>
                     <div class="form-group">
                         <label for="booking-search-days">Maximum days after the From date</label>
-                        <input class="form-control" id="booking-search-days" name="days" type="number" min="1" max="365" step="1" required value="<%= locals.bookingSearchDays || 30 %>" aria-describedby="booking-search-days-help">
+                        <div class="settings-field-actions">
+                            <input class="form-control" id="booking-search-days" name="days" type="number" min="1" max="365" step="1" required value="<%= locals.bookingSearchDays || 30 %>" aria-describedby="booking-search-days-help">
+                            <div class="settings-actions">
+                                <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                                <button class="btn btn-primary" type="submit">Save booking search range</button>
+                            </div>
+                        </div>
                         <small class="form-text text-muted" id="booking-search-days-help">From defaults to today. To defaults to From plus this many days and can only be shortened, never before From. For example, 30 allows 31 inclusive calendar dates. Larger ranges may increase database work.</small>
                     </div>
-                    <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit>Cancel</button>
-                    <button class="btn btn-primary" type="submit">Save booking search range</button>
                 </form>
-            </details>
         </section>
-        <section class="mb-3" aria-labelledby="credit-request-settings-heading">
-            <details class="admin-disclosure bg-white border rounded shadow-sm p-4">
-            <summary class="admin-card-summary"><h2 id="credit-request-settings-heading" class="h5 d-inline mb-0">Credit and refund settings</h2></summary>
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="credit-request-settings-heading">
+            <h2 id="credit-request-settings-heading" class="h5 mb-3">Credit and refund settings</h2>
+            <p class="text-muted">Manage bank refunds, account-credit time limits and weather credit auto-approval together. Save each setting separately.</p>
             <div class="admin-form-section" data-credit-settings-item>
             <h3 id="refunds-heading" class="h6">Bank and external refunds</h3>
             <p>Master control overriding all other refund settings, including individual credit eligibility and weather approvals. Disabling blocks new bank refund requests, completion of pending bank refunds and external booking refunds. Account-credit awards and spending are unaffected. Pending requests remain visible but cannot be marked as done while disabled. Refund requests cannot be declined. Existing eligibility is preserved if refunds are re-enabled.</p>
             <form method="POST" action="/admin/settings/refunds" data-editor-label="Bank and external refunds" data-editor-preview="false" data-editor-inline>
                 <label for="refunds-enabled">Refunds</label>
-                <select class="form-control mb-2" id="refunds-enabled" name="enabled">
+                <div class="settings-field-actions">
+                <select class="form-control" id="refunds-enabled" name="enabled">
                     <option value="1" <%= locals.refundsEnabled !== false ? 'selected' : '' %>>Enabled</option>
                     <option value="0" <%= locals.refundsEnabled === false ? 'selected' : '' %>>Disabled</option>
                 </select>
-                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary btn-sm" type="submit">Save refunds setting</button>
+                <div class="settings-actions">
+                    <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save refunds setting</button>
+                </div>
+                </div>
             </form>
             </div>
             <div class="admin-form-section" data-credit-settings-item>
@@ -140,38 +172,47 @@
             <p>Bookings older than x days can't be reimbursed.</p>
             <form method="POST" action="/admin/settings/credit-request-period" data-editor-label="Credit request period" data-editor-preview="false" data-editor-inline>
                 <label for="credit-request-days">Number of days</label>
-                <input class="form-control mb-2" id="credit-request-days" name="days" type="number" min="1" max="365" step="1" required value="<%= creditRequestDays %>">
-                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary btn-sm" type="submit">Save period</button>
+                <div class="settings-field-actions">
+                    <input class="form-control" id="credit-request-days" name="days" type="number" min="1" max="365" step="1" required value="<%= creditRequestDays %>">
+                    <div class="settings-actions">
+                        <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                        <button class="btn btn-primary" type="submit">Save period</button>
+                    </div>
+                </div>
             </form>
             </div>
-            <div class="admin-form-section mb-0" data-credit-settings-item>
+            <div class="admin-form-section" data-credit-settings-item>
             <h3 id="credit-lifetime-heading" class="h6">Credit lifetime</h3>
             <p>Credits expire after x days, measured from issue time. Changing this does not alter existing expiry dates. Spent or expired credits are hidden and cannot be used at checkout. A bank refund requested before expiry remains available for administrator review.</p>
             <form method="POST" action="/admin/settings/credit-lifetime" data-editor-label="Credit lifetime" data-editor-preview="false" data-editor-inline>
                 <label for="credit-lifetime-days">Credit lifetime in days</label>
-                <input class="form-control mb-2" id="credit-lifetime-days" name="days" type="number" min="1" max="36500" step="1" required value="<%= creditLifetimeDays %>">
-                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary btn-sm" type="submit">Save credit lifetime</button>
+                <div class="settings-field-actions">
+                    <input class="form-control" id="credit-lifetime-days" name="days" type="number" min="1" max="36500" step="1" required value="<%= creditLifetimeDays %>">
+                    <div class="settings-actions">
+                        <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                        <button class="btn btn-primary" type="submit">Save credit lifetime</button>
+                    </div>
+                </div>
             </form>
             </div>
-            </details>
-        </section>
-        <section class="mb-3" aria-labelledby="auto-approval-heading">
-            <details class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
-            <summary class="admin-card-summary"><h2 id="auto-approval-heading" class="h5 d-inline mb-0">Weather credit slot auto-approval</h2></summary>
+            <div class="admin-form-section mb-0" data-credit-settings-item>
+            <h3 id="auto-approval-heading" class="h6">Weather credit slot auto-approval</h3>
             <p>Allow administrators to approve a time slot across all facilities. Pending and later Weather requests for the exact same start and end time receive credit automatically. The card-paid portion is refundable; reissued credits retain their original refund eligibility. Only Weather requests can be auto-approved. Other requests require individual review; their card-paid portion is non-refundable unless the administrator allows a bank refund.</p>
             <p>Disabling pauses all saved slots without removing them or reversing credits. Re-enabling applies them to new requests; requests submitted while disabled still require review. The slot list uses the Credit request period above.</p>
-            <form method="POST" action="/admin/settings/credit-slot-auto-approval" data-editor-label="Weather credit slot auto-approval" data-editor-preview="false">
+            <form method="POST" action="/admin/settings/credit-slot-auto-approval" data-editor-label="Weather credit slot auto-approval" data-editor-preview="false" data-editor-inline>
                 <label for="credit-slot-auto-approval">Auto-approval</label>
-                <select class="form-control mb-2" id="credit-slot-auto-approval" name="enabled">
+                <div class="settings-field-actions">
+                <select class="form-control" id="credit-slot-auto-approval" name="enabled">
                     <option value="0" <%= !autoApprovalEnabled ? 'selected' : '' %>>Disabled</option>
                     <option value="1" <%= autoApprovalEnabled ? 'selected' : '' %>>Enabled</option>
                 </select>
-                <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
-                <button class="btn btn-primary btn-sm" type="submit">Save auto-approval</button>
+                <div class="settings-actions">
+                    <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                    <button class="btn btn-primary" type="submit">Save auto-approval</button>
+                </div>
+                </div>
             </form>
-            </details>
+            </div>
         </section>
     </main>
 </body>

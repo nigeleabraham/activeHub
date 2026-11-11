@@ -7,6 +7,7 @@ const ejs = require('ejs');
 const path = require('node:path');
 const Profiles = require('../models/Profiles');
 const Settings = require('../models/Settings');
+const auth = require('../middleware/auth');
 const GUID = '123e4567-e89b-42d3-a456-426614174000';
 
 test('refund history is limited by completion dates and 50-row pagination', async t => {
@@ -37,17 +38,27 @@ test('refund history is limited by completion dates and 50-row pagination', asyn
     assert.equal(query.mock.callCount(), count);
 });
 
-test('refund page queries only pending requests until both dates are supplied', async t => {
+test('refund queue and history query independently, preserving legacy links', async t => {
     t.mock.method(Settings, 'getAll', async () => ({ ...Settings.DEFAULTS }));
     const admin = router.stack.find(layer => layer.handle.stack).handle;
-    const handler = admin.stack.find(layer => layer.route?.path === '/credit-refunds').route.stack[0].handle;
+    const queue = admin.stack.find(layer => layer.route?.path === '/credit-refunds').route.stack[0].handle;
+    const handler = admin.stack.find(layer => layer.route?.path === '/credit-refunds/history').route.stack[0].handle;
     const pending = t.mock.method(Credits, 'findRefundRequests', async () => []);
     const history = t.mock.method(Credits, 'searchRefundHistory', async () => ({ entries: [], total: 0, pageSize: 50 }));
     let data;
-    const res = { render(_view, value) { data = value; }, status(code) { this.code = code; return this; }, send() {} };
-    await handler({ query: {} }, res);
+    const res = { render(_view, value) { data = value; }, status(code) { this.code = code; return this; }, send() {},
+        redirect(url) { this.url = url; } };
+    await queue({ query: {} }, res);
+    assert.equal(data.historyPage, false);
     assert.equal(history.mock.callCount(), 0);
     assert.deepEqual(pending.mock.calls[0].arguments, [{ pendingOnly: true }]);
+    await queue({ query: { from: '2026-11-01', to: '2026-11-05', profile: GUID, page: '2' } }, res);
+    assert.equal(res.url, `/admin/credit-refunds/history?from=2026-11-01&to=2026-11-05&profile=${GUID}&page=2#closed-refunds`);
+    await handler({ query: {} }, res);
+    assert.equal(history.mock.callCount(), 0);
+    assert.equal(data.historyPage, true);
+    assert.equal(data.fromQueue, false);
+    assert.equal(data.activePage, 'refund-history');
     assert.equal(data.searched, false);
     for (const query of [{ from: '2026-11-01' }, { to: '2026-11-02' },
         { from: '2026-01-01', to: '2026-03-04' }, { page: '0' }]) {
@@ -57,6 +68,7 @@ test('refund page queries only pending requests until both dates are supplied', 
     assert.equal(pending.mock.callCount(), 1);
     await handler({ query: { from: '2026-11-01', to: '2026-11-05', page: '2' } }, res);
     assert.deepEqual(history.mock.calls[0].arguments, [{ from: '2026-11-01', to: '2026-11-05', page: 2, profileGuid: null }]);
+    assert.equal(pending.mock.callCount(), 1);
     t.mock.method(Profiles, 'findByGuid', async () => ({ guid: GUID, name: 'Rita Resident' }));
     await handler({ query: { from: '2026-11-01', to: '2026-11-05', profile: GUID } }, res);
     assert.equal(history.mock.calls.at(-1).arguments[0].profileGuid, GUID);
@@ -68,25 +80,42 @@ test('refund page queries only pending requests until both dates are supplied', 
         assert.equal(res.code, 400);
     }
     assert.equal(history.mock.callCount(), calls);
+    await handler({ query: { from_queue: '1' } }, res);
+    assert.equal(data.fromQueue, true);
+});
+
+test('refund history remains administrator-only', () => {
+    assert.equal(auth.canAccessAdmin({ role: 'Administrator' }, '/credit-refunds/history'), true);
+    for (const permission of ['bookings.manage', 'profiles.manage', 'audit.view']) {
+        assert.equal(auth.canAccessAdmin({ role: 'Staff', permissions: [permission] }, '/credit-refunds/history'), false);
+    }
 });
 
 test('refund history view starts empty and pagination preserves both dates', async () => {
     const values = {
         currentProfile: null, isAdmin: false, canSwitchRole: false, activePage: 'credit-refunds',
-        decision: '', declineError: false, error: false, requests: [], searched: false,
+        decision: '', declineError: false, error: false, requests: [], searched: false, historyPage: true,
         filters: { from: '', to: '' }, history: { entries: [], total: 0, pageSize: 50 }, page: 1
     };
     const view = path.join(__dirname, '../views/credit-refunds.ejs');
     const initial = await ejs.renderFile(view, values);
-    assert.match(initial, /<title>Refund requests \| ActiveHub<\/title>/);
-    assert.match(initial, /<h1 class="h2 mb-1">Refund requests<\/h1>/);
+    const queue = await ejs.renderFile(view, { ...values, historyPage: false });
+    assert.match(queue, /href="\/admin\/credit-refunds\/history\?from_queue=1">Search refund history/);
+    assert.doesNotMatch(queue, /id="refund-profile-search"|aria-labelledby="closed-refunds"/);
+    assert.match(initial, /<title>Refund history \| ActiveHub<\/title>/);
+    assert.match(initial, /<h1 class="h2 mb-1">Refund history<\/h1>/);
     assert.doesNotMatch(initial, /Credit refunds/);
     assert.match(initial, /Select From and To dates to load refund history/);
-    assert.match(initial, /class="bg-white border rounded shadow-sm p-4 mb-5" aria-labelledby="pending-refunds"/);
+    assert.doesNotMatch(initial, /aria-labelledby="pending-refunds"/);
     assert.match(initial, /class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="closed-refunds"/);
-    assert.equal((initial.match(/<header class="border-bottom pb-3 mb-4">/g) || []).length, 2);
-    assert.match(initial, /0 awaiting action/);
-    assert.match(initial, /mark them as done/);
+    assert.equal((initial.match(/<header class="border-bottom pb-3 mb-4">/g) || []).length, 1);
+    assert.doesNotMatch(initial, /Back to pending refund requests/);
+    const fromQueue = await ejs.renderFile(view, { ...values, fromQueue: true, searched: true, page: 2,
+        filters: { from: '2026-11-01', to: '2026-11-05' }, history: { entries: [], total: 101, pageSize: 50 } });
+    assert.match(fromQueue, /Back to pending refund requests/);
+    assert.match(fromQueue, /name="from_queue" value="1"/);
+    assert.match(fromQueue, /history\?from_queue=1">Clear/);
+    assert.match(fromQueue, /from_queue=1&amp;page=3#closed-refunds/);
     assert.doesNotMatch(initial, /<table/);
     assert.match(initial, /name="from" type="date" value="" required/);
     assert.match(initial, /name="to" type="date" value="" required/);
@@ -104,4 +133,5 @@ test('refund history view starts empty and pagination preserves both dates', asy
     assert.ok(searched.includes(`from=2026-11-01&amp;to=2026-11-05&amp;profile=${GUID}&amp;page=3#closed-refunds`));
     assert.ok(searched.includes(`type="hidden" name="profile" value="${GUID}"`));
     assert.match(searched, /id="refund-profile-search" type="search" value="Rita Resident"/);
+    assert.match(searched, /action="\/admin\/credit-refunds\/history#closed-refunds"/);
 });

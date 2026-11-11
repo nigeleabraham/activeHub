@@ -94,13 +94,17 @@ test('date controls default To on From changes using calendar arithmetic and kee
     const from = { value: '2026-03-01', validity: { valid: true },
         addEventListener(event, callback) { listeners[event] = callback; } };
     const to = { value: '2026-03-05' };
+    const hint = {};
     vm.runInNewContext(script, {
-        form: { dataset: { bookingSearchDays: '30' }, querySelector(selector) { return selector === '[name="from"]' ? from : to; } },
-        Date
+        form: { dataset: { bookingSearchDays: '30' }, querySelector(selector) {
+            return selector === '[name="from"]' ? from : selector === '[name="to"]' ? to : hint;
+        } },
+        Date, Intl
     });
     assert.equal(to.value, '2026-03-05');
     assert.equal(to.min, '2026-03-01');
     assert.equal(to.max, '2026-03-31');
+    assert.equal(hint.textContent, 'Allowed To date: 1 March 2026 to 31 March 2026, inclusive. You may shorten this range.');
     for (const [start, expected] of [['2026-03-29', '2026-04-28'], ['2026-10-25', '2026-11-24'], ['2026-12-15', '2027-01-14']]) {
         from.value = start;
         listeners.input();
@@ -108,4 +112,10 @@ test('date controls default To on From changes using calendar arithmetic and kee
         assert.equal(to.value, expected);
         assert.equal(to.max, expected);
     }
+    assert.match(hint.textContent, /15 December 2026 to 14 January 2027/);
+    from.value = '';
+    from.validity.valid = false;
+    listeners.input();
+    assert.equal(to.max, '');
+    assert.match(hint.textContent, /Choose a valid From date/);
 });

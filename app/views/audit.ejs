@@ -8,6 +8,19 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <style>
+        #audit-list-heading { scroll-margin-top: 1rem; }
+        .audit-details dt { font-weight: 600; }
+        .audit-details dd { margin-bottom: 0.4rem; }
+        .audit-details dd:last-child { margin-bottom: 0; }
+        @media (max-width: 767.98px) {
+            .audit-table, .audit-table tbody, .audit-table tr, .audit-table td { display: block; width: 100%; }
+            .audit-table thead { display: none; }
+            .audit-table tr { border: 1px solid #b1b4b6; border-radius: 0.25rem; margin-bottom: 1rem; padding: 0.75rem; }
+            .audit-table td { border: 0; padding: 0.35rem 0; overflow-wrap: anywhere; }
+            .audit-table td > .audit-mobile-label { display: block; font-weight: 600; }
+        }
+    </style>
 </head>
 
 <body class="bg-light">
@@ -17,32 +30,56 @@
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Audit</h1>
-                <p class="text-muted mb-0">What each profile has done, newest first. Entries are kept for two months.</p>
-                <p class="text-muted mb-0">Select a date range of up to 62 days (Europe/London), including both dates, with up to <%= pageSize %> entries per page.</p>
+                <p class="text-muted mb-0">What each profile has done. Entries are kept for two months.</p>
+                <p class="text-muted mb-0">Search audit activity by date and optional filters, with up to <%= pageSize %> entries per page.</p>
             </div>
         </header>
 
         <% const totalPages = Math.max(1, Math.ceil(total / pageSize));
-           const pageLink = target => '/admin/audit?' + new URLSearchParams({
+           const sortColumns = [
+               ['time', 'When (your local time)'], ['profile', 'Profile'], ['event', 'Event type'],
+               ['item', 'Item'], ['details', 'Details']
+           ];
+           const resultLink = changes => '/admin/audit?' + new URLSearchParams({
                from: filters.from,
                to: filters.to,
                ...(filters.profile ? { profile: filters.profile } : {}),
                ...(filters.action ? { action: filters.action } : {}),
-               page: target
-           }).toString(); %>
+               sort, direction, ...changes
+           }).toString() + '#audit-list-heading';
+           const pageLink = target => resultLink({ page: target });
+           const sortLink = key => resultLink({ sort: key, direction: sort === key
+               ? (direction === 'asc' ? 'desc' : 'asc') : (key === 'time' ? 'desc' : 'asc') }); %>
 
         <section class="mb-3" aria-labelledby="audit-filter-heading">
             <div class="bg-white border rounded shadow-sm p-3">
                 <h2 id="audit-filter-heading" class="h5 mb-2">Filter</h2>
-                <form class="form-row align-items-end" method="GET" action="/admin/audit">
+                <form method="GET" action="/admin/audit#audit-list-heading">
+                  <input type="hidden" name="sort" value="<%= sort %>">
+                  <input type="hidden" name="direction" value="<%= direction %>">
+                  <input type="hidden" name="filter_submit" value="1">
+                  <input type="hidden" name="previous_from" value="<%= filters.from %>">
+                  <input type="hidden" name="previous_to" value="<%= filters.to %>">
+                  <input type="hidden" name="previous_profile" value="<%= filters.profile || '' %>">
+                  <input type="hidden" name="previous_action" value="<%= filters.action || '' %>">
+                  <fieldset class="semantic-control-group">
+                    <legend class="h6">Date range <span class="text-muted font-weight-normal">(required)</span></legend>
+                    <p class="text-muted small" id="audit-range-help">Maximum search range: <strong><%= maxRangeDays %> calendar days</strong>, including both dates (Europe/London). To cannot be before From.</p>
+                    <div class="form-row">
                     <div class="form-group col-md">
-                        <label for="audit-from">From date</label>
-                        <input class="form-control" id="audit-from" name="from" type="date" value="<%= filters.from %>" required>
+                        <label for="audit-from">From date (required)</label>
+                        <input class="form-control" id="audit-from" name="from" type="date" value="<%= filters.from %>" required aria-describedby="audit-range-help">
                     </div>
-                    <div class="form-group col-md">
-                        <label for="audit-to">To date</label>
-                        <input class="form-control" id="audit-to" name="to" type="date" value="<%= filters.to %>" required>
+                    <div class="form-group col-md" id="audit-to-group">
+                        <label for="audit-to">To date (required)</label>
+                        <input class="form-control" id="audit-to" name="to" type="date" value="<%= filters.to %>" required aria-describedby="audit-range-help audit-to-help">
+                        <small class="form-text text-muted" id="audit-to-help" aria-live="polite">Select From first to set the maximum To date.</small>
                     </div>
+                    </div>
+                  </fieldset>
+                  <fieldset class="semantic-control-group">
+                    <legend class="h6">Optional filters</legend>
+                    <div class="form-row">
                     <div class="form-group col-md">
                         <label for="audit-profile">Profile</label>
                         <select class="form-control" id="audit-profile" name="profile">
@@ -53,17 +90,19 @@
                         </select>
                     </div>
                     <div class="form-group col-md">
-                        <label for="audit-action">Action</label>
+                        <label for="audit-action">Event type</label>
                         <select class="form-control" id="audit-action" name="action">
-                            <option value="">All actions in this period</option>
+                            <option value="">All event types</option>
                             <% actions.forEach(action => { %>
-                                <option value="<%= action %>"<%= filters.action === action ? ' selected' : '' %>><%= action %></option>
+                                <option value="<%= action %>"<%= filters.action === action ? ' selected' : '' %>><%= auditEvents.actionLabel(action) %> (<%= action %>)</option>
                             <% }); %>
                         </select>
                     </div>
-                    <div class="form-group col-md-auto">
-                        <button class="btn btn-primary" type="submit">Apply</button>
-                        <a class="btn btn-outline-secondary ml-1" href="/admin/audit">Clear</a>
+                    </div>
+                  </fieldset>
+                    <div class="form-group mb-0">
+                        <a class="btn btn-outline-secondary" href="/admin/audit">Clear</a>
+                        <button class="btn btn-primary ml-1" type="submit">Apply</button>
                     </div>
                 </form>
             </div>
@@ -71,24 +110,59 @@
 
         <section aria-labelledby="audit-list-heading">
             <% if (filters.from && filters.to) { %>
-            <div class="d-flex align-items-center justify-content-between mb-3">
-                <h2 id="audit-list-heading" class="h5 mb-0">Activity</h2>
+            <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+                <h2 id="audit-list-heading" class="h5 mb-0" tabindex="-1" aria-describedby="audit-results-summary">Audit results</h2>
                 <span class="badge badge-secondary"><%= total %> matching this period</span>
             </div>
+            <p id="audit-results-summary" class="text-muted"><%= total %> matching <%= total === 1 ? 'entry' : 'entries' %>. Showing <%= moment.utc(filters.from, 'YYYY-MM-DD', true).format('D MMM YYYY') %> to <%= moment.utc(filters.to, 'YYYY-MM-DD', true).format('D MMM YYYY') %> (inclusive, Europe/London). <a href="#audit-filter-heading">Change filters</a></p>
             <% if (entries.length) { %>
+                <p class="small text-muted"><span class="d-none d-md-inline">Select a heading to sort all matching entries. </span>Changing filters resets the order to newest first. Details are ordered by their stored text.</p>
+                <form class="d-md-none mb-3" method="GET" action="/admin/audit#audit-list-heading">
+                    <input type="hidden" name="from" value="<%= filters.from %>">
+                    <input type="hidden" name="to" value="<%= filters.to %>">
+                    <input type="hidden" name="profile" value="<%= filters.profile || '' %>">
+                    <input type="hidden" name="action" value="<%= filters.action || '' %>">
+                    <div class="form-group">
+                        <label for="audit-sort">Sort by</label>
+                        <select class="form-control" id="audit-sort" name="sort">
+                            <% sortColumns.forEach(([key, label]) => { %><option value="<%= key %>"<%= sort === key ? ' selected' : '' %>><%= label %></option><% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="audit-direction">Order</label>
+                        <select class="form-control" id="audit-direction" name="direction">
+                            <option value="asc"<%= direction === 'asc' ? ' selected' : '' %>>Ascending</option>
+                            <option value="desc"<%= direction === 'desc' ? ' selected' : '' %>>Descending</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-outline-secondary" type="submit">Sort results</button>
+                </form>
                 <div class="bg-white border rounded shadow-sm p-4 mb-3">
                     <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead><tr><th>When (local)</th><th>Profile</th><th>Action</th><th>Item</th><th>Details</th></tr></thead>
+                        <table class="table table-sm mb-0 audit-table">
+                            <thead><tr>
+                                <% sortColumns.forEach(([key, label]) => { %>
+                                    <th scope="col"<% if (sort === key) { %> aria-sort="<%= direction === 'asc' ? 'ascending' : 'descending' %>"<% } %>><a href="<%= sortLink(key) %>" aria-label="<%= label %>, sort <%= sort === key && direction === 'asc' ? 'descending' : sort !== key && key === 'time' ? 'descending' : 'ascending' %>"><%= label %><% if (sort === key) { %> <span aria-hidden="true"><%= direction === 'asc' ? '↑' : '↓' %></span><% } %></a></th>
+                                <% }); %>
+                            </tr></thead>
                             <tbody>
                                 <% entries.forEach(entry => { %>
                                     <tr>
-                                        <td><time data-local-booking-time datetime="<%= moment.utc(entry.created_at).toISOString() %>"><%= moment.utc(entry.created_at).format('D MMM YYYY, HH:mm:ss [UTC]') %></time></td>
-                                        <td><%= entry.profile_name %> <span class="text-muted small">(<%= entry.profile_role %>)</span></td>
-                                        <td><code><%= entry.action %></code></td>
-                                        <td><%= entry.entity_label || entry.entity_type %></td>
+                                        <td><span class="audit-mobile-label d-md-none">When (your local time)</span><time data-local-booking-time datetime="<%= moment.utc(entry.created_at).toISOString() %>"><%= moment.utc(entry.created_at).format('D MMM YYYY, HH:mm:ss [UTC]') %></time></td>
+                                        <td><span class="audit-mobile-label d-md-none">Profile</span><%= entry.profile_name %> <span class="text-muted small">(<%= entry.profile_role %>)</span></td>
+                                        <td><span class="audit-mobile-label d-md-none">Event type</span><%= auditEvents.actionLabel(entry.action) %><br><code class="small"><%= entry.action %></code></td>
+                                        <td><span class="audit-mobile-label d-md-none">Item</span><%= entry.entity_label || entry.entity_type %></td>
                                         <td class="small text-muted text-break">
-                                            <%= Object.entries(entry.details || {}).map(([key, value]) => key + ': ' + (value && typeof value === 'object' ? JSON.stringify(value) : value)).join(' · ') %>
+                                            <span class="audit-mobile-label d-md-none">Details</span>
+                                            <% const details = Object.entries(entry.details || {}); %>
+                                            <% if (details.length) { %>
+                                                <dl class="audit-details mb-0">
+                                                    <% details.forEach(([key, value]) => { %>
+                                                        <dt><%= auditEvents.words(key) %></dt>
+                                                        <dd><%= value && typeof value === 'object' ? JSON.stringify(value) : String(value) %></dd>
+                                                    <% }); %>
+                                                </dl>
+                                            <% } else { %>&mdash;<% } %>
                                         </td>
                                     </tr>
                                 <% }); %>
@@ -107,17 +181,44 @@
                 <p class="text-muted border-top pt-3">No activity found for this period and these filters.</p>
             <% } %>
             <% } else { %>
-                <output class="text-muted border-top pt-3" aria-live="polite">Select From and To dates and apply the filter to load audit activity.</output>
+                <output class="text-muted border-top pt-3" aria-live="polite">Choose a date range and optional filters, then select Apply to load audit activity.</output>
             <% } %>
         </section>
     </main>
     <script>
+        const auditFrom = document.getElementById('audit-from');
+        const auditTo = document.getElementById('audit-to');
+        const auditToHelp = document.getElementById('audit-to-help');
+        function updateAuditRange(resetTo) {
+            const start = auditFrom.valueAsDate;
+            auditTo.disabled = !start;
+            if (!start) {
+                auditToHelp.textContent = 'Select From first to set the maximum To date.';
+                auditTo.value = '';
+                auditTo.removeAttribute('min');
+                auditTo.removeAttribute('max');
+                return;
+            }
+            const end = new Date(start.getTime());
+            end.setUTCDate(end.getUTCDate() + <%= maxRangeDays - 1 %>);
+            auditTo.min = auditFrom.value;
+            auditTo.max = end.getUTCFullYear() > 9999 ? '9999-12-31' : end.toISOString().slice(0, 10);
+            if (resetTo || !auditTo.value) auditTo.value = auditTo.max;
+            const maximum = new Date(`${auditTo.max}T00:00:00Z`);
+            auditToHelp.textContent = `Latest To date: ${maximum.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}, based on the maximum search range of <%= maxRangeDays %> calendar days. You can choose an earlier date.`;
+        }
+        auditFrom.addEventListener('change', () => updateAuditRange(true));
+        updateAuditRange(false);
+
         document.querySelectorAll('[data-local-booking-time]').forEach(el => {
             const date = new Date(el.getAttribute('datetime'));
             if (!Number.isNaN(date.getTime())) {
                 el.textContent = date.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
             }
         });
+        if (window.location.hash === '#audit-list-heading') {
+            document.getElementById('audit-list-heading')?.focus();
+        }
     </script>
 </body>
 
