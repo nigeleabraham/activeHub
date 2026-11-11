@@ -949,12 +949,13 @@ test('admin navigation groups every page once and marks the current page and sec
     const html = await ejs.renderFile(navigation, { ...locals, activePage: 'court-configuration' });
     const nav = html.match(/<nav[\s\S]*?<\/nav>/)[0];
     const groups = [...nav.matchAll(/<details class="([^"]+)">[\s\S]*?<summary><span class="admin-navigation-label">([^<]+)<\/span><\/summary>([\s\S]*?)<\/details>/g)];
-    assert.deepEqual(groups.map(group => group[2]), ['Home Pages', 'Facilities management', 'Bookings management', 'System Admin']);
+    assert.deepEqual(groups.map(group => group[2]), ['Home Pages', 'Facilities management', 'Bookings management', 'Audit', 'System Admin']);
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
         ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
         ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds'],
-        ['/admin/profiles', '/admin/roles', '/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit', '/admin/settings']
+        ['/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit'],
+        ['/admin/profiles', '/admin/roles', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
     assert.equal((nav.match(/aria-current="page"/g) || []).length, 1);

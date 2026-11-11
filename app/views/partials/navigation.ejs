@@ -16,7 +16,7 @@ const adminItems = [
     { key: 'profiles', label: 'Profiles', href: '/admin/profiles' },
     { key: 'roles', label: 'Roles', href: '/admin/roles' },
     { key: 'settings', label: 'Settings', href: '/admin/settings' },
-    { key: 'audit', label: 'Audit', href: '/admin/audit' }
+    { key: 'audit', label: 'Audit log', href: '/admin/audit' }
 ];
 const adminArea = locals.area === 'admin';
 const allowedAdmin = path => locals.canAccessAdmin ? locals.canAccessAdmin(path)
@@ -29,7 +29,8 @@ const adminGroups = [
     { label: 'Home Pages', keys: ['admin-home', 'external-home'] },
     { label: 'Facilities management', keys: ['facilities', 'courses', 'sports', 'opening-hours', 'court-configuration'] },
     { label: 'Bookings management', keys: ['bookings', 'booking-search', 'credit-requests', 'credit-refunds'] },
-    { label: 'System Admin', keys: ['profiles', 'roles', 'credit-request-history', 'refund-history', 'audit', 'settings'] }
+    { label: 'Audit', keys: ['credit-request-history', 'refund-history', 'audit'] },
+    { label: 'System Admin', keys: ['profiles', 'roles', 'settings'] }
 ].map(group => ({ ...group, keys: group.keys.filter(key => navigationItems.some(item => item.key === key)) }))
     .filter(group => group.keys.length);
 %>

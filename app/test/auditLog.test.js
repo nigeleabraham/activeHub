@@ -198,6 +198,8 @@ test('audit view requires both dates and preserves all filters in pagination lin
         moment: require('moment')
     };
     const html = await ejs.renderFile(path.join(__dirname, '../views/audit.ejs'), values);
+    assert.match(html, /<title>Audit log \| ActiveHub<\/title>/);
+    assert.match(html, /<h1 class="h2 mb-1">Audit log<\/h1>/);
     assert.match(html, /name="from" type="date" value="2026-10-01" required/);
     assert.match(html, /name="to" type="date" value="2026-10-31" required/);
     assert.match(html, /Europe\/London/);
