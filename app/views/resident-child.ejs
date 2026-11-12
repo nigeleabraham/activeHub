@@ -25,6 +25,7 @@
             <h1><%= child.guid ? 'Edit child' : 'Add child' %></h1>
         </div>
     </header>
+    <%- include('partials/customer-navigation') %>
     <main class="container py-4">
         <% if (error) { %><div class="alert alert-danger" role="alert"><%= error %></div><% } %>
         <form method="POST" action="/profile/children<%= child.guid ? '/' + child.guid : '' %>" data-child-form <%= child.guid ? 'data-profile-sections' : '' %>>

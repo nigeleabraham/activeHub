@@ -17,6 +17,8 @@ Live feedback uses native `output` elements with polite announcements. Shared st
 
 The customer Bookings page has separate, initially collapsed **Court bookings** and **Course bookings** sections. Course bookings include the account holder and their children, clearly label each attendee, list upcoming purchased sessions and link to the order confirmation. Completed course places are omitted. Purchased attendee/schedule snapshots remain visible even if a child's profile is later archived.
 
+Customer court bookings are made on `/court-bookings`, separately from the Courses page; `/bookings` contains shared booking history. The home cards are grouped under **Get Active**, **My Account** and, where permitted, **Administration**. Shared customer navigation appears below the page title banner. The Facilities search and sport filters have equal-width columns on desktop and stack on mobile; opening hours remain on facility cards rather than being a filter.
+
 The customer booking form uses compact vertical spacing without reducing text sizes. Facility and court selectors remain prominent, slot buttons have no vertical gaps, and buttons retain a minimum 48px target height and width.
 
 On the Courses page, **Choose a class** is a collapsed disclosure for each course. Expanding it reveals its class cards; returning from the basket restores its open state and scroll position. Facility cards show a course count and course-title links to the corresponding heading on the Courses page, rather than descriptions, FAQs, class runs or purchase controls. A course-heading anchor automatically opens that course's class disclosure and scrolls to its heading, both on arrival and when the anchor changes.

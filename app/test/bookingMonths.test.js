@@ -39,8 +39,9 @@ test('booking management and court configuration load and render only their own 
             ...data, currentProfile: profile, isAdmin: true, area: 'admin',
             canSwitchRole: false, viewingAs: null, switchableRoles: []
         });
-        assert.match(html, /href="\/admin\/court-configuration"/);
+        assert.doesNotMatch(html, />Go to court configuration</);
         if (configuring) {
+            assert.doesNotMatch(html, /href="\/admin\/court-configuration"/);
             assert.match(html, /<h1[^>]*>Court configuration<\/h1>/);
             assert.match(html, /action="\/admin\/bookings\/resources"/);
             assert.match(html, /action="\/admin\/bookings\/options"/);
@@ -49,6 +50,7 @@ test('booking management and court configuration load and render only their own 
             assert.match(html, /Court one[\s\S]*&pound;12\.50 per hour/);
             assert.doesNotMatch(html, /<(?:div|form)[^>]*\s(?:data-booking-calendar|data-booking-form|data-cancel-booking|data-calendar-slots)(?:\s|>)/);
         } else {
+            assert.match(html, /href="\/admin\/court-configuration"/);
             assert.match(html, /<h1[^>]*>Bookings management<\/h1>/);
             assert.match(html, /data-booking-calendar/);
             assert.match(html, /action="\/admin\/bookings\/create-batch"/);

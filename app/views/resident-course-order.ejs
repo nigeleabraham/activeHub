@@ -13,10 +13,11 @@
     <%- include('partials/cookie-banner') %>
     <header class="bg-white border-bottom">
         <div class="container py-3 d-md-flex justify-content-between align-items-center">
-            <a href="/"><%= siteTitle %></a>
+            <a href="/"><% if (hasLogo) { %><img class="brand-logo" src="/site-logo" alt="<%= siteTitle %>"><% } else { %><%= siteTitle %><% } %></a>
             <%- include('partials/navigation') %>
         </div>
     </header>
+    <%- include('partials/customer-navigation') %>
     <main class="container py-4">
         <h1>Course enrolment confirmed</h1>
         <output aria-live="polite">Your course places are confirmed. Card payments are simulated; no money has been taken.</output>

@@ -1,0 +1,38 @@
+<%
+const canSeeAdministration = locals.canAccessAdmin
+    ? locals.canAccessAdmin('/')
+    : isAdmin || (currentProfile?.permissions || []).length > 0;
+const currentPage = locals.activePage || '';
+const customerGroups = [
+    { label: 'Get Active', links: [
+        { label: 'Facilities', href: '/facilities', pages: ['facilities'] },
+        { label: 'Book a court or space', href: '/court-bookings', pages: ['court-bookings'] },
+        { label: 'Book a course', href: '/courses', pages: ['courses', 'basket'] }
+    ] },
+    { label: 'My Account', links: [
+        { label: 'My profile', href: '/profile', pages: ['profile'] },
+        { label: 'Credits and refunds', href: '/credits-and-refunds', pages: ['credits-and-refunds'] },
+        { label: 'My bookings', href: '/bookings', pages: ['bookings'] }
+    ] },
+    ...(canSeeAdministration ? [{ label: 'Administration', links: [
+        { label: 'Administration home', href: '/admin', pages: [] }
+    ] }] : [])
+];
+%>
+<div class="customer-navigation-bar">
+    <div class="container">
+        <nav class="customer-top-navigation" aria-label="Main navigation">
+            <% customerGroups.forEach(group => { %>
+                <% const currentGroup = group.links.some(link => link.pages.includes(currentPage)) || (group.label === 'Administration' && locals.area === 'admin'); %>
+                <details class="customer-navigation-group<%= currentGroup ? ' customer-navigation-group-current' : '' %>">
+                    <summary><span class="admin-navigation-label"><%= group.label %></span></summary>
+                    <ul>
+                        <% group.links.forEach(link => { %>
+                            <li><a href="<%= link.href %>"<% if (link.pages.includes(currentPage)) { %> aria-current="page"<% } %>><%= link.label %></a></li>
+                        <% }); %>
+                    </ul>
+                </details>
+            <% }); %>
+        </nav>
+    </div>
+</div>

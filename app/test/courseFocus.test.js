@@ -221,7 +221,7 @@ test('customer sport sections omit unused sports and FAQs, and retain unassigned
             });
             assert.match(html, /href="\/courses"/);
             const widths = [...html.matchAll(/<div class="([^"]*mb-4)">\s*<a class="brand-tile/g)].map(match => match[1]);
-            assert.equal(widths.length, 6);
+            assert.equal(widths.length, 7);
             assert.equal(new Set(widths).size, 1);
         }
     });
@@ -375,5 +375,8 @@ test('facility course listings link to the matching course without descriptions,
     });
     assert.ok(html.includes(`href="/courses#course-heading-${course.guid}"`));
     assert.match(html, /href="\/courses#course-heading-other">Second course<\/a>/);
+    assert.doesNotMatch(html, /id="open-today"|Open today<\/label>/);
+    const filterFields = [...html.matchAll(/<div class="form-group ([^"]+)">\s*<label for="(?:search|sport)"/g)];
+    assert.deepEqual(filterFields.map(match => match[1]), ['col-md-6', 'col-md-6']);
     assert.doesNotMatch(html, /What should I bring\?|data-course-description|data-course-run|action="\/basket\/add"/);
 });

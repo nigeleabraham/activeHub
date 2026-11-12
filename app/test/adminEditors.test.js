@@ -952,14 +952,17 @@ test('admin navigation groups every page once and marks the current page and sec
     assert.deepEqual(groups.map(group => group[2]), ['Home Pages', 'Facilities management', 'Bookings management', 'Audit', 'System Admin']);
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
-        ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
+        ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours'],
         ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds'],
         ['/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit'],
         ['/admin/profiles', '/admin/roles', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
-    assert.equal((nav.match(/aria-current="page"/g) || []).length, 1);
-    assert.match(nav, /href="\/admin\/court-configuration" aria-current="page"/);
+    assert.equal((nav.match(/aria-current="page"/g) || []).length, 0);
+    assert.doesNotMatch(nav, /href="\/admin\/court-configuration"/);
+
+    const bookingsHtml = await ejs.renderFile(navigation, { ...locals, activePage: 'bookings' });
+    assert.match(bookingsHtml, /href="\/admin\/court-configuration"/);
 });
 
 test('citizen pages and signed-out pages do not load admin editing behaviour', async () => {

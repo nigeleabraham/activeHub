@@ -350,7 +350,7 @@ const formatPounds = pence => `£${(pence / 100).toFixed(2)}`;
 
 // Validates a batch of slots. Returns { status }, { redirect } or { facility, bookings, assigneesByGuid }.
 async function prepareBatch(req, { resident }) {
-    const bookingsPath = resident ? '/bookings' : '/admin/bookings';
+    const bookingsPath = resident ? '/court-bookings' : '/admin/bookings';
     const { facility_guid } = req.body;
     let slots;
     try {
@@ -480,7 +480,7 @@ async function renderCheckout(req, res, prepared, { cardError, values = {} } = {
         .sort((first, second) => first.starts_at.localeCompare(second.starts_at))
         .map(booking => ({ ...booking, price: formatPounds(booking.amount_pence) }));
     return res.status(cardError ? 422 : 200).render('resident-checkout', {
-        activePage: 'bookings',
+        activePage: 'court-bookings',
         siteTitle: settings.site_title,
         hasLogo,
         facility: prepared.facility,
@@ -533,7 +533,7 @@ const residentCheckoutHandler = async (req, res) => {
         if (prepared.redirect) return res.redirect(prepared.redirect);
         return await renderCheckout(req, res, prepared);
     } catch (error) {
-        return res.redirect('/bookings?error=invalid-booking');
+        return res.redirect('/court-bookings?error=invalid-booking');
     }
 };
 
@@ -581,10 +581,10 @@ const residentPayHandler = async (req, res) => {
         }
         return res.redirect(`/bookings?created=${prepared.bookings.length}&paid=${encodeURIComponent(formatPounds(pricing.due))}&credit=${encodeURIComponent(formatPounds(pricing.credit))}`);
     } catch (error) {
-        if (error.code === '23P01') return res.redirect('/bookings?error=booking-conflict');
-        if (error.code === 'OPTION_MONTH_UNAVAILABLE') return res.redirect('/bookings?error=month-unavailable');
-        if (error.code === 'INSUFFICIENT_CREDIT') return res.redirect('/bookings?error=invalid-booking');
-        return res.redirect('/bookings?error=invalid-booking');
+        if (error.code === '23P01') return res.redirect('/court-bookings?error=booking-conflict');
+        if (error.code === 'OPTION_MONTH_UNAVAILABLE') return res.redirect('/court-bookings?error=month-unavailable');
+        if (error.code === 'INSUFFICIENT_CREDIT') return res.redirect('/court-bookings?error=invalid-booking');
+        return res.redirect('/court-bookings?error=invalid-booking');
     }
 };
 
@@ -1141,12 +1141,36 @@ router.post(['/credits-and-refunds/credit-requests', '/profile/credit-requests']
 
 router.get('/bookings', async (req, res) => {
     try {
-        const [settings, hasLogo, facilityRows, myBookings, courseBookings] = await Promise.all([
+        const [settings, hasLogo, myBookings, courseBookings] = await Promise.all([
+            Settings.getAll(),
+            Settings.getLogo().then(Boolean),
+            Bookings.findUpcomingForProfile(req.profile.guid),
+            CourseOrders.upcomingForProfile(req.profile.guid)
+        ]);
+        res.render('resident-bookings', {
+            activePage: 'bookings',
+            siteTitle: settings.site_title,
+            hasLogo,
+            myBookings,
+            courseBookings,
+            error: typeof req.query.error === 'string' ? req.query.error : undefined,
+            created: Number.parseInt(req.query.created, 10) || 0,
+            paid: /^£\d+\.\d{2}$/.test(req.query.paid || '') ? req.query.paid : undefined,
+            creditUsed: /^£\d+\.\d{2}$/.test(req.query.credit || '') ? req.query.credit : undefined
+        });
+    } catch (error) {
+        console.error('Unable to load customer bookings:', error);
+        res.sendStatus(500);
+    }
+});
+
+router.get('/court-bookings', async (req, res) => {
+    try {
+        const [settings, hasLogo, facilityRows, myBookings] = await Promise.all([
             Settings.getAll(),
             Settings.getLogo().then(Boolean),
             Bookings.findInAppFacilities(),
-            Bookings.findUpcomingForProfile(req.profile.guid),
-            CourseOrders.upcomingForProfile(req.profile.guid)
+            Bookings.findUpcomingForProfile(req.profile.guid)
         ]);
         const facilities = (await Promise.all(facilityRows.map(async facility => ({
             guid: facility.guid,
@@ -1157,13 +1181,12 @@ router.get('/bookings', async (req, res) => {
             postcode: facility.postcode,
             options: await Bookings.findOptions(facility.guid)
         })))).filter(facility => facility.options.length);
-        res.render('resident-bookings', {
-            activePage: 'bookings',
+        res.render('resident-court-bookings', {
+            activePage: 'court-bookings',
             siteTitle: settings.site_title,
             hasLogo,
             facilities,
             myBookings,
-            courseBookings,
             selectedFacilityGuid: facilities.some(facility => facility.guid === req.query.facility)
                 ? req.query.facility : facilities[0]?.guid,
             maxDate: latestResidentBookingStart().toISOString(),
@@ -1174,7 +1197,7 @@ router.get('/bookings', async (req, res) => {
             creditBalance: req.profile.credit_pence
         });
     } catch (error) {
-        console.error('Unable to load customer bookings:', error);
+        console.error('Unable to load court bookings:', error);
         res.sendStatus(500);
     }
 });

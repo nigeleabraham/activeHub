@@ -116,6 +116,8 @@ test('citizen course card displays inherited details once, FAQs first and separa
     assert.ok(html.indexOf('</details>', html.indexOf('data-course-description')) < html.indexOf('data-course-run'));
     assert.match(html, /<li><u>Item<\/u><\/li>/);
     assert.equal((html.match(/>Shared course<\/h2>/g) || []).length, 1);
+    assert.match(html, /<h1 class="mb-2">Course bookings<\/h1>/);
+    assert.match(html, /href="\/court-bookings">Looking to book a court or space/);
     assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('data-course-run'));
     assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<section class="course-card'));
     assert.match(html, /<h4 class="h5">Friday, 18:00–19:00<\/h4>/);

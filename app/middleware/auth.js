@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const Profiles = require('./../models/Profiles');
 const Roles = require('./../models/Roles');
 const { PERMISSION_KEYS, adminPermissions } = require('../permissions');
@@ -64,7 +64,8 @@ function clearSession(res) {
 // The selected role is signed against the profile and rechecked against current assignments on every request.
 function setViewAs(res, profileGuid, roleName) {
     const encoded = Buffer.from(roleName).toString('base64url');
-    res.append('Set-Cookie', `${VIEW_AS_COOKIE}=${encoded}.${sign(`view-as:${profileGuid}:${roleName}`)}; ${cookieAttributes()}`);
+    const signature = sign(`view-as:${profileGuid}:${roleName}`);
+    res.append('Set-Cookie', `${VIEW_AS_COOKIE}=${encoded}.${signature}; ${cookieAttributes()}`);
 }
 
 function clearViewAs(res) {

@@ -45,12 +45,13 @@
     <header class="page-head">
         <div class="container">
             <%- include('partials/basket-button') %>
-            <p class="mb-2"><a href="<%= courseCheckout ? '/basket' : '/bookings' %>">&larr; Back to <%= courseCheckout ? 'basket' : 'bookings' %></a></p>
+            <p class="mb-2"><a href="<%= courseCheckout ? '/basket' : '/court-bookings' %>">&larr; Back to <%= courseCheckout ? 'basket' : 'court bookings' %></a></p>
             <h1 class="mb-2">Payment</h1>
             <p class="lead mb-0"><%= courseCheckout ? 'Review your course places and pay to confirm them.' : 'Review your booking and pay to confirm it.' %></p>
         </div>
     </header>
 
+    <%- include('partials/customer-navigation') %>
     <main class="container pb-5">
         <div class="row">
             <div class="col-lg-6">

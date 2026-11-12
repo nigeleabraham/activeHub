@@ -4,11 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bookings | <%= siteTitle %></title>
+    <title>My bookings | <%= siteTitle %></title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
-    <%- include('partials/booking-flow-styles') %>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
     <style>
         body { font-family: "Inter", Arial, sans-serif; color: #0b0c0c; background: #f2f5f9; }
@@ -19,25 +18,9 @@
         .page-head h1 { font-size: 2.25rem; font-weight: 700; }
         .page-head a { color: #fff; }
         .panel { background: #fff; border: 1px solid #b1b4b6; border-bottom: 0.4rem solid #113255; padding: 1.5rem; margin-bottom: 2rem; }
-        [data-court-bookings] { margin-top: -1.5rem; }
         .booking-item { border-left: 0.4rem solid #113255; background: #f8f9fa; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
         .form-control:focus, .btn:focus, a:focus { outline: 3px solid transparent; box-shadow: 0 0 0 3px #ffde02, 0 0 0 6px #0b0c0c; }
         .text-muted { color: #505a5f !important; }
-        .court-space-picker { flex: 1 1 20rem; min-width: 0; }
-        .facility-picker label, .court-space-picker label { display: block; font-size: 1.25rem; font-weight: 700; }
-        .facility-picker select, .court-space-picker select { font-weight: 600; border: 2px solid #113255; }
-        .booking-calendar-slot { margin-top: 0 !important; margin-bottom: 0 !important; }
-        .booking-calendar-slot + .booking-calendar-slot { border-top-width: 0; }
-        .booking-form { padding: 1rem; }
-        .booking-form > h2, .booking-form > p, .booking-form .facility-picker,
-        .booking-form [data-facility-panel] > p { margin-bottom: 0.5rem !important; }
-        .booking-form label { margin-bottom: 0.25rem; }
-        .booking-form .booking-calendar { padding: 0.75rem !important; }
-        .booking-form .booking-calendar-header { margin-bottom: 0.5rem !important; }
-        .booking-form .booking-calendar-day > h3 { margin-bottom: 0.5rem !important; }
-        .booking-form [data-calendar-slots], .booking-form [data-pending-list] { margin-bottom: 0.5rem !important; }
-        .booking-form [data-pending-list] .list-group-item { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
-        .booking-form button { min-height: 48px; min-width: 48px; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -55,12 +38,14 @@
         <div class="container">
             <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
-            <h1 class="mb-2">Bookings</h1>
-            <p class="lead mb-0">See your upcoming bookings and book a court or space.</p>
+            <h1 class="mb-2">My bookings</h1>
+            <p class="lead mb-0">See your upcoming court and course bookings.</p>
         </div>
     </header>
 
+    <%- include('partials/customer-navigation') %>
     <main class="container pb-5">
+        <p class="mt-4"><a href="/court-bookings">Book a court or space</a> <span class="mx-2">|</span> <a href="/courses">Browse course bookings</a></p>
         <%- include('partials/booking-messages') %>
 
         <details class="panel" data-court-bookings>
@@ -111,64 +96,6 @@
             <% } %>
         </details>
 
-        <section class="panel booking-form" aria-labelledby="make-booking">
-            <h2 id="make-booking" class="h4 mb-3">Make a booking</h2>
-            <% if (creditBalance > 0) { %>
-                <p class="font-weight-bold">You have £<%= (creditBalance / 100).toFixed(2) %> of booking credit. It is used automatically at checkout.</p>
-            <% } %>
-            <% if (facilities.length) { %>
-                <p class="text-muted">Bookings are for you only and you can book up to one month in advance. Upcoming booking limits apply only to the Resident role. Pick several slots to book them together.</p>
-                <div class="form-group facility-picker">
-                    <label for="facility-picker" class="font-weight-bold">Facility</label>
-                    <select id="facility-picker" class="form-control form-control-lg">
-                        <% facilities.forEach(facility => { %>
-                            <option value="<%= facility.guid %>" <%= facility.guid === selectedFacilityGuid ? 'selected' : '' %>><%= facility.name %></option>
-                        <% }) %>
-                    </select>
-                </div>
-                <% facilities.forEach(facility => { %>
-                    <div data-facility-panel="<%= facility.guid %>" <%= facility.guid !== selectedFacilityGuid ? 'hidden' : '' %>>
-                        <p class="text-muted small"><%= facility.address %>, <%= facility.postcode %></p>
-                        <% if (facility.limit !== null) { %>
-                            <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> of <%= facility.limit %> upcoming bookings at this facility<%= facility.used >= facility.limit ? '. You have reached the limit.' : '.' %></p>
-                        <% } else { %>
-                            <p class="font-weight-bold" data-limit-note>You have <%= facility.used %> upcoming bookings at this facility. Your role has no upcoming booking limit.</p>
-                        <% } %>
-                        <div class="booking-calendar border rounded p-3" data-booking-calendar data-facility-guid="<%= facility.guid %>" data-availability-url="/bookings/availability/" data-max-date="<%= maxDate %>" <% if (facility.limit !== null) { %>data-max-selectable="<%= Math.max(0, facility.limit - facility.used) %>"<% } %>>
-                            <div class="booking-calendar-header d-flex flex-wrap align-items-end justify-content-between mb-3">
-                                <div class="form-group court-space-picker mb-2 mr-3">
-                                    <label for="calendar-option-<%= facility.guid %>">Court or space</label>
-                                    <select class="form-control form-control-lg" id="calendar-option-<%= facility.guid %>" data-calendar-option>
-                                        <% facility.options.forEach(option => { %>
-                                            <option value="<%= option.guid %>"><%= option.name %> · <%= option.sport_name %></option>
-                                        <% }); %>
-                                    </select>
-                                </div>
-                                <div class="booking-calendar-day-nav mb-2">
-                                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-previous aria-label="Previous day">&lt;</button>
-                                    <strong class="booking-calendar-day-nav__date" data-calendar-date aria-live="polite" aria-atomic="true"></strong>
-                                    <button class="btn btn-outline-secondary booking-calendar-day-nav__button" type="button" data-calendar-day-next aria-label="Next day">&gt;</button>
-                                </div>
-                            </div>
-                            <p class="small text-muted mb-2">Times use your local timezone. Each slot is one hour.</p>
-                            <fieldset class="booking-calendar-slots semantic-control-group mb-3" data-calendar-slots aria-label="Booking times"></fieldset>
-                            <p class="small mb-2" data-calendar-selection aria-live="polite">Select available time slots to add them to your list.</p>
-                            <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
-                            <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
-                            <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
-                            <form method="POST" action="/bookings/checkout" data-booking-form data-native-submit>
-                                <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
-                                <input type="hidden" name="slots" data-selected-slots>
-                                <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Continue to payment</button>
-                                <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
-                            </form>
-                        </div>
-                    </div>
-                <% }) %>
-            <% } else { %>
-                <p class="text-muted mb-0">No facilities are open for online booking yet.</p>
-            <% } %>
-        </section>
     </main>
 
     <%- include('partials/booking-flow-script') %>
@@ -177,13 +104,6 @@
             document.querySelectorAll('[data-local-booking-end]').forEach(function (time) {
                 var instant = new Date(time.dateTime);
                 if (Number.isFinite(instant.getTime())) time.textContent = formatCalendarDateTime(instant);
-            });
-            var picker = document.getElementById('facility-picker');
-            if (!picker) return;
-            picker.addEventListener('change', function () {
-                document.querySelectorAll('[data-facility-panel]').forEach(function (panel) {
-                    panel.hidden = panel.dataset.facilityPanel !== picker.value;
-                });
             });
         })();
     </script>

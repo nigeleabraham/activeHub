@@ -47,46 +47,67 @@
         </div>
     </header>
 
+    <%- include('partials/customer-navigation') %>
     <main class="container brand-tiles pb-5">
-        <h2 class="sr-only">What's coming to <%= siteTitle %></h2>
-        <div class="row">
-            <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
+        <section class="mb-4" aria-labelledby="get-active-heading">
+            <h2 class="h3 mb-4" id="get-active-heading">Get Active</h2>
+            <div class="row">
+            <div class="col-md-6 col-lg-4 mb-4">
                 <a class="brand-tile text-decoration-none" href="/facilities"><div>
                     <div class="icon" aria-hidden="true">🏟️</div>
                     <h3 class="h5 mt-2">Facilities</h3>
                     <p class="text-muted mb-0">Discover the venues near you and when they are open.</p>
                 </div></a>
             </div>
-            <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
-                <a class="brand-tile text-decoration-none" href="/bookings"><div>
+            <div class="col-md-6 col-lg-4 mb-4">
+                <a class="brand-tile text-decoration-none" href="/court-bookings"><div>
                     <div class="icon" aria-hidden="true">📅</div>
-                    <h3 class="h5 mt-2">Bookings</h3>
-                    <p class="text-muted mb-0">Book a court or space and see your upcoming bookings.</p>
+                    <h3 class="h5 mt-2">Book a court or space</h3>
+                    <p class="text-muted mb-0">Choose an available court or space and book a time.</p>
                 </div></a>
             </div>
-            <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
-                <a class="brand-tile text-decoration-none" href="/credits-and-refunds"><div>
-                    <div class="icon" aria-hidden="true">💷</div>
-                    <h3 class="h5 mt-2">Credits and refunds</h3>
-                    <p class="text-muted mb-0">View booking credit, request bank refunds and review recent past bookings.</p>
+            <div class="col-md-6 col-lg-4 mb-4">
+                <a class="brand-tile text-decoration-none" href="/courses"><div>
+                    <div class="icon" aria-hidden="true">🥇</div>
+                    <h3 class="h5 mt-2">Book a course</h3>
+                    <p class="text-muted mb-0">Find a class or coaching programme and book a place.</p>
                 </div></a>
             </div>
-            <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
+            </div>
+        </section>
+
+        <section class="mb-4" aria-labelledby="my-account-heading">
+            <h2 class="h3 mb-4" id="my-account-heading">My Account</h2>
+            <div class="row">
+            <div class="col-md-6 col-lg-4 mb-4">
                 <a class="brand-tile text-decoration-none" href="/profile"><div>
                     <div class="icon" aria-hidden="true">👤</div>
                     <h3 class="h5 mt-2">My profile</h3>
                     <p class="text-muted mb-0">Update your name and email address.</p>
                 </div></a>
             </div>
-            <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
-                <a class="brand-tile text-decoration-none" href="/courses"><div>
-                    <div class="icon" aria-hidden="true">🎓</div>
-                    <h3 class="h5 mt-2">Courses</h3>
-                    <p class="text-muted mb-0">Find a class or coaching programme that suits you.</p>
+            <div class="col-md-6 col-lg-4 mb-4">
+                <a class="brand-tile text-decoration-none" href="/credits-and-refunds"><div>
+                    <div class="icon" aria-hidden="true">💷</div>
+                    <h3 class="h5 mt-2">Credits and refunds</h3>
+                    <p class="text-muted mb-0">View booking credit, request bank refunds and review recent past bookings.</p>
                 </div></a>
             </div>
-            <% if (locals.canAccessAdmin ? locals.canAccessAdmin('/') : isAdmin || (currentProfile?.permissions || []).length > 0) { %>
-                <div class="<%= isAdmin ? 'col-md-6 col-lg-3' : 'col-md-4' %> mb-4">
+            <div class="col-md-6 col-lg-4 mb-4">
+                <a class="brand-tile text-decoration-none" href="/bookings"><div>
+                    <div class="icon" aria-hidden="true">🧾</div>
+                    <h3 class="h5 mt-2">My bookings</h3>
+                    <p class="text-muted mb-0">See your upcoming court and course bookings.</p>
+                </div></a>
+            </div>
+            </div>
+        </section>
+
+        <% if (locals.canAccessAdmin ? locals.canAccessAdmin('/') : isAdmin || (currentProfile?.permissions || []).length > 0) { %>
+            <section aria-labelledby="administration-heading">
+                <h2 class="h3 mb-4" id="administration-heading">Administration</h2>
+                <div class="row">
+                <div class="col-md-6 col-lg-4 mb-4">
                     <a class="brand-tile text-decoration-none" href="/admin">
                         <div>
                             <div class="icon" aria-hidden="true">⚙️</div>
@@ -95,9 +116,9 @@
                         </div>
                     </a>
                 </div>
-            <% } %>
-        </div>
-        <p class="text-center text-muted mt-3 mb-0">More is on the way. Check back soon.</p>
+                </div>
+            </section>
+        <% } %>
     </main>
 </body>
 

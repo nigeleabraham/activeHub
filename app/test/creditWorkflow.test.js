@@ -64,11 +64,11 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
     for (const role of ['Resident', 'Administrator', 'Coach', 'Receptionist']) {
         const currentProfile = { ...profile, role, credit_pence: 1000 };
         let locals;
-        await handler('/bookings', 'get')({ profile: currentProfile, query: {} }, {
+        await handler('/court-bookings', 'get')({ profile: currentProfile, query: {} }, {
             render(view, values) { locals = values; }
         });
         assert.equal(locals.facilities[0].limit, role === 'Resident' ? 2 : null);
-        const html = await ejs.renderFile(path.join(__dirname, '../views/resident-bookings.ejs'), {
+        const html = await ejs.renderFile(path.join(__dirname, '../views/resident-court-bookings.ejs'), {
             ...locals, currentProfile, isAdmin: role === 'Administrator', canSwitchRole: false
         });
         assert.equal(html.includes('data-max-selectable="0"'), role === 'Resident');
@@ -96,7 +96,7 @@ test('upcoming booking limits apply only to the Resident role in the calendar, c
             await handler(url, 'post')({ profile: currentProfile, body }, res);
             assert.equal(count.mock.callCount() - counted, role === 'Resident' ? 1 : 0);
             if (role === 'Resident') {
-                assert.equal(location, '/bookings?error=booking-limit');
+                assert.equal(location, '/court-bookings?error=booking-limit');
                 assert.equal(create.mock.callCount(), created);
                 existing = 1;
                 await handler(url, 'post')({ profile: currentProfile, body }, res);

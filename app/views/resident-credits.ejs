@@ -46,6 +46,8 @@
         </div>
     </header>
 
+    <%- include('partials/customer-navigation') %>
+
     <main class="container pb-5">
         <% const paymentText = booking => booking.payment_status === 'paid'
             ? 'Paid £' + ((booking.amount_pence - booking.credit_applied_pence) / 100).toFixed(2) + (booking.credit_applied_pence ? ' + £' + (booking.credit_applied_pence / 100).toFixed(2) + ' credit' : '')

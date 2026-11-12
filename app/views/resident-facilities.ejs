@@ -52,14 +52,15 @@
         </div>
     </header>
 
+    <%- include('partials/customer-navigation') %>
     <main class="container pb-5">
         <form class="filter-panel" id="filters" role="search" aria-label="Find a facility" onsubmit="return false">
             <div class="form-row">
-                <div class="form-group col-md-5">
+                <div class="form-group col-md-6">
                     <label for="search" class="font-weight-bold">Search by name, area or postcode</label>
                     <input id="search" class="form-control" type="search" autocomplete="off" placeholder="e.g. Kentish Town or NW5">
                 </div>
-                <div class="form-group col-md-4">
+                <div class="form-group col-md-6">
                     <label for="sport" class="font-weight-bold">Sport or activity</label>
                     <select id="sport" class="form-control">
                         <option value="">Any sport</option>
@@ -67,13 +68,6 @@
                             <option value="<%= sport.guid %>"><%= sport.name %></option>
                         <% }) %>
                     </select>
-                </div>
-                <div class="form-group col-md-3">
-                    <label class="font-weight-bold d-block" for="open-today">Opening</label>
-                    <div class="custom-control custom-checkbox mt-2">
-                        <input type="checkbox" class="custom-control-input" id="open-today">
-                        <label class="custom-control-label" for="open-today">Open today</label>
-                    </div>
                 </div>
             </div>
             <div class="d-flex flex-wrap align-items-center">
@@ -92,7 +86,6 @@
                     data-name="<%= facility.name.toLowerCase() %>"
                     data-text="<%= [facility.name, facility.address, facility.postcode].join(' ').toLowerCase() %>"
                     data-sports="<%= facility.sports.map(sport => sport.guid).join(' ') %>"
-                    data-open="<%= facility.today && !facility.today.is_closed ? '1' : '' %>"
                     data-lat="<%= facility.latitude %>" data-lng="<%= facility.longitude %>">
                     <article class="facility-card">
                         <h2><%= facility.name %></h2>
@@ -144,7 +137,7 @@
                         <div class="mt-3">
                             <a class="btn btn-outline-brand btn-sm mr-2" href="<%= facility.google_maps_url %>" target="_blank" rel="noopener noreferrer">Directions<span class="sr-only"> to <%= facility.name %> (opens in a new tab)</span></a>
                             <% if (facility.booking_mode === 'in_app') { %>
-                                <a class="btn btn-brand btn-sm" href="/bookings?facility=<%= encodeURIComponent(facility.guid) %>#make-booking">Book online<span class="sr-only"> at <%= facility.name %></span></a>
+                                <a class="btn btn-brand btn-sm" href="/court-bookings?facility=<%= encodeURIComponent(facility.guid) %>#make-booking">Book online<span class="sr-only"> at <%= facility.name %></span></a>
                             <% } else if (facility.external_booking_url) { %>
                                 <a class="btn btn-brand btn-sm" href="<%= facility.external_booking_url %>" target="_blank" rel="noopener noreferrer">Book online<span class="sr-only"> at <%= facility.name %> (opens in a new tab)</span></a>
                             <% } %>
@@ -160,7 +153,6 @@
         (function () {
             var search = document.getElementById('search');
             var sport = document.getElementById('sport');
-            var openToday = document.getElementById('open-today');
             var status = document.getElementById('location-status');
             var results = document.getElementById('results');
             var cards = Array.prototype.slice.call(results.querySelectorAll('.facility'));
@@ -180,8 +172,7 @@
                 cards.forEach(function (card) {
                     var sports = card.dataset.sports.split(' ');
                     var visible = terms.every(function (term) { return card.dataset.text.indexOf(term) !== -1; }) &&
-                        (!sportGuid || sports.indexOf(sportGuid) !== -1) &&
-                        (!openToday.checked || card.dataset.open === '1');
+                        (!sportGuid || sports.indexOf(sportGuid) !== -1);
                     card.hidden = !visible;
                     if (visible) shown++;
                     card.querySelectorAll('.sport-chip').forEach(function (chip) {
@@ -232,14 +223,13 @@
             document.getElementById('clear').addEventListener('click', function () {
                 search.value = '';
                 sport.value = '';
-                openToday.checked = false;
                 origin = null;
                 status.textContent = '';
                 sortCards();
                 apply();
             });
 
-            [search, sport, openToday].forEach(function (control) {
+            [search, sport].forEach(function (control) {
                 control.addEventListener('input', apply);
                 control.addEventListener('change', apply);
             });

@@ -7,6 +7,7 @@ const { Pool } = require('pg');
 const { TABLES, SEEDED_KEY } = require('./seedTables');
 
 const DATA_FILE = path.join(__dirname, '..', 'seed', 'data.json');
+const LOGO_FILE = path.join(__dirname, '..', 'seed', 'site-logo.svg');
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 const MODELS = ['Facilities', 'OpeningHours', 'Courses', 'Sports', 'Settings', 'Roles', 'Profiles', 'AuditLog', 'Bookings', 'CourseOrders'];
@@ -80,6 +81,8 @@ async function main() {
         throw new Error(`${DATA_FILE} not found. Run "npm run seed:export" against a populated database first.`);
     }
     const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const logo = fs.readFileSync(LOGO_FILE);
+    data.site_logo = data.site_logo.map(row => ({ ...row, data: `\\x${logo.toString('hex')}` }));
     const force = process.argv.includes('--force');
 
     // Creating the tables is the models' job; run them in the same order as server.js.

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Courses | <%= siteTitle %></title>
+    <title>Course bookings | <%= siteTitle %></title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
@@ -34,11 +34,13 @@
         <div class="container">
             <%- include('partials/basket-button') %>
             <p class="mb-2"><a href="/">&larr; Back to home</a></p>
-            <h1 class="mb-2">Courses</h1>
-            <p class="lead mb-0">Find a class or coaching programme that suits you.</p>
+            <h1 class="mb-2">Course bookings</h1>
+            <p class="lead mb-0">Find a class or coaching programme and book a place.</p>
         </div>
     </header>
+    <%- include('partials/customer-navigation') %>
     <main class="container py-4">
+        <p><a href="/court-bookings">Looking to book a court or space?</a> <span class="mx-2">|</span> <a href="/bookings">View all my bookings</a></p>
         <% if (!courses.length) { %>
             <p>No courses are available at the moment. Please check back soon.</p>
         <% } %>

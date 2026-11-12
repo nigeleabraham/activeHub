@@ -47,6 +47,7 @@
             <p class="lead mb-0">Update your name and contact details. For booking credit and requests, visit <a href="/credits-and-refunds">Credits and refunds</a>.</p>
         </div>
     </header>
+    <%- include('partials/customer-navigation') %>
     <main class="container py-4">
             <% if (saved) { %><output class="alert alert-success" aria-live="polite">Your details have been saved.</output><% } %>
             <% if (error) { %><div class="alert alert-danger" role="alert"><%= error === 'duplicate-email' ? 'That email address is already used by another profile.' : 'Enter a name and valid email address. Names must be at most 120 characters. Optional telephone numbers must be at most 40 characters and contain only digits, spaces, +, -, parentheses or full stops. Address lines must be at most 160 characters, town/city and county 120, and postcode 20. Answer both health questions. If you answer Yes to a medical concern, select at least one condition and specify details (up to 1,000 characters) if you select Other.' %></div><% } %>

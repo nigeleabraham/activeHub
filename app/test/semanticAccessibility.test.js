@@ -20,7 +20,7 @@ test('feedback uses native outputs without redundant status roles', () => {
 });
 
 test('control groups, cookie region and opening-hours rows use native semantics', () => {
-    for (const file of ['partials/booking-flow.ejs', 'resident-bookings.ejs']) {
+    for (const file of ['partials/booking-flow.ejs', 'partials/court-booking-form.ejs']) {
         assert.match(read(file), /<fieldset[^>]*data-calendar-slots[^>]*aria-label="Booking times"><\/fieldset>/);
         assert.doesNotMatch(read(file), /role="group"/);
     }
