@@ -1,0 +1,12 @@
+<% if (item.kind === 'court') { %>
+    <strong><%= item.option_name %></strong>
+    <p class="mb-1"><%= item.facility_name %></p>
+    <p class="mb-1"><time datetime="<%= new Date(item.starts_at).toISOString() %>"><%= new Date(item.starts_at).toLocaleString('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }) %></time>
+        to <time datetime="<%= new Date(item.ends_at).toISOString() %>"><%= new Date(item.ends_at).toLocaleString('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }) %></time> (UK time)</p>
+<% } else { %>
+    <strong><%= item.course_name %></strong>
+    <p class="mb-1"><%= item.run_name %> &mdash; <%= item.facility_name %></p>
+    <p class="mb-1">Attendee: <strong><%= item.attendee_name %></strong></p>
+    <p class="mb-1"><%= item.remaining_sessions ?? item.sessions.length %> sessions</p>
+<% } %>
+<p class="mb-0"><strong>£<%= (item.amount_pence / 100).toFixed(2) %></strong></p>

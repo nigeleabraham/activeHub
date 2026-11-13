@@ -1106,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('form[method="POST"]').forEach(form => {
         if (entries.some(entry => entry.form === form)) return;
         if ((!new URL(form.action).pathname.startsWith('/admin/') && !form.hasAttribute('data-profile-editor')) ||
-            form.matches('[data-booking-form], [data-cancel-booking]') ||
+            form.matches('[data-booking-form], [data-cancel-booking], [data-course-removal], [action="/admin/credit-requests/decide"]') ||
             !form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea, [data-description-sections]')) return;
         if (!form.id) {
             const identity = Array.from(form.querySelectorAll('input[type="hidden"]'))

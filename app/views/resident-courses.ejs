@@ -15,10 +15,18 @@
         .page-head { background: #113255; color: #fff; padding: 2.5rem 0; }
         .page-head a { color: #fff; }
         .course-card { background: #fff; border: 1px solid #b1b4b6; border-left: 0.4rem solid #113255; padding: 1.5rem; height: 100%; }
+        .sport-panel { background: #fff; border: 1px solid #b1b4b6; border-top: 0.3rem solid #113255; }
+        .sport-panel > summary { padding: 1.25rem; cursor: pointer; color: #113255; overflow-wrap: anywhere; }
+        .sport-panel > summary:hover { background: #eaf0f6; }
+        .sport-panel[open] > summary { border-bottom: 1px solid #b1b4b6; }
+        .sport-courses { padding: 1rem; }
+        .sport-courses > .course-card:last-child { margin-bottom: 0 !important; }
+        .sport-faqs { padding: 1rem; background: #fff; border: 1px solid #b1b4b6; border-left: 0.25rem solid #003e90; }
+        .sport-faqs > summary { cursor: pointer; }
+        @media (min-width: 768px) { .sport-courses { padding: 1.5rem; } }
         .text-muted { color: #505a5f !important; }
-        [data-course-description] > summary { font-size: 1.25rem; font-weight: 500; line-height: 1.2; }
-        [data-course-description] .readable-content { max-width: none; }
-        [data-sport-faqs] dd { max-width: none; }
+        [data-course-description] > summary,
+        [data-course-runs] > summary { font-size: 1rem; font-weight: 500; line-height: 1.2; }
     </style>
     <%- include('partials/resident-banner-styles') %>
 </head>
@@ -44,34 +52,51 @@
         <% if (!courses.length) { %>
             <p>No courses are available at the moment. Please check back soon.</p>
         <% } %>
-        <% courseGroups.forEach(group => { %>
-            <% if (group.courses.length && group.faqs.length) { %>
-                <details class="course-card mb-4" data-sport-faqs>
-                    <summary class="h5 mb-0"><%= group.name %> FAQs</summary>
-                    <div class="mt-3">
-                        <%- include('partials/sport-faq-content', { faqs: group.faqs }) %>
-                    </div>
-                </details>
-            <% } %>
-        <% }); %>
-        <% courses.forEach(course => { %>
-        <section class="course-card mb-4" aria-labelledby="course-heading-<%= course.guid %>">
-            <h2 class="h3 mb-3" id="course-heading-<%= course.guid %>"><%= course.name %></h2>
-            <%- include('partials/course-description', { course, collapsible: true }) %>
-            <% if ((course.runs || []).length) { %>
-            <details class="mb-3" data-course-runs>
-                <summary class="h5" id="choose-class-<%= course.guid %>">Choose a class (<%= course.runs.length %>)</summary>
-                <div class="row mt-3">
-                <% course.runs.forEach(run => { %>
-                    <div class="col-12 col-lg-6 col-xl-4 mb-3">
-                        <article class="border rounded bg-light p-3 h-100" data-course-run>
-                            <%- include('partials/course-run-details', { run, returnTo: '/courses#course-heading-' + course.guid }) %>
-                        </article>
-                    </div>
-                <% }); %>
+        <% const linkedCourses = new Set();
+        courseGroups.filter(group => group.courses.length).forEach((group, groupIndex) => {
+            const groupId = 'sport-group-' + (group.guid || groupIndex);
+        %>
+        <section class="mb-4" data-course-sport-group="<%= group.guid || groupIndex %>" aria-labelledby="<%= groupId %>">
+            <details class="sport-panel" data-course-sport-disclosure>
+                <summary>
+                    <h2 class="h4 d-inline mb-0" id="<%= groupId %>"><%= group.name %></h2>
+                    <span class="badge badge-light ml-2"><%= group.courses.length %> <%= group.courses.length === 1 ? 'course' : 'courses' %></span>
+                </summary>
+                <div class="sport-courses">
+                    <% if (group.faqs.length) { %>
+                    <details class="sport-faqs mb-4" data-sport-faqs>
+                        <summary class="h5 mb-0"><%= group.name %> FAQs</summary>
+                        <div class="mt-3">
+                            <%- include('partials/sport-faq-content', { faqs: group.faqs }) %>
+                        </div>
+                    </details>
+                    <% } %>
+                    <% group.courses.forEach(course => {
+                        const courseHeadingId = 'course-heading-' + course.guid + (linkedCourses.has(course.guid) ? '-' + groupId : '');
+                        linkedCourses.add(course.guid);
+                    %>
+                    <section class="course-card mb-4" aria-labelledby="<%= courseHeadingId %>">
+                        <h3 class="h5 mb-3" id="<%= courseHeadingId %>"><%= course.name %></h3>
+                        <%- include('partials/course-description', { course, collapsible: true }) %>
+                        <% if ((course.runs || []).length) { %>
+                        <details class="mb-3" data-course-runs>
+                            <summary class="h6">Choose a class (<%= course.runs.length %>)</summary>
+                            <div class="row mt-3">
+                            <% course.runs.forEach(run => { %>
+                                <div class="col-12 col-lg-6 col-xl-4 mb-3">
+                                    <article class="border rounded bg-light p-3 h-100" data-course-run>
+                                        <%- include('partials/course-run-details', { run, returnTo: '/courses#' + courseHeadingId,
+                                            attendeeId: 'attendee-' + run.guid + '-' + groupId }) %>
+                                    </article>
+                                </div>
+                            <% }); %>
+                            </div>
+                        </details>
+                        <% } %>
+                    </section>
+                    <% }); %>
                 </div>
             </details>
-            <% } %>
         </section>
         <% }); %>
     </main>
@@ -81,9 +106,11 @@
             function openLinkedCourse() {
                 if (!location.hash.startsWith('#course-heading-')) return;
                 const heading = document.getElementById(location.hash.slice(1));
-                const runs = heading?.closest('.course-card')?.querySelector('details[data-course-runs]');
-                if (!runs) return;
-                runs.open = true;
+                if (!heading) return;
+                const sport = heading.closest('[data-course-sport-disclosure]');
+                if (sport) sport.open = true;
+                const runs = heading.closest('.course-card')?.querySelector('details[data-course-runs]');
+                if (runs) runs.open = true;
                 requestAnimationFrame(() => heading.scrollIntoView({ block: 'start' }));
             }
             window.addEventListener('hashchange', openLinkedCourse);

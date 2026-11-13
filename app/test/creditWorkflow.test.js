@@ -402,7 +402,7 @@ test('administrator queue only allows marking pending refunds done and preserves
         requests: [{ ...baseRequest, status: 'pending' }],
         filters: { from: '2026-11-01', to: '2026-11-05' }, searched: true, page: 1,
         history: { total: 3, pageSize: 50, entries: [
-            { ...baseRequest, status: 'approved', refunded_pence: 600, decided_by_name: 'Admin', decided_at: '2026-11-05' },
+            { ...baseRequest, status: 'approved', refunded_pence: 600, decided_by_name: 'Admin <One>', decided_at: '2026-11-05' },
             { ...baseRequest, status: 'declined', decided_at: '2026-11-05' },
             { ...baseRequest, status: 'spent', decided_at: '2026-11-05' }
         ] }
@@ -414,7 +414,12 @@ test('administrator queue only allows marking pending refunds done and preserves
     assert.equal((html.match(/action="\/admin\/credit-refunds\/decide"/g) || []).length, 1);
     assert.doesNotMatch(html, /Requested amount/);
     assert.ok(historyHtml.includes('Done £6.00'));
-    assert.match(historyHtml, /Requested amount/);
+    assert.doesNotMatch(historyHtml, /Requested amount|Remaining credit/);
+    assert.match(historyHtml, /<th>Actioned by<\/th>/);
+    assert.match(historyHtml, /<td>Admin &lt;One&gt;<\/td>/);
+    assert.match(historyHtml, /<td>Not recorded<\/td>/);
+    assert.match(html, /<th>Remaining credit<\/th>/);
+    assert.doesNotMatch(html, /<th>Actioned by<\/th>/);
     assert.match(html, />Mark as done<\/button>/);
     assert.doesNotMatch(html, /value="decline"|name="decline_comment"/);
     assert.match(historyHtml, /Declined/);
@@ -471,6 +476,46 @@ test('weather slot switch is validated, saved and audited', async t => {
     assert.equal(audit.mock.calls[1].arguments[1].details.enabled, true);
 });
 
+test('weather auto-approval slot deletion validates, audits and handles stale or failed deletes', async t => {
+    const admin = router.stack.find(layer => layer.handle.stack).handle;
+    const handler = admin.stack.find(layer => layer.route?.path === '/credit-requests/auto-slots/delete').route.stack[0].handle;
+    const starts_at = '2026-11-12T08:00:00.000Z';
+    const ends_at = '2026-11-12T09:00:00.000Z';
+    const remove = t.mock.method(Bookings, 'removeAutoApprovalSlot', async () => ({ starts_at, ends_at, approved_by_name: 'Admin' }));
+    const audit = t.mock.method(AuditLog, 'record', async () => {});
+    let status, location;
+    const res = { status(code) { status = code; return this; }, send() {}, sendStatus(code) { status = code; },
+        redirect(url) { location = url; } };
+    for (const body of [{}, { starts_at: [], ends_at }, { starts_at: 'invalid', ends_at },
+        { starts_at, ends_at: starts_at }]) {
+        await handler({ profile, body }, res);
+        assert.equal(status, 400);
+    }
+    assert.equal(remove.mock.callCount(), 0);
+    await handler({ profile, body: { starts_at, ends_at } }, res);
+    assert.deepEqual(remove.mock.calls[0].arguments, [starts_at, ends_at]);
+    assert.equal(location, '/admin/credit-requests?slot_deleted=1#auto-slots-heading');
+    assert.equal(audit.mock.calls[0].arguments[1].action, 'weather-slot.delete');
+    assert.deepEqual(audit.mock.calls[0].arguments[1].details, { starts_at, ends_at, approved_by_name: 'Admin' });
+    remove.mock.mockImplementation(async () => null);
+    await handler({ profile, body: { starts_at, ends_at } }, res);
+    assert.equal(status, 409);
+    assert.equal(audit.mock.callCount(), 1);
+    remove.mock.mockImplementation(async () => { throw new Error('Database unavailable'); });
+    await handler({ profile, body: { starts_at, ends_at } }, res);
+    assert.equal(status, 500);
+    assert.equal(audit.mock.callCount(), 1);
+    assert.equal(require('../middleware/auth').canAccessAdmin({ role: 'Resident' }, '/credit-requests/auto-slots/delete'), false);
+});
+
+test('weather slot deletion targets only the exact saved time window', async t => {
+    const query = t.mock.method(require('pg').Pool.prototype, 'query', async () => ({ rows: [{ approved_by_name: 'Admin' }] }));
+    assert.deepEqual(await Bookings.removeAutoApprovalSlot('2026-11-12T08:00:00Z', '2026-11-12T09:00:00Z'),
+        { approved_by_name: 'Admin' });
+    assert.match(query.mock.calls[0].arguments[0], /DELETE FROM credit_auto_approval_slots\s+WHERE starts_at = \$1 AND ends_at = \$2 RETURNING/);
+    assert.deepEqual(query.mock.calls[0].arguments[1], ['2026-11-12T08:00:00Z', '2026-11-12T09:00:00Z']);
+});
+
 test('weather slot controls and history render only as appropriate', async () => {
     const request = {
         guid: GUID, booking_ref: 'AH-WEATHER', facility_name: 'Hall', profile_name: 'Resident',
@@ -490,13 +535,31 @@ test('weather slot controls and history render only as appropriate', async () =>
         const view = path.join(__dirname, '../views/credit-requests.ejs');
         const html = await ejs.renderFile(view, values);
         const historyHtml = await ejs.renderFile(view, { ...values, historyPage: true });
-        assert.equal((html.match(/name="approve_slot"/g) || []).length, enabled ? 1 : 0);
+        assert.equal((html.match(/name="approve_slot"/g) || []).length, enabled ? 2 : 0);
+        assert.doesNotMatch(html, /type="checkbox" name="approve_slot"/);
+        assert.equal((html.match(/id="weather-approval-dialog"/g) || []).length, enabled ? 1 : 0);
+        assert.equal((html.match(/data-weather-approval="/g) || []).length, enabled ? 1 : 0);
+        if (enabled) {
+            assert.match(html, /name="approve_slot" value="0">Approve this request only/);
+            assert.match(html, /name="approve_slot" value="1">Approve and auto-approve matching requests/);
+            assert.match(html, /weatherDialog.showModal\(\)/);
+        }
         assert.equal((html.match(/name="refundable"/g) || []).length, 2);
         assert.doesNotMatch(html, /type="checkbox" name="refundable"/);
         const approvalForm = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/g)
             .find(form => form.includes('<input type="hidden" name="decision" value="approve">'));
         assert.match(approvalForm, /name="refundable" value="1"[^>]*>Approve \(refundable\)<\/button>/);
-        assert.match(approvalForm, /name="refundable" value="0"[^>]*>Approve \(non-refundable\)<\/button>/);
+        assert.match(approvalForm, /name="refundable" value="0"[^>]*>Approve \(non refundable\)<\/button>/);
+        assert.equal((html.match(/class="credit-request-actions"/g) || []).length, 2);
+        assert.equal((html.match(/class="credit-request-approval-buttons"/g) || []).length, 2);
+        if (!enabled) assert.match(html, /name="decision" value="approve"[^>]*>Approve \(refundable\)<\/button>/);
+        assert.doesNotMatch(html, /Approve and add credit/);
+        assert.match(html, /credit-request-approval-buttons \{ display: flex;/);
+        assert.match(html, /class="btn btn-outline-primary btn-sm" type="button" data-decline-request=/);
+        assert.equal((html.match(/<dialog class="credit-decline-dialog"/g) || []).length, enabled ? 2 : 1);
+        assert.match(html, /name="decline_comment"[^>]*required autofocus/);
+        assert.match(html, /name="decision" value="decline">Confirm decline<\/button>/);
+        assert.match(html, /declineDialog.showModal\(\)/);
         assert.match(approvalForm, /Non-refundable approval makes the entire award non-refundable/);
         assert.match(approvalForm, /This overrides the eligibility of any refundable credit originally used/);
         assert.equal((html.match(/>Decline<\/button>/g) || []).length, 2);
@@ -509,9 +572,11 @@ test('weather slot controls and history render only as appropriate', async () =>
         assert.match(historyHtml, />Update refund eligibility<\/button>/);
         const slotsTable = html.match(/<section[^>]*aria-labelledby="auto-slots-heading"[\s\S]*?<\/section>/)[0];
         assert.deepEqual([...slotsTable.matchAll(/<th>(.*?)<\/th>/g)].map(match => match[1]), [
-            'Start', 'End', 'Approved by'
+            'Start', 'End', 'Approved by', 'Actions'
         ]);
-        assert.equal((slotsTable.match(/<td>/g) || []).length, 3);
+        assert.equal((slotsTable.match(/<td>/g) || []).length, 4);
+        assert.match(slotsTable, /action="\/admin\/credit-requests\/auto-slots\/delete"/);
+        assert.match(slotsTable, /Credit already issued will not be reversed/);
         assert.doesNotMatch(slotsTable, /Bank refund|Refundable|Non-refundable/);
         assert.equal(html.includes('saved slots are paused'), !enabled);
     }

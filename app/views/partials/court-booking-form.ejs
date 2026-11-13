@@ -43,10 +43,12 @@
                     <p class="text-danger small mb-2" data-calendar-error role="alert" aria-live="polite" hidden></p>
                     <h3 class="h6">Selected slots (<span data-pending-count>0</span>)</h3>
                     <ul class="list-group list-group-flush mb-3" data-pending-list></ul>
-                    <form method="POST" action="/bookings/checkout" data-booking-form data-native-submit>
+                    <p class="small text-muted">Slots are not reserved until payment is confirmed.</p>
+                    <form method="POST" action="/basket/courts" data-booking-form data-native-submit>
                         <input type="hidden" name="facility_guid" value="<%= facility.guid %>">
                         <input type="hidden" name="slots" data-selected-slots>
-                        <button class="btn btn-primary btn-sm" type="submit" data-booking-submit disabled>Continue to payment</button>
+                        <button class="btn btn-outline-primary btn-sm mr-2" type="submit" data-booking-submit disabled>Add to basket</button>
+                        <button class="btn btn-primary btn-sm" type="submit" name="checkout" value="1" data-booking-submit disabled>Continue to payment</button>
                         <p class="text-danger small mt-2 mb-0" data-booking-error role="alert" aria-live="polite" hidden></p>
                     </form>
                 </div>

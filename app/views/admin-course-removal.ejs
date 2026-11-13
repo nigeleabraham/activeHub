@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remove attendee | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <h1 class="h2">Remove attendee</h1>
+        <section class="bg-white border rounded p-4">
+            <h2 class="h5"><%= booking.attendee_name %></h2>
+            <p><%= booking.course_name %> &mdash; <%= booking.run_name %><br><%= booking.facility_name %></p>
+            <p>Reference: <%= booking.booking_ref %>. Place price paid: <%= money(booking.amount_pence) %>.</p>
+            <p>This removes the attendee from the whole class and all its session registers, freeing one place. Booking, payment and removal history will be kept. This cannot be undone here.</p>
+            <form method="POST" action="/admin/course-management/<%= booking.guid %>/remove" data-course-removal>
+                <input type="hidden" name="token" value="<%= token %>">
+                <fieldset class="form-group">
+                    <legend class="h5">Removal type</legend>
+                    <% (defaultPence > 0 ? [['none', 'No credit'], ['refundable', 'Refundable credit'], ['non-refundable', 'Non-refundable credit']] : [['none', 'No credit']]).forEach(([value, label]) => { %>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="mode" id="removal-<%= value %>"
+                                value="<%= value %>" required <%= mode === value || defaultPence <= 0 ? 'checked' : '' %>>
+                            <label class="form-check-label" for="removal-<%= value %>"><%= label %></label>
+                        </div>
+                    <% }); %>
+                </fieldset>
+                <% if (defaultPence <= 0) { %>
+                    <p>No credit is available because the remaining purchased sessions have no credit value. Only removal without credit is available.</p>
+                <% } %>
+                <% Object.entries(filters).forEach(([name, value]) => { %>
+                    <input type="hidden" name="<%= name %>" value="<%= value %>">
+                <% }); %>
+                <% if (defaultPence > 0) { %>
+                    <div class="form-group" id="credit-fields">
+                        <label for="credit-amount">Account credit amount (pounds)</label>
+                        <input class="form-control" id="credit-amount" name="amount" type="number" min="0.01"
+                            max="<%= (booking.amount_pence / 100).toFixed(2) %>" step="0.01"
+                            value="<%= (defaultPence / 100).toFixed(2) %>" aria-describedby="credit-help">
+                        <p class="small mt-2" id="credit-help">Defaults to <%= money(defaultPence) %>: the place price divided equally across purchased sessions, counting only sessions that have not started. You can change this up to the price paid.
+                            <span data-credit-help="refundable">
+                                Credit is split proportionally by the original payment: card-paid and refundable-credit funding is refundable; original non-refundable credit stays non-refundable.
+                            </span>
+                            <span data-credit-help="non-refundable">
+                                All credit issued will be non-refundable.
+                            </span>
+                            This issues account credit, not a bank refund. The configured credit expiry applies.
+                        </p>
+                    </div>
+                <% } %>
+                <p id="no-credit-help">With no credit selected, no account credit or bank refund will be issued.</p>
+                <a class="btn btn-outline-secondary" href="<%= returnUrl %>">Keep attendee</a>
+                <button class="btn btn-danger" type="submit">Remove attendee</button>
+            </form>
+        </section>
+    </main>
+    <script>
+        const form = document.querySelector('[data-course-removal]');
+        const amount = form.elements.namedItem('amount');
+        function updateRemovalType() {
+            const mode = form.querySelector('[name="mode"]:checked')?.value;
+            const credit = mode === 'refundable' || mode === 'non-refundable';
+            const creditFields = document.getElementById('credit-fields');
+            if (creditFields) creditFields.hidden = !credit;
+            if (amount) {
+                amount.disabled = !credit;
+                amount.required = credit;
+            }
+            document.getElementById('no-credit-help').hidden = mode !== 'none';
+            form.querySelectorAll('[data-credit-help]').forEach(help => {
+                help.hidden = help.dataset.creditHelp !== mode;
+            });
+        }
+        form.querySelectorAll('[name="mode"]').forEach(radio => radio.addEventListener('change', updateRemovalType));
+        updateRemovalType();
+    </script>
+</body>
+</html>

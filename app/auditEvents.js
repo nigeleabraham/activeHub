@@ -8,20 +8,25 @@ const currentActions = [
     ...['create', 'cancel', 'credit'].map(action => `booking.${action}`),
     ...['create', 'approve', 'decline', 'reopen'].map(action => `credit-request.${action}`),
     ...['request', 'approve', 'reopen'].map(action => `credit-refund.${action}`),
-    'credit.refundability', 'facility-sport.months',
+    'course-booking.cancel', 'credit.refundability', 'facility-sport.months', 'weather-slot.delete',
     ...['update', 'logo_update', 'logo_remove', 'credit_request_days', 'credit_slot_auto_approval',
-        'booking_search_days', 'credit_lifetime_days', 'refunds_enabled'].map(action => `settings.${action}`)
+        'booking_search_days', 'credit_lifetime_days', 'refunds_enabled',
+        'course_prevent_duplicate_class', 'course_prevent_multiple_classes'].map(action => `settings.${action}`)
 ];
 
 const descriptions = {
+    'course-booking.cancel': 'Course attendee removed',
     'auth.login': 'Signed in', 'auth.logout': 'Signed out', 'auth.view_as': 'Active role changed',
     'booking.credit': 'Booking credit issued', 'credit.refundability': 'Credit refund eligibility changed',
     'facility-sport.months': 'Sport booking months changed',
     'settings.update': 'Setting changed', 'settings.logo_update': 'Logo updated', 'settings.logo_remove': 'Logo removed',
     'settings.credit_request_days': 'Credit request period changed',
     'settings.credit_slot_auto_approval': 'Weather credit auto-approval changed',
+    'weather-slot.delete': 'Weather credit auto-approval slot deleted',
     'settings.booking_search_days': 'Booking search range changed',
-    'settings.credit_lifetime_days': 'Credit lifetime changed', 'settings.refunds_enabled': 'Refunds setting changed'
+    'settings.credit_lifetime_days': 'Credit lifetime changed', 'settings.refunds_enabled': 'Refunds setting changed',
+    'settings.course_prevent_duplicate_class': 'Repeat class booking rule changed',
+    'settings.course_prevent_multiple_classes': 'One class per course rule changed'
 };
 const verbs = {
     create: 'created', update: 'updated', delete: 'deleted', cancel: 'cancelled',

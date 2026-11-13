@@ -163,7 +163,7 @@ async function save(guid, { name, description, sport_guids, description_sport_gu
 async function findRuns({ availableOnly = false } = {}) {
     const { rows } = await pool.query(`
             SELECT r.*, f.name AS facility_name,
-                r.capacity - (SELECT count(*)::int FROM course_enrolments WHERE run_guid = r.guid) AS spaces_remaining,
+                r.capacity - (SELECT count(*)::int FROM course_enrolments WHERE run_guid = r.guid AND cancelled_at IS NULL) AS spaces_remaining,
                 (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid) AS total_sessions,
                 (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()) AS remaining_sessions,
                 COALESCE((SELECT json_agg(json_build_object(
@@ -200,7 +200,7 @@ async function saveRun(guid, courseGuid, { facility_guid, name, full_price_pence
             return null;
         }
         const run = rows[0];
-        const enrolled = await client.query('SELECT count(*)::int AS count FROM course_enrolments WHERE run_guid = $1', [run.guid]);
+        const enrolled = await client.query('SELECT count(*)::int AS count FROM course_enrolments WHERE run_guid = $1 AND cancelled_at IS NULL', [run.guid]);
         if (capacity < enrolled.rows[0].count) {
             const error = new Error('Capacity cannot be less than the number of enrolled attendees.');
             error.code = 'COURSE_CAPACITY';

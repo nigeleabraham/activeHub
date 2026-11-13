@@ -12,9 +12,20 @@
   - Reconsider putting every setting inside a dropdown/expander.
 
 - [ ] Design separate course administration.
-  - Add an administrator workflow for finding and reviewing course bookings,
+  - Rework the Courses tab so content is grouped first by sport and then by
+    course.
+  - Move FAQs out of the top of the page and place them in the relevant sport
+    or course section.
+  - [x] Add an administrator workflow for finding and reviewing course bookings,
     including gymnastics courses and individual attendees.
-  - Define cancellation, account-credit and bank-refund rules for course places.
+  - [x] Let administrators select a course and class/run to see everyone booked,
+    including account holders and children.
+  - [x] Produce a printable attendee register for each class/run and session.
+  - [x] Let administrators cancel individual course bookings, updating availability
+    and preserving cancellation and audit history.
+  - [x] Define cancellation and account-credit rules for course places.
+  - Bank refunds use the existing refundable-credit request workflow; direct
+    course-place bank refunds are not implemented.
   - Support refunding eligible gymnastics and other course purchases while
     preserving payment, credit and audit history.
   - Keep course-booking administration distinct from court-booking management.

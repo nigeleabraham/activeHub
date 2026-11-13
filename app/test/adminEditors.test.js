@@ -16,6 +16,25 @@ const locals = {
     switchableRoles: []
 };
 
+test('credit decisions bypass generated Edit and Cancel controls', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf("        if ((!new URL(form.action).pathname");
+    const guard = source.slice(start, source.indexOf('        if (!form.id)', start));
+    let skipped = false;
+    vm.runInNewContext(`(function () { ${guard} throw new Error('Decision entered editor setup'); })()`, {
+        URL,
+        form: {
+            action: 'http://localhost/admin/credit-requests/decide',
+            matches(selector) {
+                skipped = selector.includes('[action="/admin/credit-requests/decide"]');
+                return skipped;
+            },
+            querySelector() { return {}; }
+        }
+    });
+    assert.equal(skipped, true);
+});
+
 test('collapsed bookings management cards use compact spacing without changing expanded cards', async () => {
     const source = await readFile(path.join(__dirname, '../views/bookings.ejs'), 'utf8');
     assert.match(source, /\[data-booking-management-card\] \{ padding: 0\.75rem 1rem !important; \}/);
@@ -953,13 +972,15 @@ test('admin navigation groups every page once and marks the current page and sec
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
         ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours'],
-        ['/admin/bookings', '/admin/booking-search', '/admin/credit-requests', '/admin/credit-refunds'],
+        ['/admin/bookings', '/admin/booking-search', '/admin/course-bookings', '/admin/course-management', '/admin/credit-requests', '/admin/credit-refunds'],
         ['/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit'],
         ['/admin/profiles', '/admin/roles', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
     assert.equal((nav.match(/aria-current="page"/g) || []).length, 0);
     assert.doesNotMatch(nav, /href="\/admin\/court-configuration"/);
+    assert.match(nav, /href="\/admin\/bookings"[^>]*>Court bookings<\/a>/);
+    assert.match(nav, /href="\/admin\/booking-search"[^>]*>Court bookings search<\/a>/);
 
     const bookingsHtml = await ejs.renderFile(navigation, { ...locals, activePage: 'bookings' });
     assert.match(bookingsHtml, /href="\/admin\/court-configuration"/);

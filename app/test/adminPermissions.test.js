@@ -8,6 +8,7 @@ const { PERMISSION_KEYS } = require('../permissions');
 const areas = [
     ['facilities.manage', '/facilities'],
     ['courses.manage', '/courses'],
+    ['course_bookings.view', '/course-bookings'],
     ['sports.manage', '/sports'],
     ['opening_hours.manage', '/opening-hours'],
     ['bookings.manage', '/bookings'],

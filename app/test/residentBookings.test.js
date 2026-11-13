@@ -71,6 +71,10 @@ test('court booking page renders only the court booking flow and links to the sh
     assert.match(html, /<h1 class="mb-2">Court bookings<\/h1>/);
     assert.match(html, /data-booking-calendar/);
     assert.match(html, /Court one/);
+    assert.match(html, /action="\/basket\/courts"/);
+    assert.match(html, />Add to basket<\/button>/);
+    assert.match(html, /name="checkout" value="1"[^>]*>Continue to payment<\/button>/);
+    assert.match(html, /Slots are not reserved until payment is confirmed/);
     assert.match(html, /href="\/bookings">View all my bookings/);
     assert.match(html, /href="\/courses">Looking to book a course/);
     assert.doesNotMatch(html, /data-course-bookings/);

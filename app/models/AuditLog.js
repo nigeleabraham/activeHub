@@ -62,8 +62,8 @@ async function initialize() {
     await pool.query('CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action)');
 }
 
-async function record(profile, { action, entityType, entityGuid = null, entityLabel = null, details = {} }) {
-    await pool.query(
+async function record(profile, { action, entityType, entityGuid = null, entityLabel = null, details = {} }, client = pool) {
+    await client.query(
         `INSERT INTO audit_log
             (profile_guid, profile_name, profile_role, action, entity_type, entity_guid, entity_label, details)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,

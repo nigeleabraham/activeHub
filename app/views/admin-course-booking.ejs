@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course booking details | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <header class="mb-4">
+            <p><a href="/admin/course-bookings">Back to Course/Class register</a></p>
+            <p><a href="/admin/course-management">Search in Course management</a></p>
+            <h1 class="h2">Course booking details</h1>
+            <p class="mb-0"><%= booking.booking_ref %> &mdash; <%= booking.status %></p>
+        </header>
+        <section class="bg-white border rounded p-4 mb-4" aria-labelledby="attendee-heading">
+            <h2 class="h5" id="attendee-heading">Attendee and booking</h2>
+            <dl class="row">
+                <dt class="col-sm-4">Attendee</dt><dd class="col-sm-8"><%= booking.attendee_name %> (<%= booking.member_guid ? 'Child' : 'Account holder' %>)</dd>
+                <dt class="col-sm-4">Account holder</dt><dd class="col-sm-8"><%= booking.account_name %></dd>
+                <dt class="col-sm-4">Account email</dt><dd class="col-sm-8"><%= booking.account_email %></dd>
+                <dt class="col-sm-4">Course</dt><dd class="col-sm-8"><%= booking.course_name %></dd>
+                <dt class="col-sm-4">Class</dt><dd class="col-sm-8"><%= booking.run_name %></dd>
+                <dt class="col-sm-4">Facility</dt><dd class="col-sm-8"><%= booking.facility_name %></dd>
+                <dt class="col-sm-4">Purchased</dt><dd class="col-sm-8"><%= dateTime(booking.created_at) %> (UK time)</dd>
+            </dl>
+            <a href="/admin/course-bookings?view=register&amp;run=<%= booking.run_guid %>">View class register</a>
+        </section>
+        <section class="bg-white border rounded p-4 mb-4" aria-labelledby="sessions-heading">
+            <h2 class="h5" id="sessions-heading">Purchased sessions</h2>
+            <p>These are the sessions purchased with this place, not the class's current schedule.</p>
+            <div class="table-responsive">
+                <table class="table">
+                    <caption class="sr-only">Purchased sessions, UK local time</caption>
+                    <thead><tr><th scope="col">Starts (UK time)</th><th scope="col">Ends (UK time)</th></tr></thead>
+                    <tbody><% booking.sessions.forEach(session => { %><tr><td><%= dateTime(session.starts_at) %></td><td><%= dateTime(session.ends_at) %></td></tr><% }); %></tbody>
+                </table>
+            </div>
+        </section>
+        <section class="bg-white border rounded p-4 mb-4" aria-labelledby="payment-heading">
+            <h2 class="h5" id="payment-heading">Payment for this place</h2>
+            <dl class="row">
+                <dt class="col-sm-4">Place price</dt><dd class="col-sm-8"><%= money(booking.amount_pence) %></dd>
+                <dt class="col-sm-4">Account credit applied</dt><dd class="col-sm-8"><%= money(booking.credit_applied_pence) %></dd>
+                <dt class="col-sm-4">Card-paid portion</dt><dd class="col-sm-8"><%= money(booking.amount_pence - booking.credit_applied_pence) %></dd>
+                <dt class="col-sm-4">Payment reference</dt><dd class="col-sm-8 text-break"><%= booking.payment_reference %></dd>
+            </dl>
+            <p class="mb-0">Payments are simulated. No card details are stored or shown.</p>
+        </section>
+        <section class="bg-white border rounded p-4" aria-labelledby="history-heading">
+            <h2 class="h5" id="history-heading">Booking history</h2>
+            <p>Purchased and confirmed on <%= dateTime(booking.created_at) %> (UK time).</p>
+            <% if (booking.cancelled_at) { %>
+                <p>Attendee removed on <%= dateTime(booking.cancelled_at) %> (UK time) by <%= booking.cancelled_by_name %>.</p>
+                <p class="mb-0">Removal: <%= booking.cancellation_mode %>. Account credit issued: <%= money(booking.cancellation_credit_pence) %>. Credit eligibility and payment history are retained in the credit ledger.</p>
+            <% } else { %>
+                <p class="mb-0">Administrators can remove this attendee using the actions in Course management.</p>
+            <% } %>
+        </section>
+    </main>
+</body>
+</html>

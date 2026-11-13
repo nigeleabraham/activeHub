@@ -11,3 +11,12 @@ test('shared desktop containers widen consistently while preserving readable con
     const courses = fs.readFileSync(path.join(__dirname, '../views/resident-courses.ejs'), 'utf8');
     assert.match(courses, /col-12 col-lg-6 col-xl-4/);
 });
+
+test('customer course titles match FAQs while inner disclosures are smaller and FAQ cards are white', () => {
+    const courses = fs.readFileSync(path.join(__dirname, '../views/resident-courses.ejs'), 'utf8');
+    assert.match(courses, /<h3 class="h5 mb-3"/);
+    assert.match(courses, /<summary class="h5 mb-0"><%= group.name %> FAQs/);
+    assert.match(courses, /\.sport-faqs \{[^}]*background: #fff;[^}]*border: 1px solid #b1b4b6;/);
+    assert.match(courses, /\[data-course-description\] > summary,\s*\[data-course-runs\] > summary \{ font-size: 1rem;/);
+    assert.match(courses, /<summary class="h6">Choose a class/);
+});

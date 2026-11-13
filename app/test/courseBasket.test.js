@@ -9,6 +9,86 @@ const routes = require('../routes/courseBasket');
 const owner = '123e4567-e89b-42d3-a456-426614174000';
 const other = '123e4567-e89b-42d3-a456-426614174001';
 
+test('JSON course additions return a redirect or conflict details without rendering or changing the requested attendee', async t => {
+    const add = t.mock.method(CourseOrders, 'add', async () => {});
+    const router = routes({ simulateCardPayment: () => ({ reference: 'SIM' }) });
+    const handler = router.stack.find(layer => layer.route?.path === '/basket/add').route.stack[0].handle;
+    const req = { profile: { guid: owner }, body: { run_guid: other, member_guid: 'self', return_to: '/courses' },
+        get: header => header === 'Accept' ? 'application/json' : undefined };
+    const res = { status(code) { this.code = code; return this; }, json(value) { this.body = value; } };
+    await handler(req, res, assert.fail);
+    assert.deepEqual(res.body, { redirect: '/basket' });
+    req.body.checkout = '1';
+    await handler(req, res, assert.fail);
+    assert.deepEqual(res.body, { redirect: '/basket/checkout' });
+    add.mock.mockImplementation(async () => { throw new CourseOrders.BasketError('Child already has a place in Gymnastics, Tuesday class.'); });
+    await handler(req, res, assert.fail);
+    assert.equal(res.code, 409);
+    assert.match(res.body.message, /Child.*Gymnastics.*Tuesday/);
+    assert.deepEqual(add.mock.calls.at(-1).arguments, [owner, other, 'self', '/courses']);
+});
+
+test('course booking popup presents server conflicts and preserves the attendee and checkout choice', async () => {
+    const vm = require('node:vm');
+    const html = await ejs.renderFile(path.join(__dirname, '../views/partials/course-basket-return.ejs'));
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    let submit;
+    let opened = 0;
+    let request;
+    const message = {};
+    const button = { disabled: false };
+    const form = { getAttribute: () => '/basket/add', querySelectorAll: () => [button] };
+    const dialog = { showModal() { opened++; } };
+    const location = { pathname: '/courses', assign: assert.fail };
+    vm.runInNewContext(script, {
+        document: {
+            getElementById: id => id === 'course-booking-dialog' ? dialog : message,
+            addEventListener(_event, listener) { submit = listener; },
+            querySelectorAll: () => []
+        },
+        location, window: { scrollY: 100 }, sessionStorage: { setItem() {}, getItem: () => null },
+        FormData: class extends Map { constructor() { super([['run_guid', other], ['member_guid', owner]]); } },
+        URLSearchParams, console,
+        fetch: async (_url, options) => {
+            request = options;
+            return { ok: false, headers: { get: () => 'application/json' },
+                json: async () => ({ message: 'Child already booked on Tuesday Gymnastics.' }) };
+        }
+    });
+    let prevented = false;
+    await submit({ target: form, submitter: { name: 'checkout', value: '1' }, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(opened, 1);
+    assert.equal(message.textContent, 'Child already booked on Tuesday Gymnastics.');
+    assert.equal(request.body.get('member_guid'), owner);
+    assert.equal(request.body.get('checkout'), '1');
+    assert.equal(button.disabled, false);
+    assert.match(html, /<dialog[^>]*aria-labelledby="course-booking-dialog-heading"[^>]*aria-describedby=/);
+});
+
+test('basket omits confirmed order history and does not load previous orders', async t => {
+    const basket = { return_to: '/courses', items: [], valid: false };
+    t.mock.method(CourseOrders, 'basket', async () => basket);
+    t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
+    t.mock.method(Settings, 'getLogo', async () => null);
+    const orders = t.mock.method(CourseOrders, 'orders', async () => assert.fail('Basket must not query order history'));
+    const router = routes({ simulateCardPayment: () => ({ reference: 'SIM' }) });
+    const handler = router.stack.find(layer => layer.route?.path === '/basket').route.stack[0].handle;
+    let locals;
+    await handler({ profile: { guid: owner } }, {
+        status(code) { assert.equal(code, 200); return this; },
+        render(view, values) { assert.equal(view, 'resident-basket'); locals = values; }
+    }, assert.fail);
+    assert.equal(orders.mock.callCount(), 0);
+    assert.equal(Object.hasOwn(locals, 'orders'), false);
+    const html = await ejs.renderFile(path.join(__dirname, '../views/resident-basket.ejs'), {
+        ...locals, currentProfile: null, isAdmin: false, canSwitchRole: false,
+        orders: [{ guid: other, created_at: new Date(), total_pence: 1000 }]
+    });
+    assert.match(html, /Your basket is empty/);
+    assert.doesNotMatch(html, /Your confirmed orders|previous-course-orders|view confirmation/);
+});
+
 test('basket button displays the current item count, including an empty basket', async () => {
     for (const count of [0, 1, 12]) {
         const html = await ejs.renderFile(path.join(__dirname, '../views/partials/basket-button.ejs'), {
@@ -20,7 +100,7 @@ test('basket button displays the current item count, including an empty basket',
 });
 
 test('basket return locations stay within customer course and facility pages', () => {
-    for (const value of ['/courses', '/courses#course-heading-123', '/facilities#hall']) {
+    for (const value of ['/courses', '/courses#course-heading-123', '/facilities#hall', '/court-bookings']) {
         assert.equal(CourseOrders.returnPath(value), value);
     }
     for (const value of ['//example.com', 'https://example.com', '/admin', '/courses/../admin', ['/courses'], '/courses?next=evil']) {
@@ -67,7 +147,7 @@ test('declined simulated payment preserves basket; successful payment passes quo
     assert.equal(pay.mock.callCount(), 0);
     decline = false;
     await handler(req, res, error => assert.fail(error));
-    assert.deepEqual(pay.mock.calls[0].arguments, [owner, owner, { total: 1500, credit: 1000 }, 'SIM-TEST']);
+    assert.deepEqual(pay.mock.calls[0].arguments, [owner, owner, { total: 1500, credit: 1000 }, 'SIM-TEST', undefined]);
     assert.equal(location, '/course-orders/order');
 });
 
@@ -163,9 +243,69 @@ test('basket checkout uses the existing payment page and invalid baskets stay in
     });
     assert.match(html, /action="\/basket\/pay"/);
     assert.match(html, /name="token" value="123e4567-e89b-42d3-a456-426614174000"/);
-    assert.match(html, /Confirm enrolment using credit/);
+    assert.match(html, /Confirm booking using credit/);
     assert.doesNotMatch(html, /name="card_number"/);
     basket.valid = false;
     await handler({ profile: { guid: owner } }, res, assert.fail);
     assert.equal(view, 'resident-basket');
+});
+
+test('court basket actions preserve the signed-in owner and offer basket or direct checkout', async t => {
+    const add = t.mock.method(CourseOrders, 'addCourts', async () => {});
+    const router = routes({ simulateCardPayment: () => assert.fail('Adding must not charge') });
+    const handler = router.stack.find(layer => layer.route?.path === '/basket/courts').route.stack[0].handle;
+    const slots = [{ option_guid: other, starts_at: '2030-01-01T10:00:00Z', ends_at: '2030-01-01T11:00:00Z' }];
+    for (const checkout of [undefined, '1']) {
+        let redirect;
+        await handler({ profile: { guid: owner, role: 'Resident' },
+            body: { slots: JSON.stringify(slots), checkout, profile_guid: other } },
+        { redirect(...args) { redirect = args; } }, assert.fail);
+        assert.deepEqual(redirect, [303, checkout ? '/basket/checkout' : '/basket']);
+    }
+    assert.deepEqual(add.mock.calls[0].arguments, [owner, slots, 'Resident']);
+});
+
+test('court basket rejects malformed selections with visible feedback without adding anything', async t => {
+    const add = t.mock.method(CourseOrders, 'addCourts', async () => {});
+    t.mock.method(CourseOrders, 'basket', async () => ({ valid: false, items: [] }));
+    t.mock.method(CourseOrders, 'orders', async () => []);
+    t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
+    t.mock.method(Settings, 'getLogo', async () => null);
+    const router = routes({});
+    const handler = router.stack.find(layer => layer.route?.path === '/basket/courts').route.stack[0].handle;
+    let status;
+    await handler({ profile: { guid: owner }, body: { slots: '{' } }, {
+        status(code) { status = code; return this; },
+        render(view, locals) { assert.equal(view, 'resident-basket'); assert.match(locals.message, /Choose valid court slots/); }
+    }, assert.fail);
+    assert.equal(status, 409);
+    assert.equal(add.mock.callCount(), 0);
+    add.mock.restore();
+    for (const slots of [[], null, [{}], [{ option_guid: other, starts_at: 'bad', ends_at: 'bad' }]]) {
+        assert.throws(() => CourseOrders.addCourts(owner, slots), /Choose valid/);
+    }
+});
+
+test('mixed basket and confirmation show court times alongside course attendees', async () => {
+    const items = [
+        { guid: owner, kind: 'court', option_name: '<Tennis court>', facility_name: 'Park',
+            starts_at: '2030-01-01T10:00:00Z', ends_at: '2030-01-01T11:00:00Z', amount_pence: 500, booking_ref: 'COURT' },
+        { guid: other, course_name: 'Swimming', run_name: 'Tuesday', facility_name: 'Pool',
+            attendee_name: '<Child>', remaining_sessions: 2, sessions: [], amount_pence: 1000, booking_ref: 'COURSE' }
+    ];
+    const basket = { items, valid: true, revision: owner, return_to: '/court-bookings', total: 1500, credit: 500, due: 1000 };
+    for (const view of ['resident-basket', 'resident-checkout', 'resident-course-order']) {
+        const html = await ejs.renderFile(path.join(__dirname, `../views/${view}.ejs`), {
+            basket, order: { guid: owner, items, total_pence: 1500, credit_pence: 500 }, orders: [], message: '',
+            money: pence => `£${(pence / 100).toFixed(2)}`, total: '£15.00', credit: '£5.00', due: '£10.00',
+            fullyCovered: false, cardError: '', values: {}, siteTitle: 'ActiveHub', hasLogo: false,
+            currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
+        });
+        assert.match(html, /&lt;Tennis court&gt;/);
+        assert.match(html, /Swimming/);
+        assert.match(html, /&lt;Child&gt;/);
+        assert.match(html, /2030-01-01T10:00:00.000Z/);
+        assert.match(html, /£15.00/);
+        assert.doesNotMatch(html, /undefined|Invalid Date|NaN/);
+    }
 });

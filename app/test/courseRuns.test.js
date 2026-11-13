@@ -109,20 +109,22 @@ test('citizen course card displays inherited details once, FAQs first and separa
     });
 
     assert.equal((html.match(/Shared description/g) || []).length, 1);
-    assert.equal((html.match(/href="\/basket"/g) || []).length, 1);
+    const pageHead = html.match(/<header class="page-head">[\s\S]*?<\/header>/)?.[0] || '';
+    assert.equal((pageHead.match(/href="\/basket"/g) || []).length, 1);
     assert.match(html, /<header class="page-head">[\s\S]*?basket-button[\s\S]*?<svg[^>]*[\s\S]*?aria-hidden="true"/);
     assert.match(html, /<strong>Shared description<\/strong>/);
     assert.match(html, /<details class="mb-3" data-course-description>\s*<summary>Course description<\/summary>/);
-    assert.ok(html.indexOf('</details>', html.indexOf('data-course-description')) < html.indexOf('data-course-run'));
+    assert.ok(html.indexOf('</details>', html.indexOf('<details class="mb-3" data-course-description')) <
+        html.indexOf('<article class="border rounded bg-light p-3 h-100" data-course-run>'));
     assert.match(html, /<li><u>Item<\/u><\/li>/);
-    assert.equal((html.match(/>Shared course<\/h2>/g) || []).length, 1);
+    assert.equal((html.match(/>Shared course<\/h3>/g) || []).length, 1);
     assert.match(html, /<h1 class="mb-2">Course bookings<\/h1>/);
     assert.match(html, /href="\/court-bookings">Looking to book a court or space/);
-    assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('data-course-run'));
+    assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<article class="border rounded bg-light p-3 h-100" data-course-run>'));
     assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<section class="course-card'));
     assert.match(html, /<h4 class="h5">Friday, 18:00–19:00<\/h4>/);
     assert.match(html, /Choose a class \(2\)/);
-    assert.match(html, /<details class="mb-3" data-course-runs>\s*<summary[^>]*>Choose a class \(2\)<\/summary>/);
+    assert.match(html, /<details class="mb-3" data-course-runs>\s*<summary class="h6">Choose a class \(2\)<\/summary>/);
     assert.doesNotMatch(html, /<details[^>]*data-course-runs[^>]*\bopen\b/);
     assert.match(html, /<h4 class="h5">Saturday<\/h4>/);
     assert.match(html, /Who is attending\?/);

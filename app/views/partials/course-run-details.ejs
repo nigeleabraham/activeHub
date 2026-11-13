@@ -48,11 +48,12 @@ const schedules = [...new Set(run.sessions.map(session => {
     </div>
 </details>
 <% if (run.guid && locals.currentProfile && spaces > 0) { %>
+    <% const attendeeId = locals.attendeeId || 'attendee-' + run.guid; %>
     <form class="border-top pt-3" method="POST" action="/basket/add">
         <input type="hidden" name="run_guid" value="<%= run.guid %>">
         <input type="hidden" name="return_to" value="<%= locals.returnTo || '/courses' %>">
-        <label class="font-weight-bold" for="attendee-<%= run.guid %>">Who is attending?</label>
-        <select class="form-control mb-2" id="attendee-<%= run.guid %>" name="member_guid">
+        <label class="font-weight-bold" for="<%= attendeeId %>">Who is attending?</label>
+        <select class="form-control mb-2" id="<%= attendeeId %>" name="member_guid">
             <option value="self"><%= currentProfile.name %> (myself)</option>
             <% (locals.familyMembers || []).forEach(member => { %>
                 <option value="<%= member.guid %>"><%= member.name %></option>

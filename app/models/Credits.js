@@ -160,7 +160,7 @@ function fundingForBookings(bookings, key = 'guid') {
 }
 
 // Called inside the booking transaction so its credit and the profile total cannot diverge.
-async function grant(client, booking, pence, byName, refundable, { forceNonRefundable = false } = {}) {
+async function grant(client, booking, pence, byName, refundable, { forceNonRefundable = false, allowPartial = false } = {}) {
     if (!Number.isSafeInteger(pence) || pence <= 0 || typeof refundable !== 'boolean') {
         throw new Error('Invalid credit grant');
     }
@@ -170,12 +170,16 @@ async function grant(client, booking, pence, byName, refundable, { forceNonRefun
     const days = Settings.parseCreditLifetimeDays(rows[0]?.value ?? Settings.DEFAULTS.credit_lifetime_days);
     if (days === null) throw new Error('Invalid configured credit lifetime');
     const [funding] = await withFunding(client, [booking]);
-    if (pence !== booking.amount_paid_pence) throw new Error('Credit must match the booking payment');
+    if (pence > booking.amount_paid_pence || (!allowPartial && pence !== booking.amount_paid_pence)) {
+        throw new Error('Credit must match the booking payment');
+    }
     if (funding.untraced_credit_pence) {
         console.warn('Untraced booking credit retained as non-refundable:', booking.guid, funding.untraced_credit_pence);
     }
-    const refundablePence = forceNonRefundable ? 0
-        : funding.refundable_credit_pence + (refundable ? funding.card_paid_pence : 0);
+    const eligiblePence = funding.refundable_credit_pence + (refundable ? funding.card_paid_pence : 0);
+    const proportion = value => Number(BigInt(value) * BigInt(pence) / BigInt(booking.amount_paid_pence));
+    const refundablePence = forceNonRefundable ? 0 : proportion(eligiblePence);
+    const cardPence = proportion(funding.card_paid_pence);
     for (const [amount, eligible] of [[refundablePence, true], [pence - refundablePence, false]]) {
         if (!amount) continue;
         await client.query(`
@@ -183,10 +187,10 @@ async function grant(client, booking, pence, byName, refundable, { forceNonRefun
                              amount_pence, remaining_pence, created_by_name, refundable, created_at, expires_at, payment_reference, card_paid_pence)
         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, statement_timestamp(),
                 statement_timestamp() + $8 * INTERVAL '24 hours',
-                (SELECT payment_reference FROM bookings WHERE guid = $2
-                 UNION ALL SELECT payment_reference FROM booking_refunds WHERE guid = $2 LIMIT 1), $9)`,
+                COALESCE($10, (SELECT payment_reference FROM bookings WHERE guid = $2
+                 UNION ALL SELECT payment_reference FROM booking_refunds WHERE guid = $2 LIMIT 1)), $9)`,
         [booking.profile_guid, booking.guid, booking.booking_ref, booking.facility_name, amount, byName, eligible, days,
-            eligible === (forceNonRefundable ? false : refundable) ? funding.card_paid_pence : 0]);
+            eligible === (forceNonRefundable ? false : refundable) ? cardPence : 0, booking.payment_reference || null]);
     }
     await client.query('UPDATE profiles SET credit_pence = credit_pence + $2 WHERE guid = $1', [booking.profile_guid, pence]);
     return { refundable_pence: refundablePence, non_refundable_pence: pence - refundablePence };

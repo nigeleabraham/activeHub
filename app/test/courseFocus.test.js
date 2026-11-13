@@ -16,7 +16,7 @@ const facility = { guid: GUID, name: 'Hall', courses: [], sports: [sport] };
 const course = { guid: GUID, name: 'Tennis course', facility_guids: [GUID], sport_guids: [GUID], description: 'All levels' };
 const faq = { guid: GUID, sport_guid: GUID, question: 'What should I bring?', answer: '<b>A racket</b>' };
 
-test('course anchors open only the matching class disclosure on load and hash changes', async () => {
+test('course anchors open the matching sport and class on load and hash changes, including courses without runs', async () => {
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
         courses: [], courseGroups: [], siteTitle: 'ActiveHub', hasLogo: false,
         currentProfile: null, isAdmin: false, canSwitchRole: false
@@ -24,14 +24,18 @@ test('course anchors open only the matching class disclosure on load and hash ch
     const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
     const first = { open: false };
     const second = { open: false };
+    const firstSport = { open: false };
+    const secondSport = { open: false };
+    const thirdSport = { open: false };
     const scrolled = [];
-    const heading = (runs, name) => ({
-        closest: () => ({ querySelector: () => runs }),
+    const heading = (runs, sport, name) => ({
+        closest: selector => selector === '[data-course-sport-disclosure]' ? sport : { querySelector: () => runs },
         scrollIntoView: () => scrolled.push(name)
     });
     const headings = {
-        'course-heading-first': heading(first, 'first'),
-        'course-heading-second': heading(second, 'second')
+        'course-heading-first': heading(first, firstSport, 'first'),
+        'course-heading-second': heading(second, secondSport, 'second'),
+        'course-heading-third': heading(null, thirdSport, 'third')
     };
     const location = { hash: '#course-heading-first' };
     let hashchange;
@@ -41,16 +45,22 @@ test('course anchors open only the matching class disclosure on load and hash ch
         requestAnimationFrame: callback => callback()
     });
     assert.equal(first.open, true);
+    assert.equal(firstSport.open, true);
     assert.equal(second.open, false);
+    assert.equal(secondSport.open, false);
     location.hash = '#course-heading-second';
     hashchange();
     assert.equal(second.open, true);
+    assert.equal(secondSport.open, true);
     assert.deepEqual(scrolled, ['first', 'second']);
+    location.hash = '#course-heading-third';
+    hashchange();
+    assert.equal(thirdSport.open, true);
     for (const hash of ['', '#unrelated', '#course-heading-missing']) {
         location.hash = hash;
         assert.doesNotThrow(hashchange);
     }
-    assert.deepEqual(scrolled, ['first', 'second']);
+    assert.deepEqual(scrolled, ['first', 'second', 'third']);
 });
 
 test('FAQ answer formatting supports coloured text, underline and bullets without allowing arbitrary HTML', async () => {
@@ -153,14 +163,17 @@ test('course section input accepts assigned sources and rejects mismatched or ma
     assert.equal(create.mock.calls.length, 1);
 });
 
-test('customer sport sections omit unused sports and FAQs, and retain unassigned courses', async t => {
+test('customer sport panels contain their own courses and FAQs, omit unused sports and retain unassigned courses', async t => {
     t.mock.method(require('../models/CourseOrders'), 'familyMembers', async () => []);
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
     t.mock.method(Settings, 'getLogo', async () => null);
     t.mock.method(Facilities, 'findAll', async () => [facility]);
     t.mock.method(Sports, 'findAll', async () => [sport, { guid: 'unused', name: 'Unused sport' }, { guid: 'second', name: 'Second sport' }]);
     t.mock.method(Courses, 'findAll', async () => [course,
-        { ...course, guid: 'multi', name: 'Multi-sport course', sport_guids: [GUID, 'second'] },
+        { ...course, guid: 'multi', name: 'Multi-sport course', sport_guids: [GUID, 'second'], runs: [
+            { guid: 'shared-run', name: 'Shared class', facility_name: 'Hall', capacity: 10, current_price_pence: 1000,
+                full_price_pence: 1000, total_sessions: 1, remaining_sessions: 1, sessions: [] }
+        ] },
         { ...course, guid: 'legacy', name: 'Legacy course', sport_guids: [] }]);
     t.mock.method(Courses, 'findFaqs', async () => [{ ...faq, answer: '<bold>Bring</bold> <ul>trainers</ul>' },
         { ...faq, sport_guid: 'unused', question: 'Unused FAQ' }]);
@@ -173,8 +186,21 @@ test('customer sport sections omit unused sports and FAQs, and retain unassigned
         ...values, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
     });
     assert.equal((html.match(/<details[^>]*data-sport-faqs/g) || []).length, 1);
-    assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<section class="course-card'),
-        'Sport FAQs appear once outside and before the course cards');
+    const panels = html.split('<section class="mb-4" data-course-sport-group=').slice(1);
+    assert.equal(panels.length, 3);
+    assert.match(panels[0], /Tennis FAQs[\s\S]*Tennis course[\s\S]*Multi-sport course/);
+    assert.match(panels[0], /2 courses/);
+    assert.match(panels[1], /Second sport[\s\S]*1 course[\s\S]*Multi-sport course/);
+    assert.doesNotMatch(panels[1], /data-sport-faqs|Tennis course|Legacy course/);
+    assert.match(panels[2], /Sport to be confirmed[\s\S]*Legacy course/);
+    assert.doesNotMatch(panels[2], /data-sport-faqs|Multi-sport course/);
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+    assert.equal(new Set(ids).size, ids.length, 'Multi-sport courses must not duplicate heading or attendee IDs');
+    assert.equal((html.match(/id="course-heading-multi"/g) || []).length, 1);
+    assert.match(panels[1], /value="\/courses#course-heading-multi-sport-group-second"/);
+    for (const match of html.matchAll(/<label[^>]*for="(attendee-[^"]+)"/g)) {
+        assert.ok(ids.includes(match[1]), 'Each attendee label points to its own control');
+    }
     assert.match(html, /<strong>Bring<\/strong> <u>trainers<\/u>/);
     assert.doesNotMatch(html, /Unused sport|Unused FAQ|<details[^>]* open/);
 });
@@ -200,12 +226,16 @@ test('customer sport sections omit unused sports and FAQs, and retain unassigned
                 ...values, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
             });
             assert.doesNotMatch(html, /href="\/admin\/courses"|<button[^>]*data-edit-toggle/);
-            if (empty) assert.match(html, /No courses are available/);
+            if (empty) {
+                assert.match(html, /No courses are available/);
+                assert.doesNotMatch(html, /data-course-sport-group=|data-sport-faqs>/);
+            }
             else {
                 assert.match(html, /Tennis course/);
                 assert.doesNotMatch(html, /To be confirmed/);
-                assert.match(html, /<h2[^>]*>Tennis course<\/h2>/);
-                assert.match(html, /<details class="course-card mb-4" data-sport-faqs>/);
+                assert.match(html, /<h2[^>]*>Tennis<\/h2>/);
+                assert.match(html, /<h3[^>]*>Tennis course<\/h3>/);
+                assert.match(html, /<details class="sport-faqs mb-4" data-sport-faqs>/);
                 assert.match(html, /&lt;b&gt;A racket&lt;\/b&gt;/);
                 assert.match(html, /&lt;script&gt;unsafe&lt;\/script&gt;/);
             }

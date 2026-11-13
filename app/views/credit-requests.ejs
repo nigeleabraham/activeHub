@@ -9,6 +9,13 @@
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
     <%- include('partials/booking-flow-styles') %>
+    <style>
+        .credit-request-actions { min-width: 30rem; width: 32rem; }
+        .credit-request-approval-buttons { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+        .credit-request-approval-buttons .btn { flex: 0 0 auto; white-space: nowrap; }
+        .credit-decline-dialog { width: min(32rem, calc(100% - 2rem)); border: 1px solid #b1b4b6; padding: 1.5rem; }
+        .credit-decline-dialog::backdrop { background: #0008; }
+    </style>
 </head>
 
 <body class="bg-light">
@@ -37,15 +44,23 @@
         <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="auto-slots-heading">
             <h2 id="auto-slots-heading" class="h5">Auto-approved weather time slots (last <%= creditRequestDays %> days)</h2>
             <p><%= autoApprovalEnabled ? 'Enabled' : 'Disabled - saved slots are paused' %>. Matches exact start and end times across all facilities. <a href="/admin/settings#auto-approval-heading">Change in Settings</a>.</p>
+            <% if (locals.slotDeleted) { %><output class="alert alert-success" aria-live="polite">Weather auto-approval slot deleted. Credit already issued is unchanged.</output><% } %>
             <% if (autoApprovalSlots.length) { %>
                 <div class="table-responsive bg-white border rounded">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th>Start</th><th>End</th><th>Approved by</th></tr></thead>
+                        <thead><tr><th>Start</th><th>End</th><th>Approved by</th><th>Actions</th></tr></thead>
                         <tbody><% autoApprovalSlots.forEach(slot => { %>
                             <tr>
                                 <td><time data-local-time datetime="<%= new Date(slot.starts_at).toISOString() %>"><%= new Date(slot.starts_at).toISOString() %></time></td>
                                 <td><time data-local-time datetime="<%= new Date(slot.ends_at).toISOString() %>"><%= new Date(slot.ends_at).toISOString() %></time></td>
                                 <td><%= slot.approved_by_name %></td>
+                                <td>
+                                    <form method="POST" action="/admin/credit-requests/auto-slots/delete">
+                                        <input type="hidden" name="starts_at" value="<%= new Date(slot.starts_at).toISOString() %>">
+                                        <input type="hidden" name="ends_at" value="<%= new Date(slot.ends_at).toISOString() %>">
+                                        <button class="btn btn-outline-primary btn-sm" type="submit" data-confirm="Delete this weather auto-approval slot? Future requests for this time will need review. Credit already issued will not be reversed.">Delete<span class="sr-only"> weather slot starting <%= new Date(slot.starts_at).toISOString() %></span></button>
+                                    </form>
+                                </td>
                             </tr>
                         <% }) %></tbody>
                     </table>
@@ -64,7 +79,7 @@
             <% if (pending.length) { %>
                 <div class="table-responsive bg-white border rounded shadow-sm">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Paid</th><th>Note</th><th></th></tr></thead>
+                        <thead><tr><th>Reference</th><th>Requested by</th><th>Booking</th><th>Paid</th><th>Note</th><th>Actions</th></tr></thead>
                         <tbody>
                             <% pending.forEach(request => { %>
                                 <tr>
@@ -77,7 +92,7 @@
                                         <%- include('partials/booking-funding', { booking: request }) %>
                                     </td>
                                     <td class="small"><strong><%= request.reason === 'weather' ? 'Weather' : 'Discretionary (Other)' %></strong><br><%= request.note || '—' %></td>
-                                    <td>
+                                    <td class="credit-request-actions">
                                         <form method="POST" action="/admin/credit-requests/decide">
                                             <input type="hidden" name="request_guid" value="<%= request.guid %>">
                                             <% if (request.reason === 'weather') { %>
@@ -86,21 +101,17 @@
                                                 <input type="hidden" name="decision" value="approve">
                                                 <p class="small mb-1">Non-refundable approval makes the entire award non-refundable, including any refundable credit used. Refundable approval preserves original credit eligibility and makes the card-paid portion refundable.</p>
                                             <% } %>
-                                            <% if (autoApprovalEnabled && request.reason === 'weather') { %>
-                                                <label class="d-block small"><input type="checkbox" name="approve_slot" value="1"> Also auto-approve existing and future weather requests at all facilities with this exact start and end time. Only the card-paid portion gains refund eligibility; reissued credits keep their original eligibility.</label>
-                                            <% } %>
-                                            <% if (request.reason === 'weather') { %>
-                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve and add credit</button>
+                                            <div class="credit-request-approval-buttons">
+                                            <% if (request.reason === 'weather' && autoApprovalEnabled) { %>
+                                                <button class="btn btn-outline-primary btn-sm" type="button" data-weather-approval="<%= request.guid %>" data-booking-ref="<%= request.booking_ref %>" data-approval-summary="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>.">Approve (refundable)</button>
+                                            <% } else if (request.reason === 'weather') { %>
+                                                <button class="btn btn-outline-primary btn-sm" type="submit" name="decision" value="approve" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>?">Approve (refundable)</button>
                                             <% } else { %>
-                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="refundable" value="1" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>, with the card-paid portion refundable? Reissued credits retain their original refund eligibility.">Approve (refundable)</button>
-                                                <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="refundable" value="0" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %> as entirely non-refundable credit? This overrides the eligibility of any refundable credit originally used.">Approve (non-refundable)</button>
+                                                <button class="btn btn-outline-primary btn-sm" type="submit" name="refundable" value="1" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %>, with the card-paid portion refundable? Reissued credits retain their original refund eligibility.">Approve (refundable)</button>
+                                                <button class="btn btn-outline-primary btn-sm" type="submit" name="refundable" value="0" data-confirm="Add <%= money(request.amount_paid_pence) %> to <%= request.profile_name %>'s credit for booking <%= request.booking_ref %> as entirely non-refundable credit? This overrides the eligibility of any refundable credit originally used.">Approve (non refundable)</button>
                                             <% } %>
-                                        </form>
-                                        <form method="POST" action="/admin/credit-requests/decide">
-                                            <input type="hidden" name="request_guid" value="<%= request.guid %>">
-                                            <label class="small d-block" for="decline-<%= request.guid %>">Decline reason (visible to requestor)</label>
-                                            <textarea class="form-control form-control-sm mb-1" id="decline-<%= request.guid %>" name="decline_comment" maxlength="500" rows="2" required></textarea>
-                                            <button class="btn btn-outline-secondary btn-sm mb-1" type="submit" name="decision" value="decline" data-confirm="Decline the request for booking <%= request.booking_ref %>?">Decline</button>
+                                            <button class="btn btn-outline-primary btn-sm" type="button" data-decline-request="<%= request.guid %>" data-booking-ref="<%= request.booking_ref %>">Decline</button>
+                                            </div>
                                         </form>
                                     </td>
                                 </tr>
@@ -178,7 +189,80 @@
         <% } %>
     </main>
 
+    <% if (!locals.historyPage) { %>
+    <% if (autoApprovalEnabled) { %>
+    <dialog class="credit-decline-dialog" id="weather-approval-dialog" aria-labelledby="weather-approval-heading" aria-describedby="weather-approval-summary weather-approval-explanation">
+        <h2 class="h5" id="weather-approval-heading">Approve weather credit</h2>
+        <p id="weather-approval-summary"></p>
+        <p id="weather-approval-explanation">Also automatically approve existing and future weather credit requests at all facilities with this exact start and end time? Only the card-paid portion gains refund eligibility; reissued credits keep their original eligibility.</p>
+        <form method="POST" action="/admin/credit-requests/decide">
+            <input type="hidden" name="request_guid">
+            <input type="hidden" name="decision" value="approve">
+            <div class="d-flex flex-wrap justify-content-end" style="gap: 0.5rem;">
+                <button class="btn btn-outline-primary btn-sm" type="button" data-cancel-weather-approval autofocus>Cancel</button>
+                <button class="btn btn-outline-primary btn-sm" type="submit" name="approve_slot" value="0">Approve this request only</button>
+                <button class="btn btn-outline-primary btn-sm" type="submit" name="approve_slot" value="1">Approve and auto-approve matching requests</button>
+            </div>
+        </form>
+    </dialog>
+    <% } %>
+    <dialog class="credit-decline-dialog" id="credit-decline-dialog" aria-labelledby="credit-decline-heading" aria-describedby="credit-decline-booking">
+        <h2 class="h5" id="credit-decline-heading">Decline credit request</h2>
+        <p id="credit-decline-booking"></p>
+        <form method="POST" action="/admin/credit-requests/decide">
+            <input type="hidden" name="request_guid">
+            <label class="font-weight-bold" for="credit-decline-reason">Decline reason (visible to requestor)</label>
+            <textarea class="form-control mb-3" id="credit-decline-reason" name="decline_comment" maxlength="500" rows="3" required autofocus></textarea>
+            <div class="d-flex justify-content-end" style="gap: 0.5rem;">
+                <button class="btn btn-outline-primary btn-sm" type="button" data-cancel-decline>Cancel</button>
+                <button class="btn btn-outline-primary btn-sm" type="submit" name="decision" value="decline">Confirm decline</button>
+            </div>
+        </form>
+    </dialog>
+    <% } %>
+
     <script>
+        const weatherDialog = document.getElementById('weather-approval-dialog');
+        if (weatherDialog) {
+            document.querySelectorAll('[data-weather-approval]').forEach(button => {
+                button.addEventListener('click', () => {
+                    weatherDialog.querySelector('[name="request_guid"]').value = button.dataset.weatherApproval;
+                    document.getElementById('weather-approval-summary').textContent = button.dataset.approvalSummary;
+                    weatherDialog.showModal();
+                });
+            });
+            weatherDialog.querySelector('[data-cancel-weather-approval]').addEventListener('click', () => weatherDialog.close());
+            weatherDialog.addEventListener('keydown', event => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    weatherDialog.close();
+                }
+            });
+        }
+        const declineDialog = document.getElementById('credit-decline-dialog');
+        if (declineDialog) {
+            const declineForm = declineDialog.querySelector('form');
+            const declineReason = declineForm.querySelector('[name="decline_comment"]');
+            document.querySelectorAll('[data-decline-request]').forEach(button => {
+                button.addEventListener('click', () => {
+                    declineForm.reset();
+                    declineReason.setCustomValidity('');
+                    declineForm.elements.namedItem('request_guid').value = button.dataset.declineRequest;
+                    document.getElementById('credit-decline-booking').textContent = 'Booking ' + button.dataset.bookingRef;
+                    declineDialog.showModal();
+                });
+            });
+            declineDialog.querySelector('[data-cancel-decline]').addEventListener('click', () => declineDialog.close());
+            declineDialog.addEventListener('keydown', event => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    declineDialog.close();
+                }
+            });
+            declineReason.addEventListener('input', () => {
+                declineReason.setCustomValidity(declineReason.value.trim() ? '' : 'Enter a decline reason.');
+            });
+        }
         <%- include('partials/profile-search-behaviour') %>
         const picker = document.querySelector('[data-credit-profile-picker]');
         if (picker) {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course confirmation | <%= siteTitle %></title>
+    <title>Booking confirmation | <%= siteTitle %></title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
@@ -19,23 +19,21 @@
     </header>
     <%- include('partials/customer-navigation') %>
     <main class="container py-4">
-        <h1>Course enrolment confirmed</h1>
-        <output aria-live="polite">Your course places are confirmed. Card payments are simulated; no money has been taken.</output>
+        <h1>Booking confirmed</h1>
+        <output aria-live="polite">Your bookings are confirmed. Card payments are simulated; no money has been taken.</output>
         <p>Order reference: <strong><%= order.guid %></strong></p>
         <ul class="list-unstyled">
             <% order.items.forEach(item => { %>
                 <li class="bg-white border rounded p-3 mb-3">
-                    <h2 class="h5"><%= item.course_name %></h2>
-                    <p><%= item.run_name %> &mdash; <%= item.facility_name %></p>
-                    <p>Attendee: <%= item.attendee_name %></p>
+                    <%- include('partials/basket-item-details', { item }) %>
                     <p>Reference: <%= item.booking_ref %></p>
-                    <p>Price: <%= money(item.amount_pence) %></p>
+                    <% if (item.cancelled_at) { %><p class="mb-0">Attendee removed. Account credit issued: <%= money(item.cancellation_credit_pence) %>. See your account for credit details.</p><% } %>
                 </li>
             <% }); %>
         </ul>
         <p>Total: <%= money(order.total_pence) %>. Account credit used: <%= money(order.credit_pence) %>.
             Card payment (simulated): <%= money(order.total_pence - order.credit_pence) %>.</p>
-        <a class="btn btn-primary" href="/courses">Return to courses</a>
+        <a class="btn btn-primary" href="/bookings">View my bookings</a>
     </main>
 </body>
 </html>

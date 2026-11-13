@@ -4,8 +4,30 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1', booking_search_days: '30' };
+const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1', booking_search_days: '30',
+    course_prevent_duplicate_class: '1', course_prevent_multiple_classes: '1' };
 const SITE_TITLE_MAX_LENGTH = 60;
+
+function courseBookingRules(settings) {
+    const enabled = key => {
+        const value = settings[key] ?? DEFAULTS[key];
+        if (!['0', '1'].includes(value)) throw new Error(`Invalid configured course booking rule: ${key}`);
+        return value === '1';
+    };
+    return {
+        preventDuplicateClass: enabled('course_prevent_duplicate_class'),
+        preventMultipleClasses: enabled('course_prevent_multiple_classes')
+    };
+}
+
+async function getCourseBookingRules(client) {
+    // Keep rule changes from racing the booking transaction.
+    const keys = ['course_prevent_duplicate_class', 'course_prevent_multiple_classes'];
+    const { rows } = await client.query(
+        'SELECT key, value FROM site_settings WHERE key = ANY($1::text[]) ORDER BY key FOR SHARE', [keys]);
+    if (rows.length !== keys.length) throw new Error('Course booking rules have not been initialized');
+    return courseBookingRules(Object.fromEntries(rows.map(row => [row.key, row.value])));
+}
 
 function refundsEnabled(settings) {
     const value = settings.refunds_enabled ?? DEFAULTS.refunds_enabled;
@@ -64,6 +86,9 @@ async function initialize() {
     `);
     await pool.query("INSERT INTO site_settings (key, value) VALUES ('refunds_enabled', '1') ON CONFLICT (key) DO NOTHING");
     await pool.query("INSERT INTO site_settings (key, value) VALUES ('booking_search_days', '30') ON CONFLICT (key) DO NOTHING");
+    await pool.query(`INSERT INTO site_settings (key, value)
+        VALUES ('course_prevent_duplicate_class', '1'), ('course_prevent_multiple_classes', '1')
+        ON CONFLICT (key) DO NOTHING`);
     await pool.query(`
         CREATE TABLE IF NOT EXISTS site_logo (
             id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -107,4 +132,4 @@ async function set(key, value) {
     );
 }
 
-module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays, refundsEnabled, assertRefundsEnabled, parseBookingSearchDays, getBookingSearchDays };
+module.exports = { initialize, getAll, set, getLogo, setLogo, removeLogo, LOGO_TYPES, LOGO_MAX_BYTES, DEFAULTS, SITE_TITLE_MAX_LENGTH, parseCreditRequestDays, getCreditRequestDays, parseCreditLifetimeDays, refundsEnabled, assertRefundsEnabled, parseBookingSearchDays, getBookingSearchDays, courseBookingRules, getCourseBookingRules };

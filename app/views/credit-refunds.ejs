@@ -83,14 +83,13 @@
                 <% if (items.length) { %>
                     <div class="table-responsive bg-white border rounded">
                         <table class="table table-sm mb-0">
-                            <thead><tr><th>Booking</th><th>Requested by</th><% if (!pending) { %><th>Requested amount</th><% } %><th>Remaining credit</th><th>Outcome</th><% if (!pending) { %><th>Completed (UK)</th><% } %></tr></thead>
+                            <thead><tr><th>Booking</th><th>Requested by</th><% if (pending) { %><th>Remaining credit</th><% } %><th>Outcome</th><% if (!pending) { %><th>Actioned by</th><th>Completed (UK)</th><% } %></tr></thead>
                             <tbody>
                                 <% items.forEach(request => { %>
                                     <tr>
                                         <td><code><%= request.booking_ref || 'Opening balance' %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span><br><%= request.facility_name %></td>
                                         <td><%= request.profile_name %><br><span class="small"><%= request.profile_email %></span></td>
-                                        <% if (!pending) { %><td><%= money(request.requested_pence) %></td><% } %>
-                                        <td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund can still be completed</span><% } %></td>
+                                        <% if (pending) { %><td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund can still be completed</span><% } %></td><% } %>
                                         <td>
                                             <% if (pending) { %>
                                                 <form method="POST" action="/admin/credit-refunds/decide">
@@ -99,7 +98,6 @@
                                                 </form>
                                             <% } else { %>
                                                 <strong><%= request.status === 'approved' ? 'Done ' + money(request.refunded_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
-                                                <% if (request.decided_by_name) { %><br><span class="small">By <%= request.decided_by_name %></span><% } %>
                                                 <% if (request.status === 'declined') { %>
                                                     <p class="small mb-0">Reason: <%= request.decline_comment || 'No reason recorded for this older decision.' %></p>
                                                     <form method="POST" action="/admin/credit-refunds/reopen" class="mt-2">
@@ -109,7 +107,7 @@
                                                 <% } %>
                                             <% } %>
                                         </td>
-                                        <% if (!pending) { %><td><%= new Date(request.decided_at).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) %></td><% } %>
+                                        <% if (!pending) { %><td><%= request.decided_by_name || 'Not recorded' %></td><td><%= new Date(request.decided_at).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) %></td><% } %>
                                     </tr>
                                 <% }) %>
                             </tbody>

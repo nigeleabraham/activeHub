@@ -437,7 +437,7 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
             ($1,now()+interval '2 days',now()+interval '2 days 1 hour'),
             ($1,now()+interval '9 days',now()+interval '9 days 1 hour')`, [run.guid]);
         await Orders.add(buyer.guid, run.guid, member.guid, '/facilities#test-hall');
-        await Orders.add(buyer.guid, run.guid, member.guid, '/facilities#test-hall');
+        await assert.rejects(Orders.add(buyer.guid, run.guid, member.guid, '/facilities#test-hall'), /already has a place in your basket/);
         let basket = await Orders.basket(buyer.guid);
         assert.equal(basket.items.length, 1);
         assert.equal(await Orders.itemCount(buyer.guid), 1);

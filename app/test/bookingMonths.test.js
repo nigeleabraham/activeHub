@@ -51,7 +51,7 @@ test('booking management and court configuration load and render only their own 
             assert.doesNotMatch(html, /<(?:div|form)[^>]*\s(?:data-booking-calendar|data-booking-form|data-cancel-booking|data-calendar-slots)(?:\s|>)/);
         } else {
             assert.match(html, /href="\/admin\/court-configuration"/);
-            assert.match(html, /<h1[^>]*>Bookings management<\/h1>/);
+            assert.match(html, /<h1[^>]*>Court bookings<\/h1>/);
             assert.match(html, /data-booking-calendar/);
             assert.match(html, /action="\/admin\/bookings\/create-batch"/);
             assert.doesNotMatch(html, /action="\/admin\/bookings\/(?:resources|options|sports\/months)/);

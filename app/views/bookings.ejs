@@ -1,6 +1,6 @@
 <% const configuring = activePage === 'court-configuration'; %>
 <% const searching = activePage === 'booking-search'; %>
-<% const pageTitle = configuring ? 'Court configuration' : searching ? 'Booking search' : 'Bookings management'; %>
+<% const pageTitle = configuring ? 'Court configuration' : searching ? 'Court bookings search' : 'Court bookings'; %>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -34,9 +34,9 @@
 
         <p class="mb-4">
             <% if (configuring || searching) { %>
-                <a href="/admin/bookings">Go to bookings management</a> to make bookings.
+                <a href="/admin/bookings">Go to court bookings</a> to make bookings.
             <% } else { %>
-                <a href="/admin/booking-search">Go to booking search</a> to find or cancel existing bookings.
+                <a href="/admin/booking-search">Go to court bookings search</a> to find or cancel existing bookings.
             <% } %>
         </p>
 

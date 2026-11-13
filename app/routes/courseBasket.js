@@ -7,8 +7,8 @@ module.exports = function courseBasketRoutes({ simulateCardPayment }) {
     const money = pence => `£${(pence / 100).toFixed(2)}`;
 
     async function renderBasket(req, res, { checkout = false, message = '', status = 200 } = {}) {
-        const [basket, settings, logo, orders] = await Promise.all([
-            CourseOrders.basket(req.profile.guid), Settings.getAll(), Settings.getLogo(), CourseOrders.orders(req.profile.guid)
+        const [basket, settings, logo] = await Promise.all([
+            CourseOrders.basket(req.profile.guid, req.profile.role), Settings.getAll(), Settings.getLogo()
         ]);
         if (checkout && basket.valid) {
             return res.status(status).render('resident-checkout', {
@@ -19,7 +19,7 @@ module.exports = function courseBasketRoutes({ simulateCardPayment }) {
         }
         return res.status(status).render('resident-basket', {
             activePage: 'basket', siteTitle: settings.site_title, hasLogo: Boolean(logo),
-            basket, checkout: checkout && basket.valid, message, money, orders
+            basket, checkout: checkout && basket.valid, message, money
         });
     }
 
@@ -27,9 +27,33 @@ module.exports = function courseBasketRoutes({ simulateCardPayment }) {
         try { return await renderBasket(req, res); } catch (error) { next(error); }
     });
     router.post('/basket/add', async (req, res, next) => {
+        const wantsJson = req.get?.('Accept') === 'application/json';
         try {
             await CourseOrders.add(req.profile.guid, req.body.run_guid, req.body.member_guid, req.body.return_to);
+            if (wantsJson) return res.json({ redirect: req.body.checkout === '1' ? '/basket/checkout' : '/basket' });
             return req.body.checkout === '1' ? res.redirect(303, '/basket/checkout') : res.redirect('/basket');
+        } catch (error) {
+            if (error instanceof CourseOrders.BasketError) {
+                if (wantsJson) return res.status(409).json({ message: error.message });
+                return renderBasket(req, res, { message: error.message, status: 409 });
+            }
+            if (wantsJson) {
+                console.error('Unable to add course place:', error);
+                return res.status(500).json({ message: 'We could not confirm whether this place was added. Check your basket before trying again.' });
+            }
+            next(error);
+        }
+    });
+    router.post('/basket/courts', async (req, res, next) => {
+        try {
+            let slots;
+            try {
+                slots = JSON.parse(req.body.slots || '[]');
+            } catch {
+                throw new CourseOrders.BasketError('Choose valid court slots.');
+            }
+            await CourseOrders.addCourts(req.profile.guid, slots, req.profile.role);
+            return req.body.checkout === '1' ? res.redirect(303, '/basket/checkout') : res.redirect(303, '/basket');
         } catch (error) {
             if (error instanceof CourseOrders.BasketError) return renderBasket(req, res, { message: error.message, status: 409 });
             next(error);
@@ -59,12 +83,12 @@ module.exports = function courseBasketRoutes({ simulateCardPayment }) {
             const payment = Number(total) > Number(credit) ? simulateCardPayment(req.body) : { reference: 'CREDIT' };
             if (payment.error) return await renderBasket(req, res, { checkout: true, message: payment.error, status: 422 });
             const order = await CourseOrders.pay(req.profile.guid, token,
-                { total: Number(total), credit: Number(credit) }, payment.reference);
+                { total: Number(total), credit: Number(credit) }, payment.reference, req.profile.role);
             return res.redirect(`/course-orders/${order.guid}`);
         } catch (error) {
-            if (error instanceof CourseOrders.BasketError || error.code === 'INSUFFICIENT_CREDIT') {
+            if (error instanceof CourseOrders.BasketError || ['INSUFFICIENT_CREDIT', '23P01', 'OPTION_MONTH_UNAVAILABLE'].includes(error.code)) {
                 return renderBasket(req, res, { message: error instanceof CourseOrders.BasketError
-                    ? error.message : 'Your available credit changed. Review your basket and try again.', status: 409 });
+                    ? error.message : 'Your availability or credit changed. Review your basket and try again.', status: 409 });
             }
             next(error);
         }

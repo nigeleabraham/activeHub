@@ -382,7 +382,9 @@
             }
             pendingCount.textContent = String(pendingSlots.length);
             slotsInput.value = serializeSlots();
-            submitButton.disabled = !pendingSlots.length;
+            bookingForm.querySelectorAll('[data-booking-submit]').forEach(button => {
+                button.disabled = !pendingSlots.length;
+            });
             selectionLabel.textContent = pendingSlots.length
                 ? `${pendingSlots.length} slot${pendingSlots.length === 1 ? '' : 's'} selected.`
                 : 'Select available time slots to add them to your list.';

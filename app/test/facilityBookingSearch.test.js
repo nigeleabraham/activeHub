@@ -183,7 +183,7 @@ test('search page renders results with cancellation links and its active navigat
                 payment_status: 'not_required' }] }
     });
 
-    assert.match(html, /<title>Booking search \| ActiveHub<\/title>/);
+    assert.match(html, /<title>Court bookings search \| ActiveHub<\/title>/);
     assert.match(html, /href="\/admin\/booking-search" aria-current="page"/);
     assert.match(html, /data-cancel-booking/);
     assert.match(html, /name="return_to" value="booking-search"/);

@@ -1,0 +1,267 @@
+<% const management = activePage === 'course-management'; %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= management ? 'Course management' : 'Course/Class register' %> | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <style>
+        .table-responsive { position: relative; }
+        @media print {
+            body { background: #fff !important; }
+            body > header, main > header, .no-print, script { display: none !important; }
+            main.container { width: 100%; max-width: none; padding: 0 !important; }
+            .table-responsive { overflow: visible; }
+            .register-panel { border: 0 !important; padding: 0 !important; }
+            tr { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <header class="mb-4">
+            <h1 class="h2"><%= management ? 'Course management' : 'Course/Class register' %></h1>
+            <p class="text-muted mb-0"><%= management ? 'Find course places and review booking details.' : 'Review attendees and print class and session registers.' %> This area is read-only.</p>
+        </header>
+        <p class="no-print"><a href="<%= management ? '/admin/course-bookings' : '/admin/course-management' %>"><%= management ? 'View class registers' : 'Search bookings in Course management' %></a></p>
+        <%
+            const sports = [...new Map(courses.flatMap(course => course.sports).map(sport => [sport.guid, sport])).values()]
+                .sort((a, b) => a.name.localeCompare(b.name));
+            const facilities = [...new Map(courses.flatMap(course => course.runs).map(run => [run.facility_guid,
+                { guid: run.facility_guid, name: run.facility_name }])).values()].sort((a, b) => a.name.localeCompare(b.name));
+            const selectedCourse = courses.find(course => course.runs.some(run => run.guid === filters.run));
+            const selectedRun = selectedCourse?.runs.find(run => run.guid === filters.run);
+            const registerLocation = filters.facility || selectedRun?.facility_guid || '';
+            const registerCourse = filters.course || selectedCourse?.guid || '';
+        %>
+        <% if (!management) { %>
+        <section class="bg-white border rounded p-4 mb-4 no-print" aria-labelledby="register-select-heading">
+            <h2 class="h5" id="register-select-heading">Class register</h2>
+            <form method="GET" action="/admin/course-bookings" data-course-filters>
+                <input type="hidden" name="view" value="register">
+                <div class="row">
+                    <div class="col-md-4 form-group">
+                        <label for="register-location">Facility</label>
+                        <select class="form-control" id="register-location" name="facility" data-location-filter required>
+                            <option value="">Choose a facility</option>
+                            <% facilities.forEach(facility => { %><option value="<%= facility.guid %>" <%= registerLocation === facility.guid ? 'selected' : '' %>><%= facility.name %></option><% }); %>
+                        </select>
+                    </div>
+                    <div class="col-md-4 form-group">
+                        <label for="register-course">Course</label>
+                        <select class="form-control" id="register-course" name="course" data-course-filter required>
+                            <option value="">Choose a course</option>
+                            <% courses.forEach(course => { %>
+                                <option value="<%= course.guid %>" data-locations="<%= [...new Set(course.runs.map(run => run.facility_guid))].join(' ') %>" <%= registerCourse === course.guid ? 'selected' : '' %>><%= course.name %></option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="col-md-4 form-group">
+                        <label for="register-run">Class</label>
+                        <select class="form-control" id="register-run" name="run" data-run-filter required>
+                            <option value="">Choose a class</option>
+                            <% courses.forEach(course => { course.runs.forEach(run => { %>
+                                <option value="<%= run.guid %>" data-course="<%= course.guid %>" data-location="<%= run.facility_guid %>" <%= filters.run === run.guid ? 'selected' : '' %>><%= run.name %></option>
+                            <% }); }); %>
+                        </select>
+                    </div>
+                </div>
+                <% if (register) { %>
+                    <div class="form-group">
+                        <label for="register-session">Session date (UK time)</label>
+                        <select class="form-control" id="register-session" name="session">
+                            <option value="">Whole class</option>
+                            <% register.dates.forEach(day => { %><option value="<%= day %>" <%= filters.session === day ? 'selected' : '' %>><%= day.split('-').reverse().join('/') %></option><% }); %>
+                        </select>
+                    </div>
+                <% } %>
+                <button class="btn btn-primary" type="submit">View register</button>
+            </form>
+        </section>
+        <% if (register) { %>
+        <section class="bg-white border rounded p-4 mb-4 register-panel" aria-labelledby="class-register-heading">
+            <h2 class="h4" id="class-register-heading"><%= register.course_name %> &mdash; <%= register.name %></h2>
+            <p><%= register.facility_name %></p>
+            <p><strong><%= filters.session ? 'Session: ' + filters.session.split('-').reverse().join('/') : 'Whole class register' %></strong> (UK time)</p>
+            <%
+                const schedule = [...new Map([...(register.sessions || []), ...register.entries.flatMap(entry => entry.sessions)]
+                    .filter(session => !filters.session || new Date(session.starts_at).toLocaleDateString('en-GB',
+                        { timeZone: 'Europe/London' }).split('/').reverse().join('-') === filters.session)
+                    .map(session => [Date.parse(session.starts_at) + '/' + Date.parse(session.ends_at), session])).values()]
+                    .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
+            %>
+            <% if (filters.session) { %>
+                <p>Session times: <%= schedule.map(session => dateTime(session.starts_at) + ' to ' + dateTime(session.ends_at)).join('; ') %> (UK time)</p>
+            <% } else { %>
+                <details class="no-print mb-3">
+                    <summary>Class schedule (UK time)</summary>
+                    <ul class="mt-2"><% schedule.forEach(session => { %><li><%= dateTime(session.starts_at) %> to <%= dateTime(session.ends_at) %></li><% }); %></ul>
+                </details>
+            <% } %>
+            <p>Capacity: <%= register.capacity ?? 'Not configured' %>. Booked places: <%= register.booked %>.
+                Spaces remaining: <%= register.capacity === null ? 'Not configured' : register.spaces %>.
+                <%= filters.session ? 'Attendees for this session' : 'Attendees' %>: <%= register.entries.length %>.</p>
+            <p class="no-print">Session registers include only places whose purchased sessions include the selected date. Names and purchased schedules are retained even if a child's profile is archived.</p>
+            <p class="small">Medical / additional info and parental contacts use the child's latest saved profile, including archived profiles, not a purchase-time snapshot. Inherited parental contacts use the account holder's latest details. This register contains sensitive information; keep printed copies secure.</p>
+            <button class="btn btn-outline-primary mb-3 no-print" type="button" id="print-register">Print register</button>
+            <% if (!register.entries.length) { %><p>No attendees booked for this selection.</p><% } else { %>
+            <div class="table-responsive">
+                <table class="table">
+                    <caption class="sr-only">Attendee register for <%= register.name %></caption>
+                    <thead><tr><th scope="col">Attendee</th><th scope="col">Account holder</th><th scope="col">Parental contact details</th><th scope="col">Medical / additional info</th><th scope="col" class="no-print">Details</th></tr></thead>
+                    <tbody>
+                        <% register.entries.forEach(entry => { %>
+                        <tr>
+                            <th scope="row"><%= entry.attendee_name %> <span class="small d-block"><%= entry.member_guid ? 'Child' : 'Account holder' %></span></th>
+                            <td><%= entry.account_name %></td>
+                            <td style="min-width: 12rem; overflow-wrap: anywhere;">
+                                <% if (entry.member_guid) { %>
+                                    <p class="mb-1">Name: <%= entry.parental_contact?.parental_contact_name || 'Not provided' %></p>
+                                    <p class="mb-1">Email: <%= entry.parental_contact?.parental_contact_email || 'Not provided' %></p>
+                                    <p class="mb-0">Telephone: <%= entry.parental_contact?.parental_contact_telephone || 'Not provided' %></p>
+                                <% } else { %>
+                                    Not applicable
+                                <% } %>
+                            </td>
+                            <td style="min-width: 12rem; max-width: 24rem; overflow-wrap: anywhere;">
+                                <% if (!entry.member_guid) { %>
+                                    Not applicable
+                                <% } else { %>
+                                    <% if (entry.medical_concern === true) { %>
+                                        <p class="mb-1">Medical concerns reported.</p>
+                                        <% const conditionLabels = { asthma: 'Asthma', epilepsy: 'Epilepsy', epipen: 'Allergy requiring EpiPen', other: 'Other' }; %>
+                                        <% if ((entry.medical_conditions || []).length) { %>
+                                            <ul class="pl-3 mb-1"><% entry.medical_conditions.forEach(condition => { %><li><%= conditionLabels[condition] || condition %></li><% }); %></ul>
+                                        <% } %>
+                                        <% if (entry.medical_other) { %><p class="mb-1" style="white-space: pre-wrap;"><%= entry.medical_other %></p><% } %>
+                                    <% } else { %>
+                                        <p class="mb-1"><%= entry.medical_concern === false ? 'No medical concerns reported.' : 'Medical information not provided.' %></p>
+                                    <% } %>
+                                    <p class="mb-0"><%= {
+                                        limited_a_lot: 'Day-to-day activities limited a lot.',
+                                        limited_a_little: 'Day-to-day activities limited a little.',
+                                        no: 'No day-to-day activity limitations reported.'
+                                    }[entry.activity_limitation] || 'Activity limitation information not provided.' %></p>
+                                <% } %>
+                            </td>
+                            <td class="no-print"><a href="/admin/course-bookings/<%= entry.guid %>">View booking<span class="sr-only"> for <%= entry.attendee_name %></span></a></td>
+                        </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+            <% } %>
+        </section>
+        <% } %>
+        <% } %>
+        <% if (management) { %>
+        <section class="bg-white border rounded p-4 mb-4 no-print" aria-labelledby="course-booking-search-heading">
+            <h2 class="h5" id="course-booking-search-heading">Search bookings</h2>
+            <form method="GET" action="/admin/course-management" data-course-filters>
+                <input type="hidden" name="view" value="search">
+                <div class="row">
+                    <div class="col-md-4 form-group">
+                        <label for="search-facility">Location</label>
+                        <select class="form-control" id="search-facility" name="facility" data-location-filter>
+                            <option value="">All locations</option>
+                            <% facilities.forEach(facility => { %><option value="<%= facility.guid %>" <%= filters.facility === facility.guid ? 'selected' : '' %>><%= facility.name %></option><% }); %>
+                        </select>
+                    </div>
+                    <div class="col-md-4 form-group">
+                        <label for="search-course">Course</label>
+                        <select class="form-control" id="search-course" name="course" data-course-filter>
+                            <option value="">All courses</option>
+                            <% courses.forEach(course => { %><option value="<%= course.guid %>" data-locations="<%= [...new Set(course.runs.map(run => run.facility_guid))].join(' ') %>" <%= filters.course === course.guid ? 'selected' : '' %>><%= course.name %></option><% }); %>
+                        </select>
+                    </div>
+                    <div class="col-md-4 form-group">
+                        <label for="search-run">Class</label>
+                        <select class="form-control" id="search-run" name="run" data-run-filter>
+                            <option value="">All classes</option>
+                            <% courses.forEach(course => { course.runs.forEach(run => { %><option value="<%= run.guid %>" data-course="<%= course.guid %>" data-location="<%= run.facility_guid %>" <%= filters.view === 'search' && filters.run === run.guid ? 'selected' : '' %>><%= run.name %> &mdash; <%= run.facility_name %></option><% }); }); %>
+                        </select>
+                    </div>
+                </div>
+                <a class="btn btn-outline-secondary" href="/admin/course-management">Clear filters</a>
+                <button class="btn btn-primary" type="submit">Search bookings</button>
+            </form>
+            <% if (results) { %>
+                <h3 class="h5 mt-4"><%= results.total %> bookings found</h3>
+                <% if (!results.entries.length) { %><p>No course bookings match these filters.</p><% } else { %>
+                <div class="table-responsive">
+                    <table class="table">
+                        <caption class="sr-only">Course booking search results</caption>
+                        <thead><tr><th scope="col">Attendee</th><th scope="col">Booked by</th><% if (isAdmin) { %><th scope="col">Actions</th><% } %></tr></thead>
+                        <tbody>
+                            <% results.entries.forEach(entry => { %>
+                            <tr><th scope="row"><%= entry.attendee_name %><span class="small d-block"><%= entry.member_guid ? 'Child' : 'Account holder' %></span></th>
+                                <td><%= entry.account_name %></td>
+                                <% if (isAdmin) { %>
+                                <td>
+                                    <% if (!entry.cancelled_at) { %>
+                                        <a class="btn btn-outline-danger btn-sm text-nowrap" href="/admin/course-management/<%= entry.guid %>/remove?<%= new URLSearchParams({ facility: filters.facility, course: filters.course, run: filters.run, page: String(filters.page) }) %>">Remove attendee</a>
+                                    <% } else { %><span class="small">Attendee removed</span><% } %>
+                                </td>
+                                <% } %>
+                            </tr>
+                            <% }); %>
+                        </tbody>
+                    </table>
+                </div>
+                <% } %>
+                <nav aria-label="Course booking results pages">
+                    <% if (filters.page > 1) { %><a class="mr-3" href="<%= pageLink(filters.page - 1) %>">Previous</a><% } %>
+                    <span>Page <%= filters.page %> of <%= Math.max(1, Math.ceil(results.total / results.pageSize)) %></span>
+                    <% if (filters.page * results.pageSize < results.total) { %><a class="ml-3" href="<%= pageLink(filters.page + 1) %>">Next</a><% } %>
+                </nav>
+            <% } else { %><p class="mt-3 mb-0">Choose filters and select Search bookings to find existing places.</p><% } %>
+        </section>
+        <% } %>
+    </main>
+    <script>
+        document.getElementById('print-register')?.addEventListener('click', () => window.print());
+        document.querySelectorAll('[data-course-filters]').forEach(form => {
+            const sport = form.querySelector('[data-sport-filter]');
+            const location = form.querySelector('[data-location-filter]');
+            const course = form.querySelector('[data-course-filter]');
+            const run = form.querySelector('[data-run-filter]');
+            function update() {
+                Array.from(course.options).forEach(option => {
+                    option.hidden = Boolean(option.value && (
+                        (sport?.value && !option.dataset.sports.split(' ').includes(sport.value)) ||
+                        (location && ((location.required && !location.value) ||
+                            (location.value && !option.dataset.locations.split(' ').includes(location.value))))));
+                    option.disabled = option.hidden;
+                });
+                if (course.selectedOptions[0]?.disabled) course.value = '';
+                const availableCourses = Array.from(course.options).filter(option => option.value && !option.disabled).map(option => option.value);
+                Array.from(run.options).forEach(option => {
+                    option.hidden = Boolean(option.value && (!availableCourses.includes(option.dataset.course) ||
+                        (course.value && option.dataset.course !== course.value) ||
+                        (location && ((location.required && !course.value) ||
+                            (location.value && option.dataset.location !== location.value)))));
+                    option.disabled = option.hidden;
+                });
+                if (run.selectedOptions[0]?.disabled) run.value = '';
+            }
+            function changed() {
+                update();
+                const session = form.querySelector('[name="session"]');
+                if (session) session.value = '';
+            }
+            sport?.addEventListener('change', changed);
+            location?.addEventListener('change', changed);
+            course.addEventListener('change', changed);
+            run.addEventListener('change', () => {
+                const session = form.querySelector('[name="session"]');
+                if (session) session.value = '';
+            });
+            update();
+        });
+    </script>
+</body>
+</html>

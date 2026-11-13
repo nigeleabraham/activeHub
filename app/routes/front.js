@@ -151,8 +151,10 @@ const ADMIN_LINKS = [
     { href: '/admin/courses', title: 'Courses and course runs', text: 'Manage shared courses and their runs at each facility' },
     { href: '/admin/sports', title: 'Sports and Course Descriptions', text: 'Manage sports and their standard course descriptions' },
     { href: '/admin/opening-hours', title: 'Opening hours', text: 'Weekly schedules and exceptions' },
-    { href: '/admin/bookings', title: 'Bookings management', text: 'Book and manage slots for any profile' },
-    { href: '/admin/booking-search', title: 'Booking search', text: 'Find existing bookings and manage cancellations' },
+    { href: '/admin/bookings', title: 'Court bookings', text: 'Book and manage court slots for any profile' },
+    { href: '/admin/booking-search', title: 'Court bookings search', text: 'Find existing court bookings and manage cancellations' },
+    { href: '/admin/course-bookings', title: 'Course/Class register', text: 'Review attendees and print class registers' },
+    { href: '/admin/course-management', title: 'Course management', text: 'Search course bookings and review booking details' },
     { href: '/admin/court-configuration', title: 'Court configuration', text: 'Configure courts, shared resources and seasonal booking months' },
     { href: '/admin/credit-requests', title: 'Credit requests', text: 'Weather and discretionary credit requests from residents' },
     { href: '/admin/credit-refunds', title: 'Bank refund requests', text: 'Review resident requests to transfer booking credit to a bank account' },
@@ -721,6 +723,7 @@ admin.get('/credit-requests', async (req, res) => {
             activePage: 'credit-requests', historyPage: false, requests,
             corrected: req.query.corrected === '1', declineError: req.query.error === 'comment',
             autoApprovalEnabled: settings.credit_slot_auto_approval === '1', autoApprovalSlots, creditRequestDays,
+            slotDeleted: req.query.slot_deleted === '1',
             decision: ['approved', 'declined'].includes(req.query.decision) ? req.query.decision : '',
             decisionRef: typeof req.query.ref === 'string' ? req.query.ref.slice(0, 20) : '',
             error: req.query.error === '1'
@@ -777,6 +780,25 @@ admin.post('/settings/credit-request-period', async (req, res) => {
         return res.redirect('/admin/settings?window_saved=1');
     } catch (error) {
         console.error('Unable to save credit request day limit:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.post('/credit-requests/auto-slots/delete', async (req, res) => {
+    const { starts_at, ends_at } = req.body;
+    if (typeof starts_at !== 'string' || typeof ends_at !== 'string' ||
+        !Number.isFinite(Date.parse(starts_at)) || !Number.isFinite(Date.parse(ends_at)) ||
+        new Date(ends_at) <= new Date(starts_at)) return res.status(400).send('Select a valid weather auto-approval slot.');
+    try {
+        const removed = await Bookings.removeAutoApprovalSlot(starts_at, ends_at);
+        if (!removed) return res.status(409).send('This weather auto-approval slot no longer exists. Reload the credit requests page.');
+        await recordAudit(req.profile, {
+            action: 'weather-slot.delete', entityType: 'weather-slot', entityLabel: 'Weather credit auto-approval slot',
+            details: { starts_at: removed.starts_at, ends_at: removed.ends_at, approved_by_name: removed.approved_by_name }
+        });
+        return res.redirect('/admin/credit-requests?slot_deleted=1#auto-slots-heading');
+    } catch (error) {
+        console.error('Unable to delete weather auto-approval slot:', error);
         return res.sendStatus(500);
     }
 });
@@ -866,6 +888,26 @@ admin.post('/settings/refunds', async (req, res) => {
         return res.sendStatus(500);
     }
 });
+
+for (const [path, key, label] of [
+    ['duplicate-class', 'course_prevent_duplicate_class', 'Prevent repeat class bookings'],
+    ['multiple-classes', 'course_prevent_multiple_classes', 'Prevent different classes for the same course']
+]) {
+    admin.post(`/settings/course-booking-rules/${path}`, async (req, res) => {
+        if (!['0', '1'].includes(req.body.enabled)) return res.status(400).send('Select Enabled or Disabled for the course booking rule.');
+        try {
+            await Settings.set(key, req.body.enabled);
+            await recordAudit(req.profile, {
+                action: `settings.${key}`, entityType: 'setting', entityLabel: label,
+                details: { enabled: req.body.enabled === '1' }
+            });
+            return res.redirect('/admin/settings?saved=1');
+        } catch (error) {
+            console.error('Unable to save course booking rule:', error);
+            return res.sendStatus(500);
+        }
+    });
+}
 
 admin.get('/credit-refunds', async (req, res) => {
     if (['from', 'to', 'profile', 'page'].some(key => req.query[key] !== undefined)) {
@@ -1471,6 +1513,7 @@ admin.get('/settings', async (req, res) => {
             bookingSearchDays: await Settings.getBookingSearchDays(),
             bookingSearchError: req.query.error === 'booking-search-days',
             refundsEnabled: Settings.refundsEnabled(settings),
+            courseBookingRules: Settings.courseBookingRules(settings),
             lifetimeError: req.query.error === 'lifetime',
             windowSaved: req.query.window_saved === '1',
             windowError: req.query.error === 'days',
@@ -2294,6 +2337,8 @@ admin.post('/bookings/create', async (req, res) => {
     }
 });
 
+admin.use('/course-bookings', require('./courseBookingAdmin'));
+admin.use('/course-management', require('./courseBookingAdmin'));
 router.use('/admin', admin);
 router.use(require('./courseBasket')({ simulateCardPayment }));
 router.use(require('./children'));

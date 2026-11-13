@@ -6,8 +6,10 @@ const adminItems = [
     { key: 'courses', label: 'Courses and course runs', href: '/admin/courses' },
     { key: 'sports', label: 'Sports and Course Descriptions', href: '/admin/sports' },
     { key: 'opening-hours', label: 'Opening hours templates', href: '/admin/opening-hours' },
-    { key: 'bookings', label: 'Bookings management', href: '/admin/bookings' },
-    { key: 'booking-search', label: 'Booking search', href: '/admin/booking-search' },
+    { key: 'bookings', label: 'Court bookings', href: '/admin/bookings' },
+    { key: 'booking-search', label: 'Court bookings search', href: '/admin/booking-search' },
+    { key: 'course-bookings', label: 'Course/Class register', href: '/admin/course-bookings' },
+    { key: 'course-management', label: 'Course management', href: '/admin/course-management' },
     { key: 'court-configuration', label: 'Court configuration', href: '/admin/court-configuration' },
     { key: 'credit-requests', label: 'Credit requests', href: '/admin/credit-requests' },
     { key: 'credit-refunds', label: 'Bank refund requests', href: '/admin/credit-refunds' },
@@ -30,7 +32,7 @@ const adminBrand = locals.adminBrand || { title: locals.siteTitle || 'ActiveHub'
 const adminGroups = [
     { label: 'Home Pages', keys: ['admin-home', 'external-home'] },
     { label: 'Facilities management', keys: ['facilities', 'courses', 'sports', 'opening-hours', 'court-configuration'] },
-    { label: 'Bookings management', keys: ['bookings', 'booking-search', 'credit-requests', 'credit-refunds'] },
+    { label: 'Bookings management', keys: ['bookings', 'booking-search', 'course-bookings', 'course-management', 'credit-requests', 'credit-refunds'] },
     { label: 'Audit', keys: ['credit-request-history', 'refund-history', 'audit'] },
     { label: 'System Admin', keys: ['profiles', 'roles', 'settings'] }
 ].map(group => ({ ...group, keys: group.keys.filter(key => navigationItems.some(item => item.key === key)) }))
@@ -87,7 +89,7 @@ const adminGroups = [
                     <summary><span class="admin-navigation-label"><%= group.label %></span></summary>
                     <ul>
                         <% group.keys.forEach(key => { const item = navigationItems.find(item => item.key === key); %>
-                            <li><a href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.key === 'bookings' ? 'Bookings' : item.label %></a></li>
+                            <li><a href="<%= item.href %>"<% if (activePage === item.key) { %> aria-current="page"<% } %>><%= item.label %></a></li>
                         <% }); %>
                     </ul>
                 </details>

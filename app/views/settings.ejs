@@ -31,7 +31,7 @@
             <div>
                 <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
                 <h1 class="h2 mb-1">Settings</h1>
-                <p class="text-muted mb-0">Configure the site, booking credits and refunds</p>
+                <p class="text-muted mb-0">Configure the site, booking rules, credits and refunds</p>
             </div>
         </header>
 
@@ -51,6 +51,7 @@
             <a href="#site-identity-heading">Site identity</a>
             <a href="#membership-scheme-heading">Membership</a>
             <a href="#booking-search-settings-heading">Booking search</a>
+            <a href="#course-booking-rules-heading">Course and class booking rules</a>
             <a href="#credit-request-settings-heading">Credits and refunds</a>
         </nav>
 
@@ -146,6 +147,35 @@
                         <small class="form-text text-muted" id="booking-search-days-help">From defaults to today. To defaults to From plus this many days and can only be shortened, never before From. For example, 30 allows 31 inclusive calendar dates. Larger ranges may increase database work.</small>
                     </div>
                 </form>
+        </section>
+        <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="course-booking-rules-heading">
+            <h2 id="course-booking-rules-heading" class="h5 mb-3">Course and class booking rules</h2>
+            <p>Apply these rules separately to each attendee, including the account holder and their children. All past and future course bookings count. Rules are checked when adding a place and again at payment, including other places in the basket. Changing a rule does not cancel existing bookings.</p>
+            <% const rules = locals.courseBookingRules || { preventDuplicateClass: true, preventMultipleClasses: true };
+            [
+                { path: 'duplicate-class', title: 'Prevent repeat class bookings', enabled: rules.preventDuplicateClass,
+                    help: 'Prevent an attendee booking a class they are already booked on. Disabling allows another purchase of the same class. The basket still contains at most one place per attendee per class.' },
+                { path: 'multiple-classes', title: 'Prevent different classes for the same course', enabled: rules.preventMultipleClasses,
+                    help: 'Prevent an attendee booking a different class of a course they have already booked, or adding two different classes of the same course to the basket. Different attendees and different courses are unaffected.' }
+            ].forEach(rule => { %>
+            <div class="admin-form-section" data-settings-item>
+                <h3 class="h6"><%= rule.title %></h3>
+                <p id="course-rule-<%= rule.path %>-help"><%= rule.help %></p>
+                <form method="POST" action="/admin/settings/course-booking-rules/<%= rule.path %>" data-editor-label="<%= rule.title %>" data-editor-preview="false" data-editor-inline>
+                    <label for="course-rule-<%= rule.path %>"><%= rule.title %></label>
+                    <div class="settings-field-actions">
+                        <select class="form-control" id="course-rule-<%= rule.path %>" name="enabled" aria-describedby="course-rule-<%= rule.path %>-help">
+                            <option value="1" <%= rule.enabled ? 'selected' : '' %>>Enabled</option>
+                            <option value="0" <%= !rule.enabled ? 'selected' : '' %>>Disabled</option>
+                        </select>
+                        <div class="settings-actions">
+                            <button class="btn btn-outline-secondary" type="button" data-cancel-edit>Cancel</button>
+                            <button class="btn btn-primary" type="submit">Save booking rule</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <% }); %>
         </section>
         <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="credit-request-settings-heading">
             <h2 id="credit-request-settings-heading" class="h5 mb-3">Credit and refund settings</h2>

@@ -1,8 +1,34 @@
+<style>
+    .course-booking-dialog { width: calc(100% - 2rem); max-width: 36rem; padding: 1.5rem; border: 2px solid #113255; color: #0b0c0c; background: #fff; }
+    .course-booking-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+</style>
+<dialog class="course-booking-dialog" id="course-booking-dialog" aria-labelledby="course-booking-dialog-heading" aria-describedby="course-booking-dialog-message">
+    <h2 class="h5" id="course-booking-dialog-heading">Unable to add this place</h2>
+    <p id="course-booking-dialog-message"></p>
+    <form method="dialog">
+        <button class="btn btn-primary" type="submit" autofocus>Close</button>
+        <a class="btn btn-outline-secondary" href="/basket">View basket</a>
+    </form>
+</dialog>
 <script>
     (() => {
         const key = 'activehub-course-basket-return';
-        document.addEventListener('submit', event => {
+        const dialog = document.getElementById('course-booking-dialog');
+        let pending = false;
+        function showError(message) {
+            document.getElementById('course-booking-dialog-message').textContent = message;
+            dialog.showModal();
+        }
+        document.addEventListener('submit', async event => {
             if (event.target.getAttribute('action') !== '/basket/add') return;
+            event.preventDefault();
+            if (pending) return;
+            const form = event.target;
+            const data = new FormData(form);
+            if (event.submitter?.name) data.set(event.submitter.name, event.submitter.value);
+            const buttons = Array.from(form.querySelectorAll('button[type="submit"]'));
+            pending = true;
+            buttons.forEach(button => { button.disabled = true; });
             try {
                 sessionStorage.setItem(key, JSON.stringify({
                     path: location.pathname,
@@ -11,6 +37,29 @@
                 }));
             } catch (error) {
                 console.warn('Unable to remember the course page position:', error);
+            }
+            try {
+                const response = await fetch('/basket/add', {
+                    method: 'POST', headers: { Accept: 'application/json' },
+                    body: new URLSearchParams(data)
+                });
+                if (!response.headers.get('content-type')?.includes('application/json')) {
+                    throw new Error('Unexpected response when adding a course place');
+                }
+                const result = await response.json();
+                if (!response.ok) {
+                    if (typeof result.message !== 'string') throw new Error('Missing course booking error message');
+                    showError(result.message);
+                    return;
+                }
+                if (!['/basket', '/basket/checkout'].includes(result.redirect)) throw new Error('Invalid course booking redirect');
+                location.assign(result.redirect);
+            } catch (error) {
+                console.error('Unable to add course place:', error);
+                showError('We could not confirm whether this place was added. Check your basket before trying again. If your session has expired, sign in again.');
+            } finally {
+                pending = false;
+                buttons.forEach(button => { button.disabled = false; });
             }
         });
         try {

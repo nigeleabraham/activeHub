@@ -903,6 +903,13 @@ async function findAutoApprovalSlots() {
     return rows;
 }
 
+async function removeAutoApprovalSlot(startsAt, endsAt) {
+    const { rows } = await pool.query(`DELETE FROM credit_auto_approval_slots
+        WHERE starts_at = $1 AND ends_at = $2 RETURNING starts_at, ends_at, approved_by_name`,
+    [startsAt, endsAt]);
+    return rows[0] || null;
+}
+
 async function findCreditRequests(status, historyFilters = null) {
     const { rows } = await pool.query(
         `SELECT requests.guid, requests.status, requests.reason, requests.note, requests.decline_comment, requests.auto_approved, requests.requested_at, requests.decided_at, requests.decided_by_name,
@@ -1044,6 +1051,7 @@ module.exports = {
     searchCreditHistory,
     decideCreditRequest,
     findAutoApprovalSlots,
+    removeAutoApprovalSlot,
     initialize,
     findInAppFacilities,
     findFacilitySports,
@@ -1059,6 +1067,7 @@ module.exports = {
     updateSportMonths,
     removeOption,
     createBooking,
+    insertBooking,
     createBookings,
     findUpcomingForProfile,
     findRecentPastForProfile,
