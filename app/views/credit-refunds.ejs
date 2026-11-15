@@ -27,8 +27,8 @@
         <% if (locals.refundsEnabled === false) { %>
             <output class="alert alert-warning" aria-live="polite">Bank and external refunds are disabled system-wide. Pending requests remain visible but cannot be marked as done until refunds are enabled in Settings.</output>
         <% } %>
-        <% if (decision === 'approved') { %>
-            <output class="alert alert-success" aria-live="polite">Bank refund marked as done and the remaining credit deducted. <a href="/admin/credit-refunds/history?from_queue=1">Search bank refund history</a> using today's date to check the exact completed amount.</output>
+        <% if (!locals.historyPage) { %>
+            <output class="alert alert-success" aria-live="polite" data-refund-success <%= decision === 'approved' ? '' : 'hidden' %>>Bank refund marked as done and the remaining credit deducted. <a href="/admin/credit-refunds/history?from_queue=1">Search bank refund history</a> using today's date to check the exact completed amount.</output>
         <% } %>
         <% if (error) { %>
             <div class="alert alert-warning" role="alert">This request can no longer be actioned. It may already be decided or its credit fully spent.</div>
@@ -39,9 +39,9 @@
             <section class="bg-white border rounded shadow-sm p-4 <%= pending ? 'mb-5' : 'mb-4' %>" aria-labelledby="<%= pending ? 'pending-refunds' : 'closed-refunds' %>">
                 <header class="border-bottom pb-3 mb-4">
                     <div class="d-flex flex-wrap align-items-center justify-content-between">
-                        <h2 class="h5 mb-0" id="<%= pending ? 'pending-refunds' : 'closed-refunds' %>"><%= pending ? 'Pending action' : 'History' %></h2>
+                        <h2 class="h5 mb-0" id="<%= pending ? 'pending-refunds' : 'closed-refunds' %>"<% if (pending) { %> tabindex="-1"<% } %>><%= pending ? 'Pending action' : 'History' %></h2>
                         <% if (pending) { %>
-                            <span class="badge <%= items.length ? 'badge-warning' : 'badge-light text-muted' %>"><%= items.length %> awaiting action</span>
+                            <span class="badge <%= items.length ? 'badge-warning' : 'badge-light text-muted' %>" data-refund-count><%= items.length %> awaiting action</span>
                         <% } else if (searched) { %>
                             <span class="badge badge-info"><%= history.total %> matching this period</span>
                         <% } %>
@@ -81,20 +81,21 @@
                     <% if (searched) { %><output aria-live="polite"><%= history.total %> matching this period</output><% } %>
                 <% } %>
                 <% if (items.length) { %>
-                    <div class="table-responsive bg-white border rounded">
+                    <div class="table-responsive bg-white border rounded" <%= pending ? 'data-refund-table' : '' %>>
                         <table class="table table-sm mb-0">
                             <thead><tr><th>Booking</th><th>Requested by</th><% if (pending) { %><th>Remaining credit</th><% } %><th>Outcome</th><% if (!pending) { %><th>Actioned by</th><th>Completed (UK)</th><% } %></tr></thead>
                             <tbody>
                                 <% items.forEach(request => { %>
-                                    <tr>
+                                    <tr <%= pending ? 'data-refund-row' : '' %>>
                                         <td><code><%= request.booking_ref || 'Opening balance' %></code><br><span class="small">Payment ID: <code><%= request.payment_reference || 'Not recorded' %></code></span><br><%= request.facility_name %></td>
                                         <td><%= request.profile_name %><br><span class="small"><%= request.profile_email %></span></td>
                                         <% if (pending) { %><td><%= money(request.remaining_pence) %><% if (request.expired) { %><br><span class="badge badge-warning">Expired for spending; refund can still be completed</span><% } %></td><% } %>
                                         <td>
                                             <% if (pending) { %>
-                                                <form method="POST" action="/admin/credit-refunds/decide">
+                                                <form method="POST" action="/admin/credit-refunds/decide" data-refund-decision>
                                                     <input type="hidden" name="request_guid" value="<%= request.guid %>">
                                                     <button class="btn btn-outline-primary btn-sm mb-1" type="submit" name="decision" value="approve" <%= locals.refundsEnabled === false ? 'disabled' : '' %> data-confirm="Mark this refund as done and deduct the current remaining credit? The amount may have decreased since this page loaded. This records completion; it does not send a bank transfer.">Mark as done</button>
+                                                    <p class="text-danger small mb-0" role="alert" data-refund-error hidden></p>
                                                 </form>
                                             <% } else { %>
                                                 <strong><%= request.status === 'approved' ? 'Done ' + money(request.refunded_pence) : request.status === 'cancelled' ? 'Cancelled: profile deleted' : request.status === 'spent' ? 'Closed: credit fully spent' : 'Declined' %></strong>
@@ -113,7 +114,12 @@
                             </tbody>
                         </table>
                     </div>
-                <% } else { %><p class="text-muted"><%= pending ? 'No bank refunds are waiting for action.' : searched ? 'No completed bank refund requests found for this period.' : 'Select From and To dates to load bank refund history.' %></p><% } %>
+                <% } %>
+                <% if (pending) { %>
+                    <p class="text-muted" data-no-refunds <%= items.length ? 'hidden' : '' %>>No bank refunds are waiting for action.</p>
+                <% } else if (!items.length) { %>
+                    <p class="text-muted"><%= searched ? 'No completed bank refund requests found for this period.' : 'Select From and To dates to load bank refund history.' %></p>
+                <% } %>
                 <% if (!pending && searched && history.total > history.pageSize) {
                     const totalPages = Math.ceil(history.total / history.pageSize);
                     const pageLink = target => '/admin/credit-refunds/history?' + new URLSearchParams({ ...filters, ...(locals.fromQueue ? { from_queue: '1' } : {}), page: target }).toString() + '#closed-refunds';
@@ -147,6 +153,8 @@
                 var button = event.submitter;
                 if (button && button.dataset.confirm && !window.confirm(button.dataset.confirm)) event.preventDefault();
             });
+            <%- include('partials/deletion-animation') %>
+            <%- include('partials/refund-queue-behaviour') %>
         });
     </script>
 </body>

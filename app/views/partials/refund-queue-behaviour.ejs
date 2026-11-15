@@ -1,0 +1,60 @@
+    (() => {
+        let pending = false;
+        const forms = document.querySelectorAll('[data-refund-decision]');
+        forms.forEach(form => form.addEventListener('submit', async event => {
+            if (event.defaultPrevented) return;
+            event.preventDefault();
+            if (pending) return;
+            pending = true;
+            const buttons = Array.from(document.querySelectorAll('[data-refund-decision] button'));
+            const disabled = buttons.map(button => button.disabled);
+            const error = form.querySelector('[data-refund-error]');
+            const row = form.closest('[data-refund-row]');
+            const body = new URLSearchParams(new FormData(form, event.submitter));
+            error.hidden = true;
+            buttons.forEach(button => { button.disabled = true; });
+            form.setAttribute('aria-busy', 'true');
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST', headers: { 'X-Requested-With': 'fetch' }, body
+                });
+                const resultUrl = new URL(response.url, location.href);
+                if (!response.ok || resultUrl.origin !== location.origin ||
+                    resultUrl.pathname !== '/admin/credit-refunds' ||
+                    resultUrl.searchParams.get('decision') !== 'approved') {
+                    throw new Error('The server did not confirm the refund was completed.');
+                }
+                const before = row.getBoundingClientRect().top;
+                document.querySelector('[data-refund-success]').hidden = false;
+                window.scrollBy(0, row.getBoundingClientRect().top - before);
+                const rows = Array.from(document.querySelectorAll('[data-refund-row]'));
+                const index = rows.indexOf(row);
+                await animateDeletion(row);
+                const scroll = window.scrollY;
+                row.remove();
+                const remaining = Array.from(document.querySelectorAll('[data-refund-row]'));
+                const count = document.querySelector('[data-refund-count]');
+                count.textContent = `${remaining.length} awaiting action`;
+                count.classList.toggle('badge-warning', remaining.length > 0);
+                count.classList.toggle('badge-light', remaining.length === 0);
+                count.classList.toggle('text-muted', remaining.length === 0);
+                if (!remaining.length) {
+                    document.querySelector('[data-refund-table]').remove();
+                    document.querySelector('[data-no-refunds]').hidden = false;
+                }
+                window.scrollTo(window.scrollX, scroll);
+                buttons.forEach((button, index) => { button.disabled = disabled[index]; });
+                const target = remaining[Math.min(index, remaining.length - 1)]?.querySelector('button')
+                    || document.getElementById('pending-refunds');
+                target.focus({ preventScroll: true });
+            } catch (failure) {
+                console.error('Unable to confirm bank refund completion:', failure);
+                error.textContent = 'The refund could not be confirmed. Refresh this page and check bank refund history before trying again.';
+                error.hidden = false;
+            } finally {
+                buttons.forEach((button, index) => { button.disabled = disabled[index]; });
+                form.removeAttribute('aria-busy');
+                pending = false;
+            }
+        }));
+    })();

@@ -113,6 +113,8 @@ The master refunds switch defaults to Enabled to preserve existing behaviour. Di
 
 **Bank refund requests** shows the pending queue and links to the separate **Bank refund history** page. History loads nothing until From and To dates are supplied. It uses completion dates in Europe/London, includes both selected days, allows a maximum 62-day range, and returns 50 records per page. Clear resets the dates and removes history results. Existing bank refund history links redirect to the new page. This search does not delete older refund records or apply audit retention to them.
 
+After a refund is marked as done, the success banner remains at the top while the completed row is highlighted and removed from the pending queue. The count updates and focus remains at the next row, or the pending heading if none remain. Without JavaScript, the normal form submission and redirect remain available.
+
 Bank refund history shows the outcome, **Actioned by** and completion time, without requested-amount or remaining-credit columns. Actioned by uses the recorded decision-maker name, or **Not recorded** when no name was captured. The pending queue retains remaining credit for administrators completing refunds.
 History also has an optional **Username** finder shared with bookings: search first name, surname (in either order), or email, then check the automatically selected best match or choose another result. The selected profile filters both the history results and total count and is retained through pagination. All profiles is the default; emptying the username field restores it without changing dates. Clear resets all filters to their defaults; dates remain required.
 
