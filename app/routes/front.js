@@ -1337,14 +1337,22 @@ router.get('/facilities', async (req, res) => {
 });
 router.get('/courses', async (req, res) => {
     try {
-        const [settings, logo, courseRows, facilities, sports, faqs, familyMembers] = await Promise.all([
-            Settings.getAll(), Settings.getLogo(), Courses.findAll({ availableOnly: true, includeUnscheduled: true }), Facilities.findAll(), Sports.findAll(), Courses.findFaqs(),
-            CourseOrders.familyMembers(req.profile.guid)
+        const query = req.query || {};
+        const selected = courseSelection(query.course, query.group, query.heading);
+        const [settings, logo, courseRows, facilities, sports, faqs] = await Promise.all([
+            Settings.getAll(), Settings.getLogo(), Courses.findAll({ availableOnly: true, includeUnscheduled: true, includeFullyBooked: true, includeSessions: false }), Facilities.findAll(), Sports.findAll(), Courses.findFaqs()
         ]);
-        const courses = courseRows.map(course => ({
-            ...course,
-            runs: (course.runs || []).filter(run => (run.spaces_remaining ?? run.capacity) > 0)
-        }));
+        let familyMembers = [];
+        if (selected) {
+            const [runs, family] = await Promise.all([
+                Courses.findRuns({ availableOnly: true, includeFullyBooked: true, courseGuid: selected.courseGuid }),
+                CourseOrders.familyMembers(req.profile.guid)
+            ]);
+            const selectedCourse = courseRows.find(course => course.guid === selected.courseGuid);
+            if (selectedCourse) selectedCourse.runs = runs;
+            familyMembers = family;
+        }
+        const courses = courseRows;
         const courseGroups = sports.map(sport => ({
             guid: sport.guid, name: sport.name,
             courses: courses.filter(course => course.sport_guids.includes(sport.guid)),
@@ -1354,11 +1362,35 @@ router.get('/courses', async (req, res) => {
         if (unassigned.length) courseGroups.push({ guid: 'unassigned', name: 'Sport to be confirmed', courses: unassigned, faqs: [] });
         res.render('resident-courses', {
             activePage: 'courses', siteTitle: settings.site_title, hasLogo: Boolean(logo),
-            courses, facilities, courseGroups, familyMembers
+            courses, facilities, courseGroups, familyMembers, lazyRuns: true, selectedCourse: selected
         });
     } catch (error) {
         console.error('Unable to load customer courses:', error);
         res.sendStatus(500);
+    }
+});
+function courseSelection(courseGuid, groupId, headingId) {
+    if (typeof courseGuid !== 'string' || !GUID_PATTERN.test(courseGuid) ||
+        typeof groupId !== 'string' || !groupId.startsWith('sport-group-') ||
+        !(groupId === 'sport-group-unassigned' || GUID_PATTERN.test(groupId.slice('sport-group-'.length))) ||
+        (headingId !== `course-heading-${courseGuid}` && headingId !== `course-heading-${courseGuid}-${groupId}`)) return null;
+    return { courseGuid, groupId, headingId };
+}
+
+router.get('/courses/:courseGuid/classes', async (req, res) => {
+    const selected = courseSelection(req.params.courseGuid, req.query.group, req.query.heading);
+    if (!selected) return res.sendStatus(400);
+    try {
+        const [runs, familyMembers] = await Promise.all([
+            Courses.findRuns({ availableOnly: true, includeFullyBooked: true, courseGuid: selected.courseGuid }),
+            CourseOrders.familyMembers(req.profile.guid)
+        ]);
+        res.set('Cache-Control', 'no-store');
+        return res.render('partials/course-run-groups', { runs, familyMembers,
+            groupId: selected.groupId, courseHeadingId: selected.headingId });
+    } catch (error) {
+        console.error('Unable to load course classes:', error);
+        return res.sendStatus(500);
     }
 });
 router.get('/book', (req, res) => res.redirect('/admin/bookings'));

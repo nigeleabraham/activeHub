@@ -415,6 +415,14 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(visible.runs[0].remaining_sessions, 2);
         assert.equal(visible.runs[0].total_sessions, 3);
         assert.equal(visible.runs[0].sessions.length, 2);
+        const summary = (await Courses.findAll({ availableOnly: true, includeSessions: false }))
+            .find(item => item.guid === course.guid).runs[0];
+        assert.deepEqual(summary.sessions, []);
+        assert.equal(summary.total_sessions, null);
+        assert.equal(summary.spaces_remaining, visible.runs[0].spaces_remaining);
+        const scoped = await Courses.findRuns({ availableOnly: true, courseGuid: course.guid });
+        assert.deepEqual(scoped.map(item => item.guid), [run.guid]);
+        assert.equal(scoped[0].sessions.length, 2);
         const adminRun = (await Courses.findAll()).find(item => item.guid === course.guid).runs[0];
         assert.equal(adminRun.sessions.length, 3);
         assert.deepEqual(visible.runs[0].sessions, adminRun.sessions.slice(1));
@@ -424,6 +432,8 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         await db.query(`UPDATE course_runs SET end_date = (statement_timestamp() AT TIME ZONE 'Europe/London')::date - 1
             WHERE guid = $1`, [run.guid]);
         assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid));
+        assert.ok(!(await Courses.findRuns({ availableOnly: true, includeFullyBooked: true })).some(item => item.guid === run.guid),
+            'Expired runs remain hidden when fully booked runs are included');
         assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
         assert.equal((await customerCourse()).has_scheduled_classes, false);
         assert.equal((await customerCourse()).has_current_classes, false);
@@ -445,6 +455,8 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal((await customerCourse()).has_current_classes, false);
         await db.query('UPDATE course_runs SET published=false WHERE guid=$1', [run.guid]);
         assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        assert.ok(!(await Courses.findRuns({ availableOnly: true, includeFullyBooked: true })).some(item => item.guid === run.guid),
+            'Draft runs remain hidden');
         assert.equal((await customerCourse()).has_scheduled_classes, false, 'Draft runs are not advertised');
         await db.query('UPDATE course_runs SET published=true WHERE guid=$1', [run.guid]);
         await db.query("UPDATE course_sessions SET starts_at=starts_at-interval '1 year', ends_at=ends_at-interval '1 year' WHERE run_guid=$1", [run.guid]);
@@ -513,13 +525,15 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid));
         const soldOutCourse = (await Courses.findAll({ availableOnly: true })).find(item => item.guid === course.guid);
         assert.ok(soldOutCourse, 'The sold-out course remains visible with no places');
-        const soldOutCustomerCourse = (await Courses.findAll({ availableOnly: true, includeUnscheduled: true }))
+        const soldOutCustomerCourse = (await Courses.findAll({ availableOnly: true, includeUnscheduled: true, includeFullyBooked: true }))
             .find(item => item.guid === course.guid);
         assert.equal(soldOutCustomerCourse.has_scheduled_classes, true);
-        assert.equal(soldOutCustomerCourse.runs.length, 0);
+        assert.equal(soldOutCustomerCourse.runs.find(item => item.guid === run.guid).spaces_remaining, 0);
         assert.equal(soldOutCourse.runs.length, 0);
         await db.query('UPDATE course_runs SET capacity = 1 WHERE guid = $1', [run.guid]);
         assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid), 'Overbooked runs are excluded');
+        assert.equal((await Courses.findRuns({ availableOnly: true, includeFullyBooked: true }))
+            .find(item => item.guid === run.guid).spaces_remaining, -1, 'Overbooked runs are visible as fully booked');
         await db.query('UPDATE course_runs SET capacity = 2 WHERE guid = $1', [run.guid]);
         const { rows: [cancelled] } = await db.query(`UPDATE course_enrolments SET cancelled_at = now()
             WHERE guid = (SELECT guid FROM course_enrolments WHERE run_guid = $1 LIMIT 1) RETURNING guid`, [run.guid]);

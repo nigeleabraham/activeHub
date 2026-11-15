@@ -1,0 +1,29 @@
+<% const groups = [
+    { key: 'in_progress', title: 'Classes in progress' },
+    { key: 'upcoming', title: 'Upcoming classes' },
+    { key: 'unknown', title: 'Classes with an unknown start date' }
+];
+groups.forEach(statusGroup => {
+    const groupedRuns = runs.filter(run => statusGroup.key === 'unknown'
+        ? !['in_progress', 'upcoming'].includes(run.booking_status)
+        : run.booking_status === statusGroup.key);
+    if (!groupedRuns.length) return;
+    const statusHeadingId = courseHeadingId + '-' + statusGroup.key;
+%>
+<section class="mt-4" aria-labelledby="<%= statusHeadingId %>" data-run-status-group="<%= statusGroup.key %>">
+    <h4 class="h5 mb-3" id="<%= statusHeadingId %>"><%= statusGroup.title %> (<%= groupedRuns.length %>)</h4>
+    <div class="row">
+        <% groupedRuns.forEach(run => { %>
+        <div class="col-12 col-lg-6 col-xl-4 mb-3">
+            <article class="border rounded bg-light p-3" data-course-run>
+                <%- include('course-run-details', { run, returnTo: '/courses#' + courseHeadingId,
+                    attendeeId: 'attendee-' + run.guid + '-' + groupId }) %>
+            </article>
+        </div>
+        <% }); %>
+    </div>
+</section>
+<% }); %>
+<% if (!runs.length) { %>
+<p class="mt-3">These classes are no longer available. Refresh the page to see the latest availability.</p>
+<% } %>

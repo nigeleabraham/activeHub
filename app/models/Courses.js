@@ -123,7 +123,7 @@ async function backfillRunDates(client = pool) {
             (NOT r.incomplete_history AND r.start_date IS DISTINCT FROM dates.first_date))`);
 }
 
-async function findAll({ availableOnly = false, includeUnscheduled = false } = {}) {
+async function findAll({ availableOnly = false, includeUnscheduled = false, includeFullyBooked = false, includeSessions = true } = {}) {
     const { rows } = await pool.query(`
         SELECT courses.guid, courses.name, courses.description, courses.created_at,
                courses.description_sport_guid, courses.description_overrides, courses.description_sections,
@@ -162,7 +162,7 @@ async function findAll({ availableOnly = false, includeUnscheduled = false } = {
                 AND (r.end_date IS NULL OR r.end_date >= (statement_timestamp() AT TIME ZONE 'Europe/London')::date))
         ORDER BY LOWER(courses.name), courses.guid
     `, [availableOnly, includeUnscheduled]);
-    const runs = await findRuns({ availableOnly });
+    const runs = await findRuns({ availableOnly, includeFullyBooked, includeSessions });
     return rows.sort(compareCourses).map(course => ({ ...course,
         description_text: courseDescriptionText(course, course.default_sections),
         description_custom: hasCustomDescription(course),
@@ -219,7 +219,7 @@ async function save(guid, { name, description, sport_guids, description_sport_gu
     }
 }
 
-async function findRuns({ availableOnly = false } = {}) {
+async function findRuns({ availableOnly = false, includeFullyBooked = false, includeSessions = true, courseGuid = null } = {}) {
     const { rows } = await pool.query(`
             SELECT r.*, to_char(r.start_date, 'YYYY-MM-DD') AS start_date,
                 to_char(r.end_date, 'YYYY-MM-DD') AS end_date, f.name AS facility_name,
@@ -233,23 +233,24 @@ async function findRuns({ availableOnly = false } = {}) {
                     ELSE 'unknown'
                 END AS booking_status,
                 r.capacity - enrolments.booked AS spaces_remaining,
-                (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid) AS total_sessions,
-                (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()) AS remaining_sessions,
-                COALESCE((SELECT json_agg(json_build_object(
+                CASE WHEN $3::boolean THEN (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid) END AS total_sessions,
+                CASE WHEN $3::boolean THEN (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()) END AS remaining_sessions,
+                CASE WHEN $3::boolean THEN COALESCE((SELECT json_agg(json_build_object(
                     'starts_local', to_char(starts_at AT TIME ZONE 'Europe/London', 'YYYY-MM-DD HH24:MI'),
                     'ends_local', to_char(ends_at AT TIME ZONE 'Europe/London', 'YYYY-MM-DD HH24:MI'))
                     ORDER BY starts_at) FROM course_sessions WHERE run_guid = r.guid
-                    AND (NOT $1::boolean OR starts_at > statement_timestamp())), '[]') AS sessions
+                    AND (NOT $1::boolean OR starts_at > statement_timestamp())), '[]') ELSE '[]'::json END AS sessions
             FROM course_runs r JOIN facilities f ON f.guid = r.facility_guid
             CROSS JOIN LATERAL (
                 SELECT count(*)::int AS booked FROM course_enrolments
                 WHERE run_guid = r.guid AND cancelled_at IS NULL
             ) enrolments
-            WHERE NOT $1::boolean OR (r.published AND EXISTS (
+            WHERE ($4::uuid IS NULL OR r.course_guid = $4::uuid)
+            AND (NOT $1::boolean OR (r.published AND EXISTS (
                 SELECT 1 FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp())
                 AND (r.end_date IS NULL OR r.end_date >= (statement_timestamp() AT TIME ZONE 'Europe/London')::date)
-                AND enrolments.booked < r.capacity)
-            ORDER BY LOWER(f.name), LOWER(r.name), r.guid`, [availableOnly]);
+                AND ($2::boolean OR enrolments.booked < r.capacity)))
+            ORDER BY LOWER(f.name), LOWER(r.name), r.guid`, [availableOnly, includeFullyBooked, includeSessions, courseGuid]);
     return rows.sort(compareRuns).map(run => ({ ...run, current_price_pence: run.full_price_pence !== null && run.total_sessions
         ? priceForRemainingSessions(run.full_price_pence, run.total_sessions, run.remaining_sessions) : null }));
 }

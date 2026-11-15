@@ -205,7 +205,7 @@ test('customer sport panels contain their own courses and FAQs, omit unused spor
     assert.deepEqual(values.courseGroups.map(group => group.name), ['Tennis', 'Second sport', 'Sport to be confirmed']);
     assert.deepEqual(values.courseGroups.map(group => group.courses.length), [2, 1, 1]);
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
-        ...values, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
+        ...values, lazyRuns: false, currentProfile: { name: 'Resident', role: 'Resident' }, isAdmin: false, canSwitchRole: false
     });
     assert.equal((html.match(/<details[^>]*data-sport-faqs/g) || []).length, 1);
     const panels = html.split('<section class="mb-4" data-course-sport-group=').slice(1);
@@ -227,7 +227,7 @@ test('customer sport panels contain their own courses and FAQs, omit unused spor
     assert.doesNotMatch(html, /Unused sport|Unused FAQ|<details[^>]* open/);
 });
 
-test('customer course page hides full and overbooked runs while retaining courses with no places', async t => {
+test('customer course page displays available, full and overbooked runs with accurate counts', async t => {
     t.mock.method(require('../models/CourseOrders'), 'familyMembers', async () => []);
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));
     t.mock.method(Settings, 'getLogo', async () => null);
@@ -252,7 +252,7 @@ test('customer course page hides full and overbooked runs while retaining course
             has_current_classes: true, has_upcoming_classes: true, runs: [full, overbooked] },
         { ...course, guid: 'unscheduled', name: 'Unscheduled course', runs: [] },
         { ...course, guid: 'unknown', name: 'Unknown start course', has_scheduled_classes: true,
-            has_unknown_start_classes: true, runs: [] },
+            has_unknown_start_classes: true, runs: [makeRun('Unknown full', 0, 'unknown')] },
         { ...course, guid: 'upcoming', name: 'Upcoming course', has_scheduled_classes: true,
             has_upcoming_classes: true, runs: [makeRun('Upcoming class', 1, 'upcoming')] },
         { ...course, guid: 'current-full-upcoming-available', name: 'Current full future available',
@@ -267,22 +267,24 @@ test('customer course page hides full and overbooked runs while retaining course
         let locals;
         await handler({ profile: { guid: GUID } }, { render(_view, values) { locals = values; }, sendStatus: assert.fail });
         return { locals, html: await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
-            ...locals, currentProfile: { name: 'Resident' }, isAdmin: false, canSwitchRole: false
+            ...locals, lazyRuns: false, currentProfile: { name: 'Resident' }, isAdmin: false, canSwitchRole: false
         }) };
     }
     const { locals, html } = await render();
     assert.deepEqual(locals.courses.map(item => item.runs.map(run => run.guid)),
-        [['Available class'], [], [], [], [], [], ['Upcoming class'], ['Available future'], ['Available class']]);
+        [['Full class', 'Available class', 'Overbooked class'], ['Overbooked class'], ['Full class'],
+            ['Full class', 'Overbooked class'], [], ['Unknown full'], ['Upcoming class'],
+            ['Full class', 'Available future'], ['Available class', 'Full class']]);
     assert.equal(input[0].runs.length, 3, 'Filtering must not alter shared course data');
-    assert.match(html, /Choose a class \(1\)/);
+    assert.match(html, /Choose a class \(3\)/);
     assert.match(html, /Classes in progress \(1\)/);
     assert.match(html, /Available class/);
     const cards = html.split('<section class="course-card');
     const card = name => cards.find(item => item.includes(name));
     const upcomingFullMessage = /All upcoming classes are fully booked\. Check back here for future dates\./;
-    assert.match(card('Tennis course'), /Choose a class \(1\)[\s\S]*?1 in progress, 0 upcoming[\s\S]*?<\/summary>/);
-    assert.match(card('Current full future available'), /Choose a class \(1\)[\s\S]*?0 in progress, 1 upcoming[\s\S]*?<\/summary>/);
-    assert.doesNotMatch(card('Both fully booked course'), /Choose a class/);
+    assert.match(card('Tennis course'), /Choose a class \(3\)[\s\S]*?<strong>In progress<\/strong>: 1 with spaces, 1 fully booked; <strong>Upcoming<\/strong>: 0 with spaces, 1 fully booked[\s\S]*?<\/summary>/);
+    assert.match(card('Current full future available'), /<strong>In progress<\/strong>: 0 with spaces, 1 fully booked; <strong>Upcoming<\/strong>: 1 with spaces, 0 fully booked/);
+    assert.match(card('Both fully booked course'), /<strong>In progress<\/strong>: 0 with spaces, 1 fully booked; <strong>Upcoming<\/strong>: 0 with spaces, 1 fully booked/);
     assert.match(card('Tennis course'), upcomingFullMessage);
     assert.match(card('Fully booked course'), /No classes are currently available to book/);
     assert.match(card('Fully booked course'), upcomingFullMessage);
@@ -309,13 +311,15 @@ test('customer course page hides full and overbooked runs while retaining course
     }
     assert.doesNotMatch(card('Unscheduled course'), /fully booked/);
     assert.match(card('Unknown start course'), /No classes are currently available to book/);
+    assert.match(card('Unknown start course'), /Unknown start date: 0 with spaces, 1 fully booked/);
     assert.doesNotMatch(card('Unknown start course'), /classes that are in progress are fully booked/);
     assert.doesNotMatch(card('Unknown start course'), /upcoming classes/i);
-    assert.doesNotMatch(card('Upcoming course'), /sold out|fully booked|Upcoming classes have not yet been made available/i);
-    assert.doesNotMatch(html, /Full class|Overbooked class/);
+    assert.doesNotMatch(card('Upcoming course'), /All upcoming classes are fully booked|Upcoming classes have not yet been made available/i);
+    assert.match(card('Both fully booked course'), /Full class[\s\S]*Fully booked[\s\S]*Overbooked class[\s\S]*Fully booked/);
+    assert.doesNotMatch(card('Both fully booked course'), /action="\/basket\/add"|View details and book/);
     full.spaces_remaining = 1;
     const reopened = await render();
-    assert.match(reopened.html, /Choose a class \(2\)/);
+    assert.match(reopened.html, /<strong>In progress<\/strong>: 2 with spaces, 0 fully booked/);
     assert.match(reopened.html, /Full class/);
 });
 
@@ -327,7 +331,7 @@ test('customer course page hides full and overbooked runs while retaining course
         t.mock.method(Sports, 'findAll', async () => [sport]);
         t.mock.method(Courses, 'findFaqs', async () => [faq]);
         const find = t.mock.method(Courses, 'findAll', async options => {
-            assert.deepEqual(options, { availableOnly: true, includeUnscheduled: true });
+            assert.deepEqual(options, { availableOnly: true, includeUnscheduled: true, includeFullyBooked: true, includeSessions: false });
             return [{ ...course, description: '<script>unsafe</script>' }];
         });
         const handler = router.stack.find(layer => layer.route?.path === '/courses' && layer.route.methods.get).route.stack[0].handle;

@@ -95,6 +95,37 @@ test('returning from basket restores disclosures by identity even when a class d
     assert.equal(removed, true);
 });
 
+test('returning from basket loads open classes before restoring nested disclosures and scroll', async () => {
+    const vm = require('node:vm');
+    const html = await ejs.renderFile(path.join(__dirname, '../views/partials/course-basket-return.ejs'));
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const course = { dataset: { returnKey: 'course-runs', classesUrl: '/classes' }, open: false };
+    const nested = { dataset: { returnKey: 'class-booking' }, open: false };
+    const details = [course];
+    let finish;
+    let restoredScroll;
+    const window = {
+        loadCourseRuns() { return new Promise(resolve => { finish = () => { details.push(nested); resolve(); }; }); },
+        scrollTo(_x, y) { restoredScroll = y; }
+    };
+    vm.runInNewContext(script, {
+        document: { getElementById: () => ({}), addEventListener() {}, querySelectorAll: () => details },
+        location: { pathname: '/courses' }, window,
+        sessionStorage: {
+            getItem: () => JSON.stringify({ path: '/courses', scroll: 350,
+                open: { 'course-runs': true, 'class-booking': true } }),
+            removeItem() {}
+        },
+        requestAnimationFrame: callback => callback(), console
+    });
+    assert.equal(course.open, true);
+    assert.equal(restoredScroll, undefined);
+    finish();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(nested.open, true);
+    assert.equal(restoredScroll, 350);
+});
+
 test('basket omits confirmed order history and does not load previous orders', async t => {
     const basket = { return_to: '/courses', items: [], valid: false };
     t.mock.method(CourseOrders, 'basket', async () => basket);
@@ -213,7 +244,9 @@ test('course run controls include saved family members and replace purchase cont
         currentProfile: { name: 'Resident' }, familyMembers: [{ guid: other, name: 'Child' }], returnTo: '/facilities'
     };
     const soldOut = await ejs.renderFile(filename, values);
-    assert.match(soldOut, /Sold out/);
+    assert.match(soldOut, /Fully booked/);
+    assert.match(soldOut, /View details &#8595;/);
+    assert.doesNotMatch(soldOut, /View details and book/);
     assert.doesNotMatch(soldOut, /action="\/basket\/add"|Add to basket/);
     const html = await ejs.renderFile(filename, { ...values, run: { ...values.run, spaces_remaining: 2 } });
     assert.match(html, /<details class="course-run-disclosure" data-run-disclosure[^>]*>\s*<summary>/);

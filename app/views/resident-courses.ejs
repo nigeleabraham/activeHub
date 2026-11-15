@@ -71,7 +71,7 @@
             <div class="sport-panel">
                 <div class="sport-panel-heading">
             <% } else { %>
-            <details class="sport-panel" data-course-sport-disclosure data-return-key="<%= groupId %>">
+            <details class="sport-panel" data-course-sport-disclosure data-return-key="<%= groupId %>"<% if (locals.selectedCourse && selectedCourse.groupId === groupId) { %> open<% } %>>
                 <summary>
             <% } %>
                     <h2 class="h4 d-inline mb-0" id="<%= groupId %>"><%= group.name %></h2>
@@ -102,41 +102,34 @@
                                 { key: 'in_progress', title: 'Classes in progress' },
                                 { key: 'upcoming', title: 'Upcoming classes' },
                                 { key: 'unknown', title: 'Classes with an unknown start date' }
-                            ].map(group => ({ ...group, runs: course.runs.filter(run => group.key === 'unknown'
-                                ? !['in_progress', 'upcoming'].includes(run.booking_status)
-                                : run.booking_status === group.key) }));
+                            ].map(group => {
+                                const runs = course.runs.filter(run => group.key === 'unknown'
+                                    ? !['in_progress', 'upcoming'].includes(run.booking_status)
+                                    : run.booking_status === group.key);
+                                const available = runs.filter(run => (run.spaces_remaining ?? run.capacity) > 0).length;
+                                return { ...group, runs, available, full: runs.length - available };
+                            });
                         %>
-                        <details class="mb-3" data-course-runs data-return-key="<%= courseHeadingId %>-runs">
+                        <% const isSelected = locals.selectedCourse && selectedCourse.headingId === courseHeadingId && selectedCourse.groupId === groupId; %>
+                        <details class="mb-3" data-course-runs data-return-key="<%= courseHeadingId %>-runs"<% if (locals.lazyRuns && !isSelected) { %> data-classes-url="/courses/<%= course.guid %>/classes?group=<%= encodeURIComponent(groupId) %>&amp;heading=<%= encodeURIComponent(courseHeadingId) %>"<% } %><% if (isSelected) { %> open<% } %>>
                             <summary class="h6">Choose a class (<%= course.runs.length %>)
-                                <span class="small text-muted"> &mdash; <%= statusGroups[0].runs.length %> in progress, <%= statusGroups[1].runs.length %> upcoming<% if (statusGroups[2].runs.length) { %>, <%= statusGroups[2].runs.length %> with an unknown start date<% } %></span>
+                                <span class="small text-muted"> &mdash; <strong>In progress</strong>: <%= statusGroups[0].available %> with spaces, <%= statusGroups[0].full %> fully booked; <strong>Upcoming</strong>: <%= statusGroups[1].available %> with spaces, <%= statusGroups[1].full %> fully booked<% if (statusGroups[2].runs.length) { %>; Unknown start date: <%= statusGroups[2].available %> with spaces, <%= statusGroups[2].full %> fully booked<% } %></span>
                             </summary>
-                            <% statusGroups.forEach(statusGroup => {
-                                const runs = statusGroup.runs;
-                                if (!runs.length) return;
-                                const statusHeadingId = courseHeadingId + '-' + statusGroup.key;
-                            %>
-                            <section class="mt-4" aria-labelledby="<%= statusHeadingId %>" data-run-status-group="<%= statusGroup.key %>">
-                                <h4 class="h5 mb-3" id="<%= statusHeadingId %>"><%= statusGroup.title %> (<%= runs.length %>)</h4>
-                                <div class="row">
-                            <% runs.forEach(run => { %>
-                                <div class="col-12 col-lg-6 col-xl-4 mb-3">
-                                    <article class="border rounded bg-light p-3" data-course-run>
-                                        <%- include('partials/course-run-details', { run, returnTo: '/courses#' + courseHeadingId,
-                                            attendeeId: 'attendee-' + run.guid + '-' + groupId }) %>
-                                    </article>
-                                </div>
-                            <% }); %>
-                                </div>
-                            </section>
-                            <% }); %>
+                            <% if (!locals.lazyRuns || isSelected) { %>
+                            <%- include('partials/course-run-groups', { runs: course.runs, groupId, courseHeadingId }) %>
+                            <% } else { %>
+                            <div data-course-classes aria-live="polite">
+                                <noscript><p class="mt-3"><a href="/courses?course=<%= course.guid %>&amp;group=<%= encodeURIComponent(groupId) %>&amp;heading=<%= encodeURIComponent(courseHeadingId) %>#<%= courseHeadingId %>">Load classes for <%= course.name %></a></p></noscript>
+                            </div>
+                            <% } %>
                         </details>
                         <% } %>
-                        <% if (course.has_current_classes && !(course.runs || []).some(run => run.booking_status === 'in_progress')) { %>
+                        <% if (course.has_current_classes && !(course.runs || []).some(run => run.booking_status === 'in_progress' && (run.spaces_remaining ?? run.capacity) > 0)) { %>
                         <p class="text-danger mb-2">All classes that are in progress are fully booked.</p>
-                        <% } else if (!(course.runs || []).length) { %>
+                        <% } else if (!(course.runs || []).some(run => (run.spaces_remaining ?? run.capacity) > 0)) { %>
                         <p class="text-danger mb-2">No classes are currently available to book.</p>
                         <% } %>
-                        <% if (!(course.runs || []).some(run => run.booking_status === 'upcoming') && !course.has_unknown_start_classes) { %>
+                        <% if (!(course.runs || []).some(run => run.booking_status === 'upcoming' && (run.spaces_remaining ?? run.capacity) > 0) && !course.has_unknown_start_classes) { %>
                             <% if (course.has_upcoming_classes) { %>
                         <p class="text-danger mb-0">All upcoming classes are fully booked. Check back here for future dates.</p>
                             <% } else if (!course.has_upcoming_classes) { %>
@@ -150,6 +143,7 @@
         </section>
         <% }); %>
     </main>
+    <%- include('partials/course-lazy-load') %>
     <%- include('partials/course-basket-return') %>
     <script>
         (() => {

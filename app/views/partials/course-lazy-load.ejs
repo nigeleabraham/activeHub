@@ -1,0 +1,40 @@
+<script>
+    (() => {
+        const pending = new WeakMap();
+        window.loadCourseRuns = function (details) {
+            const url = details.dataset.classesUrl;
+            if (!url) return Promise.resolve();
+            if (pending.has(details)) return pending.get(details);
+            const container = details.querySelector('[data-course-classes]');
+            container.textContent = 'Loading classes…';
+            container.setAttribute('aria-busy', 'true');
+            const loading = fetch(url, { headers: { Accept: 'text/html' }, cache: 'no-store' })
+                .then(response => {
+                    if (!response.ok || response.redirected || !response.headers.get('content-type')?.includes('text/html')) {
+                        throw new Error('Unable to load classes');
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    container.innerHTML = html;
+                    delete details.dataset.classesUrl;
+                })
+                .catch(error => {
+                    console.error('Unable to load course classes:', error);
+                    container.textContent = 'Unable to load classes. Close and reopen this section to try again, or refresh the page.';
+                })
+                .finally(() => {
+                    container.removeAttribute('aria-busy');
+                    pending.delete(details);
+                });
+            pending.set(details, loading);
+            return loading;
+        };
+        document.querySelectorAll('details[data-course-runs][data-classes-url]').forEach(details => {
+            details.addEventListener('toggle', () => {
+                if (details.open) window.loadCourseRuns(details);
+            });
+            if (details.open) window.loadCourseRuns(details);
+        });
+    })();
+</script>

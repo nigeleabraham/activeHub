@@ -129,7 +129,7 @@ test('citizen course card displays inherited details once, FAQs first and separa
     assert.match(html, /Starts 01\/02\/2027/);
     assert.doesNotMatch(html, /<span class="badge badge-(?:primary|secondary)">(?:In progress|Upcoming)<\/span>/);
     assert.match(html, /Choose a class \(2\)/);
-    assert.match(html, /<details class="mb-3" data-course-runs[^>]*>\s*<summary class="h6">Choose a class \(2\)[\s\S]*?1 in progress, 1 upcoming[\s\S]*?<\/summary>/);
+    assert.match(html, /<details class="mb-3" data-course-runs[^>]*>\s*<summary class="h6">Choose a class \(2\)[\s\S]*?<strong>In progress<\/strong>: 1 with spaces, 0 fully booked; <strong>Upcoming<\/strong>: 1 with spaces, 0 fully booked[\s\S]*?<\/summary>/);
     assert.doesNotMatch(html, /<details[^>]*data-course-runs[^>]*\bopen\b/);
     assert.match(html, /<h5 class="h5 mb-1">Saturday<\/h5>/);
     assert.match(html, /Who is attending\?/);
@@ -181,7 +181,7 @@ test('course classes are grouped by status in order, preserving each run and hid
         courseGroups: [{ guid: 'sport', name: 'Sport', courses: [course], faqs: [] }]
     });
     const html = await render();
-    assert.match(html, /Choose a class \(5\)[\s\S]*?2 in progress, 2 upcoming, 1 with an unknown start date[\s\S]*?<\/summary>/);
+    assert.match(html, /Choose a class \(5\)[\s\S]*?<strong>In progress<\/strong>: 2 with spaces, 0 fully booked; <strong>Upcoming<\/strong>: 2 with spaces, 0 fully booked; Unknown start date: 1 with spaces, 0 fully booked[\s\S]*?<\/summary>/);
     const progress = html.indexOf('data-run-status-group="in_progress"');
     const upcoming = html.indexOf('data-run-status-group="upcoming"');
     const unknown = html.indexOf('data-run-status-group="unknown"');
@@ -196,7 +196,7 @@ test('course classes are grouped by status in order, preserving each run and hid
     }
     course.runs = [makeRun('only-upcoming', 'upcoming')];
     const single = await render();
-    assert.match(single, /Choose a class \(1\)[\s\S]*?0 in progress, 1 upcoming[\s\S]*?<\/summary>/);
+    assert.match(single, /Choose a class \(1\)[\s\S]*?<strong>In progress<\/strong>: 0 with spaces, 0 fully booked; <strong>Upcoming<\/strong>: 1 with spaces, 0 fully booked[\s\S]*?<\/summary>/);
     assert.match(single, /Upcoming classes \(1\)/);
     assert.doesNotMatch(single, /data-run-status-group="in_progress"|data-run-status-group="unknown"/);
 });

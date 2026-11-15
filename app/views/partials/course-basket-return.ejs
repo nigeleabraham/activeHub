@@ -67,10 +67,22 @@
             const saved = JSON.parse(sessionStorage.getItem(key) || 'null');
             if (!saved || saved.path !== location.pathname) return;
             sessionStorage.removeItem(key);
-            document.querySelectorAll('details[data-return-key]').forEach(detail => {
+            const details = Array.from(document.querySelectorAll('details[data-return-key]'));
+            details.forEach(detail => {
                 detail.open = saved.open?.[detail.dataset.returnKey] === true;
             });
-            requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
+            const loading = details.filter(detail => detail.open && detail.dataset.classesUrl)
+                .map(detail => window.loadCourseRuns(detail));
+            if (loading.length) {
+                Promise.all(loading).then(() => {
+                    document.querySelectorAll('details[data-return-key]').forEach(detail => {
+                        detail.open = saved.open?.[detail.dataset.returnKey] === true;
+                    });
+                    requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
+                });
+            } else {
+                requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
+            }
         } catch (error) {
             console.warn('Unable to restore the course page position:', error);
         }
