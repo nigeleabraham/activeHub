@@ -25,8 +25,7 @@ const currentPage = locals.activePage || '';
 const allowedAdmin = path => locals.canAccessAdmin ? locals.canAccessAdmin(path)
     : isAdmin || (path === '/courses' && (currentProfile?.permissions || []).includes('courses.manage'));
 const navigationItems = currentProfile && adminArea && (allowedAdmin('/') || allowedAdmin('/courses'))
-    ? adminItems.filter(item => (item.key === 'external-home' || allowedAdmin(item.href.slice('/admin'.length) || '/'))
-        && (item.key !== 'court-configuration' || activePage !== 'court-configuration'))
+    ? adminItems.filter(item => item.key === 'external-home' || allowedAdmin(item.href.slice('/admin'.length) || '/'))
     : [];
 const adminBrand = locals.adminBrand || { title: locals.siteTitle || 'ActiveHub', hasLogo: Boolean(locals.hasLogo) };
 const adminGroups = [
@@ -64,6 +63,7 @@ const adminGroups = [
     <% } %>
     <% if (canSwitchRole) { %>
         <form class="d-flex flex-wrap align-items-center justify-content-end mb-2" style="gap: 0.5rem;" method="POST" action="/view-as">
+            <input type="hidden" name="return_to" value="<%= locals.currentUrl || '/' %>">
             <label class="small mb-0" for="view-as-role">Active role</label>
             <select class="form-control form-control-sm w-auto" id="view-as-role" name="role">
                 <% switchableRoles.forEach(roleName => { %>
@@ -85,7 +85,7 @@ const adminGroups = [
         <div class="container">
         <nav class="admin-navigation" aria-label="Main navigation">
             <% adminGroups.forEach(group => { %>
-                <details class="admin-navigation-group<%= group.keys.includes(activePage) || (activePage === 'court-configuration' && group.label === 'Facilities management') ? ' admin-navigation-group-current' : '' %>">
+                <details class="admin-navigation-group<%= group.keys.includes(activePage) ? ' admin-navigation-group-current' : '' %>">
                     <summary><span class="admin-navigation-label"><%= group.label %></span></summary>
                     <ul>
                         <% group.keys.forEach(key => { const item = navigationItems.find(item => item.key === key); %>
@@ -99,6 +99,7 @@ const adminGroups = [
         </div>
         </header>
         <%- include('admin-editors') %>
+        <%- include('navigation-behaviour', { groupSelector: '.admin-navigation-group' }) %>
     <% } else { %>
         </div>
     <% } %>

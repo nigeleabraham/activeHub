@@ -19,6 +19,14 @@
     <label for="<%= prefix %>-capacity">Maximum spaces</label>
     <input class="form-control" id="<%= prefix %>-capacity" name="capacity" type="number" min="1" max="99999" step="1" value="<%= run?.capacity || '' %>" required>
 </div>
+<% if (run?.incomplete_history) { %>
+<div class="form-group">
+    <label for="<%= prefix %>-original-start">Original run start date (optional)</label>
+    <input class="form-control" id="<%= prefix %>-original-start" name="original_start_date" type="date" value="<%= run.start_date || '' %>" aria-describedby="<%= prefix %>-original-start-help">
+    <small class="form-text text-muted" id="<%= prefix %>-original-start-help">The original import omitted earlier sessions. Enter the true original start date if known; otherwise leave it blank. It must not be later than the first listed session.</small>
+</div>
+<% } %>
+<p class="small text-muted">The run start and end dates are based on the first and last sessions in the full schedule, not just future sessions.</p>
 <div class="form-group">
     <label for="<%= prefix %>-mode">Session entry method</label>
     <select class="form-control" id="<%= prefix %>-mode" name="schedule_mode" data-run-mode aria-controls="<%= prefix %>-weekly <%= prefix %>-individual">

@@ -1,8 +1,8 @@
-const crypto = require('crypto');
 const { Pool } = require('pg');
 const Credits = require('./Credits');
 const Settings = require('./Settings');
 const { parseDeclineComment, isValidDateRange } = require('../validation');
+const BookingReferences = require('../bookingReferences');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
@@ -339,6 +339,7 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null, filter
                      SELECT 1 FROM profiles WHERE profiles.guid = bookings.profile_guid
                          AND (profiles.name ILIKE $5 OR profiles.email ILIKE $5)
                  ))
+                 AND ($9::uuid[] IS NULL OR bookings.facility_guid = ANY($9::uuid[]))
              ORDER BY bookings.starts_at DESC, bookings.guid LIMIT $8
          )` : ''}
          SELECT bookings.guid, bookings.option_guid, bookings.starts_at, bookings.ends_at,
@@ -372,7 +373,7 @@ async function findBookings(facilityGuid, startsAt = null, endsAt = null, filter
          GROUP BY bookings.guid, options.name, sports.name, profiles.name, booked_by.name${filters ? ', facilities.name' : ''}
          ORDER BY bookings.starts_at ${filters ? 'DESC, bookings.guid' : ''}`,
                 filters ? [facilityGuid, startsAt, endsAt, like(filters.reference), like(filters.profile),
-                    filters.from || null, filters.to || null, SEARCH_LIMIT + 1] : [facilityGuid, startsAt, endsAt]
+                    filters.from || null, filters.to || null, SEARCH_LIMIT + 1, filters.allowed_facilities ?? null] : [facilityGuid, startsAt, endsAt]
     );
     return Credits.fundingForBookings(rows);
 }
@@ -584,15 +585,6 @@ async function updateSportMonths(facilityGuid, sportGuid, months) {
     return result.rowCount > 0;
 }
 
-async function newBookingRef(client) {
-    for (let attempt = 0; attempt < 5; attempt++) {
-        const ref = `AH-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
-        const { rowCount } = await client.query('SELECT 1 FROM bookings WHERE booking_ref = $1', [ref]);
-        if (!rowCount) return ref;
-    }
-    throw new Error('Could not generate a unique booking reference.');
-}
-
 async function insertBooking(client, { facility_guid, option_guid, starts_at, ends_at, profile_guid = null, booked_by_guid = null, payment_status = 'not_required', payment_reference = null, amount_pence = 0, credit_applied_pence = 0, amount_paid_pence = 0 }) {
     const option = await client.query(
         `SELECT options.guid, NOT EXISTS (
@@ -625,19 +617,20 @@ async function insertBooking(client, { facility_guid, option_guid, starts_at, en
         throw new Error('The selected court option has no resource claims.');
     }
 
-    const booking = await client.query(
+    const booking = await BookingReferences.insert(client, 'AH',
         `INSERT INTO bookings (facility_guid, option_guid, starts_at, ends_at, profile_guid, booked_by_guid, payment_status, payment_reference, amount_pence, credit_applied_pence, amount_paid_pence, booking_ref)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (booking_ref) DO NOTHING
          RETURNING guid, option_guid, starts_at, ends_at, profile_guid, booking_ref`,
-        [facility_guid, option_guid, starts_at, ends_at, profile_guid, booked_by_guid, payment_status, payment_reference, amount_pence, credit_applied_pence, amount_paid_pence, await newBookingRef(client)]
+        [facility_guid, option_guid, starts_at, ends_at, profile_guid, booked_by_guid, payment_status, payment_reference, amount_pence, credit_applied_pence, amount_paid_pence]
     );
     await client.query(
         `INSERT INTO booking_reservations (booking_guid, resource_guid, starts_at, ends_at)
          SELECT $1, selected.resource_guid, $2, $3
          FROM UNNEST($4::uuid[]) AS selected(resource_guid)`,
-        [booking.rows[0].guid, starts_at, ends_at, resources.rows.map(row => row.resource_guid)]
+        [booking.guid, starts_at, ends_at, resources.rows.map(row => row.resource_guid)]
     );
-    return booking.rows[0];
+    return booking;
 }
 
 // All bookings are created in one transaction: if any slot fails, none are saved.

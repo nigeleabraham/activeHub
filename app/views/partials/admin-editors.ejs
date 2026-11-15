@@ -75,24 +75,6 @@
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const navigationGroups = Array.from(document.querySelectorAll('.admin-navigation-group'));
-    navigationGroups.forEach(group => {
-        group.addEventListener('toggle', () => {
-            if (group.open) navigationGroups.forEach(other => { if (other !== group) other.open = false; });
-        });
-    });
-    document.addEventListener('click', event => {
-        if (!event.target.closest('.admin-navigation')) navigationGroups.forEach(group => { group.open = false; });
-    });
-    document.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
-        const group = event.target.closest('.admin-navigation-group');
-        if (group?.open) {
-            group.open = false;
-            group.querySelector('summary').focus();
-            event.preventDefault();
-        }
-    });
     document.documentElement.setAttribute('data-admin-editors', '');
     const entries = [];
     let active = null;
@@ -345,6 +327,34 @@ document.addEventListener('DOMContentLoaded', () => {
     function proceed(action, savedLocation) {
         if (action.kind === 'reorder') {
             void reorderCards(action);
+            return;
+        }
+        if (action.kind === 'copy-run') {
+            const course = Array.from(document.querySelectorAll('[data-course-guid]'))
+                .find(item => item.dataset.courseGuid === action.courseGuid);
+            const run = Array.from(course?.querySelectorAll('[data-admin-run-card]') || [])
+                .find(item => item.dataset.runGuid === action.runGuid);
+            const source = run?.querySelector('form[action="/admin/courses/runs/update"]');
+            const entry = entries.find(item => item.form.closest('[data-course-guid]') === course &&
+                new URL(item.form.action).pathname === '/admin/courses/runs');
+            if (!source || !entry) {
+                const error = document.querySelector('[data-course-error]');
+                error.textContent = 'The course run could not be copied. Refresh the page and try again.';
+                error.hidden = false;
+                error.focus();
+                return;
+            }
+            reset(entry);
+            for (const name of ['name', 'facility_guid', 'price', 'capacity', 'schedule_mode', 'sessions']) {
+                const from = source.elements.namedItem(name);
+                const to = entry.form.elements.namedItem(name);
+                to.value = from.tagName === 'SELECT'
+                    ? (Array.from(from.options).find(option => option.defaultSelected) || from.options[0]).value
+                    : from.defaultValue;
+                to.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            open(entry);
+            update(entry);
             return;
         }
         if (savedLocation) {
@@ -903,6 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initializeEditors() {
     document.querySelectorAll('[data-card-order-list]').forEach(updateOrderControls);
+    document.querySelectorAll('[data-copy-run]').forEach(button => { button.hidden = false; });
     document.querySelectorAll('[data-description-sections]').forEach(editor => {
         if (editor.dataset.initialized) return;
         editor.dataset.initialized = 'true';
@@ -1106,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('form[method="POST"]').forEach(form => {
         if (entries.some(entry => entry.form === form)) return;
         if ((!new URL(form.action).pathname.startsWith('/admin/') && !form.hasAttribute('data-profile-editor')) ||
-            form.matches('[data-booking-form], [data-cancel-booking], [data-course-removal], [action="/admin/credit-requests/decide"]') ||
+            form.matches('[data-booking-form], [data-cancel-booking], [data-course-removal], [data-course-manual-booking], [data-profile-delete-confirm], [action="/admin/credit-requests/decide"]') ||
             !form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea, [data-description-sections]')) return;
         if (!form.id) {
             const identity = Array.from(form.querySelectorAll('input[type="hidden"]'))
@@ -1227,6 +1238,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (saving) {
             event.preventDefault();
             event.stopImmediatePropagation();
+            return;
+        }
+        const copyRun = event.target.closest('[data-copy-run]');
+        if (copyRun) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            guard({
+                kind: 'copy-run',
+                courseGuid: copyRun.closest('[data-course-guid]').dataset.courseGuid,
+                runGuid: copyRun.closest('[data-admin-run-card]').dataset.runGuid
+            });
             return;
         }
         const entry = entries.find(item => item.toggle?.contains(event.target));
@@ -1366,14 +1388,41 @@ document.addEventListener('DOMContentLoaded', () => {
             const type = facilityDelete ? 'facility' : sportDelete ? 'sport' : templateDelete ? 'template' : profileDelete ? 'profile' : 'course';
             const error = card.querySelector(`[data-${type}-error]`);
             const label = button.textContent;
+            let restoreFocus = false;
             saving = true;
             button.disabled = true;
-            button.textContent = 'Deleting...';
+            button.textContent = profileDelete ? 'Checking...' : 'Deleting...';
             form.setAttribute('aria-busy', 'true');
             error.hidden = true;
             void (async () => {
                 try {
-                    const response = await fetch(form.action, { method: 'POST', body: new URLSearchParams(new FormData(form)) });
+                    const body = new URLSearchParams(new FormData(form));
+                    if (profileDelete) {
+                        const previewUrl = new URL('/admin/profiles/delete-preview', window.location.origin);
+                        previewUrl.searchParams.set('guid', body.get('guid'));
+                        const previewResponse = await fetch(previewUrl, { cache: 'no-store' });
+                        if (!previewResponse.ok || !previewResponse.headers.get('content-type')?.includes('application/json')) {
+                            throw new Error('Unable to load current profile credit. No profile was deleted; please try again.');
+                        }
+                        const preview = await previewResponse.json();
+                        if (typeof preview.name !== 'string' || !Number.isSafeInteger(preview.credit_pence) || preview.credit_pence < 0) {
+                            throw new Error('Unable to verify current profile credit. No profile was deleted; please try again.');
+                        }
+                        const credit = `£${(preview.credit_pence / 100).toFixed(2)}`;
+                        if (!window.confirm(`Delete profile "${preview.name}"?\n\nActive credit: ${credit}. All remaining credit will be voided, including any expired credit.\n\nThis deactivates the profile, removes future court bookings, and cancels pending booking-credit and bank-refund requests. Past and in-progress bookings and payment history are retained. The person will no longer be able to sign in or make bookings. No refund is issued. This cannot be undone.\n\nSelect Cancel to keep this profile.`)) {
+                            restoreFocus = true;
+                            return;
+                        }
+                        body.set('confirmed_credit_pence', String(preview.credit_pence));
+                        button.textContent = 'Deleting...';
+                    }
+                    const response = await fetch(form.action, {
+                        method: 'POST', body, ...(profileDelete ? { headers: { Accept: 'application/json' } } : {})
+                    });
+                    if (profileDelete && response.status === 409) {
+                        const problem = await response.json();
+                        throw new Error(problem.error || 'The profile could not be deleted. Please review it and try again.');
+                    }
                     if (runDelete && response.status === 409) {
                         const problem = await response.json();
                         throw new Error(problem.error || 'This run cannot be deleted.');
@@ -1397,6 +1446,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     button.disabled = false;
                     button.textContent = label;
                     form.removeAttribute('aria-busy');
+                    if (restoreFocus) button.focus({ preventScroll: true });
                 }
             })();
             return;

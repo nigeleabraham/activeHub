@@ -41,7 +41,7 @@ test('booking management and court configuration load and render only their own 
         });
         assert.doesNotMatch(html, />Go to court configuration</);
         if (configuring) {
-            assert.doesNotMatch(html, /href="\/admin\/court-configuration"/);
+            assert.match(html, /href="\/admin\/court-configuration" aria-current="page">Court configuration<\/a>/);
             assert.match(html, /<h1[^>]*>Court configuration<\/h1>/);
             assert.match(html, /action="\/admin\/bookings\/resources"/);
             assert.match(html, /action="\/admin\/bookings\/options"/);

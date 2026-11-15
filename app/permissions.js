@@ -1,6 +1,6 @@
 // Settings and financial reviews remain Administrator-only.
 const PERMISSIONS = [
-    { key: 'facilities.manage', area: 'Facilities', label: 'Manage facilities', description: 'Add, edit and delete facilities.' },
+    { key: 'facilities.manage', area: 'Facilities', label: 'Manage facilities', description: 'Add and edit facilities. Only Administrators can delete facilities.' },
     { key: 'courses.manage', area: 'Courses', label: 'Manage courses', description: 'Add, edit and delete courses.' },
     { key: 'course_bookings.view', area: 'Course bookings', label: 'View course bookings and registers', description: 'Search course bookings, view booking and payment details, and print attendee registers. Does not permit cancellations or refunds.' },
     { key: 'sports.manage', area: 'Sports', label: 'Manage sports', description: 'Add, edit and delete sports.' },

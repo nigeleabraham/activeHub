@@ -75,6 +75,42 @@ test('facility deletion explains its effects and cancellation prevents submissio
     }
 });
 
+test('profile deletion previews current credit, confirms consequences and submits the confirmed amount', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const start = source.indexOf('                    const body = new URLSearchParams(new FormData(form));',
+        source.indexOf('const profileDelete ='));
+    const script = source.slice(start, source.indexOf('                    if (runDelete && response.status === 409)', start));
+    for (const accepted of [false, true]) {
+        const calls = [];
+        let prompt;
+        const button = { textContent: '' };
+        const context = {
+            form: { action: '/admin/profiles/destroy' }, profileDelete: true, button, restoreFocus: false,
+            URL, URLSearchParams,
+            FormData: function () { return [['guid', 'test-profile']]; },
+            window: { location: { origin: 'http://localhost:3000' }, confirm(message) { prompt = message; return accepted; } },
+            fetch: async (url, options) => {
+                calls.push({ url: String(url), options });
+                return calls.length === 1 ? {
+                    ok: true, headers: { get: () => 'application/json' },
+                    json: async () => ({ name: 'Alex', credit_pence: 1234 })
+                } : { status: 200 };
+            }
+        };
+        await vm.runInNewContext(`(async () => { ${script} })()`, context);
+        assert.match(prompt, /Delete profile "Alex"/);
+        assert.match(prompt, /Active credit: £12\.34/);
+        assert.match(prompt, /future court bookings/);
+        assert.match(prompt, /bank-refund requests/);
+        assert.match(prompt, /No refund is issued/);
+        assert.match(prompt, /cannot be undone/);
+        assert.equal(calls.length, accepted ? 2 : 1);
+        assert.match(calls[0].url, /delete-preview\?guid=test-profile/);
+        if (accepted) assert.equal(calls[1].options.body.get('confirmed_credit_pence'), '1234');
+        else assert.equal(context.restoreFocus, true);
+    }
+});
+
 test('sport deletion confirmation names the current sport and cancellation prevents deletion', async () => {
     const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
     const start = source.indexOf('            if (sportDelete) {', source.indexOf('const directoryDelete ='));
@@ -442,6 +478,67 @@ test('saved course runs close their editor and focus the run inside expanded anc
     assert.match(source, /!previousRunGuids\.has\(run\.dataset\.runGuid\)/);
 });
 
+test('copy run opens a new form with saved values and leaves both run identities intact', async () => {
+    const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
+    const script = source.slice(source.indexOf('    function proceed('), source.indexOf('    function guard('));
+    const fields = {
+        name: { tagName: 'INPUT', defaultValue: 'Saved run', value: 'Unsaved source edit' },
+        facility_guid: { tagName: 'SELECT', options: [{ value: '' }, { value: 'facility', defaultSelected: true }], value: '' },
+        price: { tagName: 'INPUT', defaultValue: '0.00' },
+        capacity: { tagName: 'INPUT', defaultValue: '12' },
+        schedule_mode: { tagName: 'SELECT', options: [{ value: 'weekly' }, { value: 'individual', defaultSelected: true }] },
+        sessions: { tagName: 'TEXTAREA', defaultValue: '2030-01-01 10:00 11:00\n2030-01-08 10:00 11:00' }
+    };
+    const changes = [];
+    const destination = Object.fromEntries(Object.keys(fields).map(name => [name, {
+        value: '', dispatchEvent(event) { changes.push([name, event.type]); }
+    }]));
+    const sourceForm = { elements: { namedItem: name => fields[name] } };
+    const run = { dataset: { runGuid: 'run-1' }, querySelector: () => sourceForm };
+    const course = { dataset: { courseGuid: 'course-1' }, querySelectorAll: () => [run] };
+    const form = {
+        action: 'http://localhost/admin/courses/runs',
+        closest: () => course,
+        elements: { namedItem: name => destination[name] }
+    };
+    const entry = { form };
+    const actions = [];
+    const context = vm.createContext({
+        URL, Event, entries: [entry],
+        document: { querySelectorAll: () => [course] },
+        reset: item => actions.push(['reset', item]),
+        open: item => actions.push(['open', item]),
+        update: item => actions.push(['update', item])
+    });
+    vm.runInContext(script, context);
+    vm.runInContext("proceed({kind:'copy-run', courseGuid:'course-1', runGuid:'run-1'}, '/admin/courses?admin_saved=course-updated')", context);
+    assert.deepEqual(Object.fromEntries(Object.entries(destination).map(([name, field]) => [name, field.value])), {
+        name: 'Saved run', facility_guid: 'facility', price: '0.00', capacity: '12',
+        schedule_mode: 'individual', sessions: '2030-01-01 10:00 11:00\n2030-01-08 10:00 11:00'
+    });
+    assert.deepEqual(changes, Object.keys(fields).map(name => [name, 'change']));
+    assert.deepEqual(actions.map(action => action[0]), ['reset', 'open', 'update']);
+    assert.equal(fields.name.value, 'Unsaved source edit');
+    assert.match(source, /guard\(\{\s*kind: 'copy-run'/);
+
+    const courseData = { guid: 'course-1', name: 'Course', sport_guids: ['sport-1'], runs: [{
+        guid: 'run-1', name: 'Saved run', facility_guid: 'facility', facility_name: 'Hall', published: true,
+        full_price_pence: 0, current_price_pence: 0, capacity: 12, total_sessions: 1, remaining_sessions: 1,
+        sessions: [{ starts_local: '2030-01-01 10:00', ends_local: '2030-01-01 11:00' }]
+    }] };
+    for (const role of ['Administrator', 'Facility manager']) {
+        const html = await ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
+            ...locals, currentProfile: { ...locals.currentProfile, role }, activePage: 'courses',
+            courses: [courseData], facilities: [{ guid: 'facility', name: 'Hall' }], sports: [{ guid: 'sport-1', name: 'Sport' }]
+        });
+        assert.match(html, /data-copy-run hidden aria-label="Copy run Saved run at Hall">Copy run<\/button>/);
+        assert.match(html, /When copying a run, its existing session dates are copied too/);
+        const newForm = html.match(/<form[^>]*action="\/admin\/courses\/runs"[\s\S]*?<\/form>/)[0];
+        assert.doesNotMatch(newForm, /name="guid"/);
+        assert.match(newForm, /name="course_guid" value="course-1"/);
+    }
+});
+
 test('FAQ additions highlight only the confirmed new card and announce beside the heading', async () => {
     const source = await readFile(path.join(__dirname, '../views/partials/admin-editors.ejs'), 'utf8');
     const script = source.slice(source.indexOf('    function highlightAddedCard('), source.indexOf('    async function save('));
@@ -559,8 +656,8 @@ test('every admin navigation renders the shared editor workflow with valid JavaS
         assert.match(html, /: \[keepChoice, discardChoice, saveChoice\]/);
         assert.match(html, /dialog\.addEventListener\('cancel', event => \{ event\.preventDefault\(\); dismiss\(\); \}\)/);
         const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
-        assert.equal(scripts.length, 1);
-        assert.doesNotThrow(() => new vm.Script(scripts[0][1]));
+        assert.equal(scripts.length, 2);
+        for (const script of scripts) assert.doesNotThrow(() => new vm.Script(script[1]));
     }
 });
 
@@ -971,19 +1068,31 @@ test('admin navigation groups every page once and marks the current page and sec
     assert.deepEqual(groups.map(group => group[2]), ['Home Pages', 'Facilities management', 'Bookings management', 'Audit', 'System Admin']);
     assert.deepEqual(groups.map(group => [...group[3].matchAll(/href="([^"]+)"/g)].map(match => match[1])), [
         ['/admin', '/'],
-        ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours'],
+        ['/admin/facilities', '/admin/courses', '/admin/sports', '/admin/opening-hours', '/admin/court-configuration'],
         ['/admin/bookings', '/admin/booking-search', '/admin/course-bookings', '/admin/course-management', '/admin/credit-requests', '/admin/credit-refunds'],
         ['/admin/credit-requests/history', '/admin/credit-refunds/history', '/admin/audit'],
         ['/admin/profiles', '/admin/roles', '/admin/settings']
     ]);
     assert.match(groups[1][1], /admin-navigation-group-current/);
-    assert.equal((nav.match(/aria-current="page"/g) || []).length, 0);
-    assert.doesNotMatch(nav, /href="\/admin\/court-configuration"/);
+    assert.equal((nav.match(/aria-current="page"/g) || []).length, 1);
+    assert.match(nav, /href="\/admin\/court-configuration" aria-current="page">Court configuration<\/a>/);
     assert.match(nav, /href="\/admin\/bookings"[^>]*>Court bookings<\/a>/);
     assert.match(nav, /href="\/admin\/booking-search"[^>]*>Court bookings search<\/a>/);
 
     const bookingsHtml = await ejs.renderFile(navigation, { ...locals, activePage: 'bookings' });
     assert.match(bookingsHtml, /href="\/admin\/court-configuration"/);
+    const managerHtml = await ejs.renderFile(navigation, {
+        ...locals, activePage: 'court-configuration', isAdmin: false,
+        currentProfile: { name: 'Manager', role: 'Facility manager', permissions: ['bookings.manage'] },
+        canAccessAdmin: path => require('../middleware/auth').canAccessAdmin({ role: 'Facility manager', permissions: ['bookings.manage'] }, path)
+    });
+    assert.match(managerHtml, /href="\/admin\/court-configuration" aria-current="page">Court configuration<\/a>/);
+    const noPermissionHtml = await ejs.renderFile(navigation, {
+        ...locals, activePage: 'facilities', isAdmin: false,
+        currentProfile: { name: 'Editor', role: 'Editor', permissions: ['facilities.manage'] },
+        canAccessAdmin: path => require('../middleware/auth').canAccessAdmin({ role: 'Editor', permissions: ['facilities.manage'] }, path)
+    });
+    assert.doesNotMatch(noPermissionHtml, /href="\/admin\/court-configuration"/);
 });
 
 test('citizen pages and signed-out pages do not load admin editing behaviour', async () => {
@@ -995,6 +1104,33 @@ test('citizen pages and signed-out pages do not load admin editing behaviour', a
         const html = await ejs.renderFile(navigation, { ...locals, ...overrides });
         assert.doesNotMatch(html, /admin-unsaved-dialog|data-admin-editors/);
     }
+});
+
+test('course summaries count published and draft runs by status, including unknown dates', async () => {
+    const makeRun = (guid, booking_status, published) => ({
+        guid, name: guid, facility_name: 'Hall', facility_guid: 'facility-one', booking_status, published,
+        full_price_pence: 1000, current_price_pence: 1000, capacity: 5, remaining_sessions: 1,
+        total_sessions: 1, sessions: [], start_date: null, end_date: null
+    });
+    const course = { guid: 'course-one', name: 'Tennis', sport_guids: ['sport-one'], runs: [
+        makeRun('current-1', 'in_progress', true), makeRun('current-2', 'in_progress', true),
+        makeRun('current-3', 'in_progress', false), makeRun('upcoming-1', 'upcoming', true),
+        makeRun('upcoming-2', 'upcoming', false), makeRun('unknown', 'unknown', false),
+        makeRun('completed', 'completed', true)
+    ] };
+    const render = (runs, role) => ejs.renderFile(path.join(__dirname, '../views/courses.ejs'), {
+        ...locals, currentProfile: { ...locals.currentProfile, role }, activePage: 'courses',
+        courses: [{ ...course, runs }], facilities: [], sports: [{ guid: 'sport-one', name: 'Tennis' }]
+    });
+    const html = await render(course.runs, 'Administrator');
+    const summary = html.match(/<summary class="admin-card-summary" style="padding-right: 6rem;">([\s\S]*?)<\/summary>/)[1];
+    assert.match(summary, /In progress:\s*2 published, 1 draft/);
+    assert.match(summary, /Upcoming:\s*1 published, 1 draft/);
+    assert.match(summary, /Unknown start date:\s*0 published, 1 draft/);
+    assert.doesNotMatch(summary, /completed/i);
+    const scoped = await render(course.runs.slice(0, 1), 'Facility manager');
+    assert.match(scoped, /In progress:\s*1 published, 0 draft[\s\S]*Upcoming:\s*0 published, 0 draft/);
+    assert.doesNotMatch(scoped, /Unknown start date:/);
 });
 
 test('course cards expand from the title to the edit form with runs below and delete kept separate', async () => {
@@ -1060,7 +1196,8 @@ test('course cards expand from the title to the edit form with runs below and de
     const disclosure = card.match(/<details class="admin-disclosure" data-course-edit data-editor-disclosure>[\s\S]*<\/details>/)[0];
     assert.doesNotMatch(disclosure.match(/^<details[^>]*>/)[0], /\bopen\b/);
     const summary = disclosure.match(/<summary class="admin-card-summary"[^>]*>([\s\S]*?)<\/summary>/)[1];
-    assert.equal(summary.replace(/<[^>]+>/g, '').trim(), 'Tennis coaching');
+    assert.match(summary, /Tennis coaching/);
+    assert.match(summary, /In progress:\s*0 published, 0 draft[\s\S]*Upcoming:\s*0 published, 0 draft/);
     assert.ok(!card.includes('data-course-description'), 'Course description is not replayed on the card');
     assert.match(disclosure, /<\/summary>\s*<form method="POST" action="\/admin\/courses\/update" data-editor-preview="false" data-editor-label="Edit Tennis coaching">/);
     const runsDisclosure = disclosure.match(/<details[^>]*data-course-runs-disclosure>[\s\S]*?<\/details>/)[0];

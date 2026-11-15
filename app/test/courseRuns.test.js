@@ -98,9 +98,11 @@ test('citizen course card displays inherited details once, FAQs first and separa
         sport_guids: ['sport'], runs: [
             { guid: 'one', facility_name: 'First hall', name: 'Tuesday', full_price_pence: 10000,
                 current_price_pence: 7500, remaining_sessions: 3, total_sessions: 4, capacity: 12,
+                booking_status: 'in_progress', start_date: '2026-12-01',
                 sessions: [{ starts_local: '2027-01-01 18:00', ends_local: '2027-01-01 19:00' }] },
             { guid: 'two', facility_name: 'Second hall', name: 'Saturday', full_price_pence: 8000,
-                current_price_pence: 4000, remaining_sessions: 2, total_sessions: 4, capacity: 8, sessions: [] }
+                current_price_pence: 4000, remaining_sessions: 2, total_sessions: 4, capacity: 8, sessions: [],
+                booking_status: 'upcoming', start_date: '2027-02-01' }
         ] };
     const html = await ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
         siteTitle: 'ActiveHub', hasLogo: false, currentProfile: { name: 'Resident', role: 'Resident' },
@@ -113,20 +115,23 @@ test('citizen course card displays inherited details once, FAQs first and separa
     assert.equal((pageHead.match(/href="\/basket"/g) || []).length, 1);
     assert.match(html, /<header class="page-head">[\s\S]*?basket-button[\s\S]*?<svg[^>]*[\s\S]*?aria-hidden="true"/);
     assert.match(html, /<strong>Shared description<\/strong>/);
-    assert.match(html, /<details class="mb-3" data-course-description>\s*<summary>Course description<\/summary>/);
+    assert.match(html, /<details class="mb-3" data-course-description[^>]*>\s*<summary>Course description<\/summary>/);
     assert.ok(html.indexOf('</details>', html.indexOf('<details class="mb-3" data-course-description')) <
-        html.indexOf('<article class="border rounded bg-light p-3 h-100" data-course-run>'));
+        html.indexOf('<article class="border rounded bg-light p-3" data-course-run>'));
     assert.match(html, /<li><u>Item<\/u><\/li>/);
     assert.equal((html.match(/>Shared course<\/h3>/g) || []).length, 1);
     assert.match(html, /<h1 class="mb-2">Course bookings<\/h1>/);
     assert.match(html, /href="\/court-bookings">Looking to book a court or space/);
-    assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<article class="border rounded bg-light p-3 h-100" data-course-run>'));
+    assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<article class="border rounded bg-light p-3" data-course-run>'));
     assert.ok(html.indexOf('data-sport-faqs') < html.indexOf('<section class="course-card'));
-    assert.match(html, /<h4 class="h5">Friday, 18:00–19:00<\/h4>/);
+    assert.match(html, /<h5 class="h5 mb-1">Tuesday<\/h5>\s*<p class="small mb-1">Friday, 18:00–19:00<\/p>/);
+    assert.match(html, /Started 01\/12\/2026/);
+    assert.match(html, /Starts 01\/02\/2027/);
+    assert.doesNotMatch(html, /<span class="badge badge-(?:primary|secondary)">(?:In progress|Upcoming)<\/span>/);
     assert.match(html, /Choose a class \(2\)/);
-    assert.match(html, /<details class="mb-3" data-course-runs>\s*<summary class="h6">Choose a class \(2\)<\/summary>/);
+    assert.match(html, /<details class="mb-3" data-course-runs[^>]*>\s*<summary class="h6">Choose a class \(2\)[\s\S]*?1 in progress, 1 upcoming[\s\S]*?<\/summary>/);
     assert.doesNotMatch(html, /<details[^>]*data-course-runs[^>]*\bopen\b/);
-    assert.match(html, /<h4 class="h5">Saturday<\/h4>/);
+    assert.match(html, /<h5 class="h5 mb-1">Saturday<\/h5>/);
     assert.match(html, /Who is attending\?/);
     assert.match(html, /Add to basket &mdash; &pound;75\.00/);
     assert.match(html, /<summary>Dates and price details<\/summary>/);
@@ -141,6 +146,72 @@ test('citizen course card displays inherited details once, FAQs first and separa
     assert.match(html, /<td class="text-nowrap">18:00–19:00<\/td>/);
     assert.match(html, /<td>First hall<\/td>/);
     assert.match(html, /class="table-responsive mt-2"/);
+});
+
+test('run name is always the card title for regular, varied and missing schedules', async () => {
+    const filename = path.join(__dirname, '../views/partials/course-run-details.ejs');
+    const base = { name: 'Spring <class>', facility_name: 'Hall', current_price_pence: 500,
+        full_price_pence: 1000, remaining_sessions: 1, total_sessions: 2, capacity: 2 };
+    const first = { starts_local: '2027-01-05 13:45', ends_local: '2027-01-05 14:30' };
+    const next = { starts_local: '2027-01-12 13:45', ends_local: '2027-01-12 14:30' };
+    const varied = { starts_local: '2027-01-13 13:45', ends_local: '2027-01-13 14:30' };
+    for (const [sessions, regular] of [[[first, next], true], [[first, varied], false], [[], false]]) {
+        const html = await ejs.renderFile(filename, { run: { ...base, sessions } });
+        assert.match(html, /<h5 class="h5 mb-1">Spring &lt;class&gt;<\/h5>/);
+        assert.equal(html.includes('<p class="small mb-1">Tuesday, 13:45–14:30</p>'), regular);
+        assert.doesNotMatch(html, /<h5[^>]*>Tuesday,/);
+    }
+});
+
+test('course classes are grouped by status in order, preserving each run and hiding empty groups', async () => {
+    const makeRun = (guid, booking_status) => ({
+        guid, name: guid, facility_name: 'Hall', booking_status,
+        start_date: booking_status === 'upcoming' ? '2027-01-01' : null,
+        full_price_pence: 500, current_price_pence: 500, remaining_sessions: 1,
+        total_sessions: 1, capacity: 2, sessions: []
+    });
+    const course = { guid: 'course', name: 'Course', sport_guids: ['sport'], runs: [
+        makeRun('upcoming-first', 'upcoming'), makeRun('unknown', 'unknown'),
+        makeRun('progress-first', 'in_progress'), makeRun('upcoming-second', 'upcoming'),
+        makeRun('progress-second', 'in_progress')
+    ] };
+    const render = () => ejs.renderFile(path.join(__dirname, '../views/resident-courses.ejs'), {
+        siteTitle: 'ActiveHub', hasLogo: false, currentProfile: { name: 'Resident' },
+        isAdmin: false, canSwitchRole: false, activePage: 'courses', courses: [course],
+        courseGroups: [{ guid: 'sport', name: 'Sport', courses: [course], faqs: [] }]
+    });
+    const html = await render();
+    assert.match(html, /Choose a class \(5\)[\s\S]*?2 in progress, 2 upcoming, 1 with an unknown start date[\s\S]*?<\/summary>/);
+    const progress = html.indexOf('data-run-status-group="in_progress"');
+    const upcoming = html.indexOf('data-run-status-group="upcoming"');
+    const unknown = html.indexOf('data-run-status-group="unknown"');
+    assert.ok(progress < upcoming && upcoming < unknown);
+    assert.match(html.slice(progress, upcoming), /Classes in progress \(2\)/);
+    assert.match(html.slice(upcoming, unknown), /Upcoming classes \(2\)/);
+    assert.match(html.slice(unknown), /Classes with an unknown start date \(1\)/);
+    assert.ok(html.indexOf('>progress-first</h5>') < html.indexOf('>progress-second</h5>'));
+    assert.ok(html.indexOf('>upcoming-first</h5>') < html.indexOf('>upcoming-second</h5>'));
+    for (const run of course.runs) {
+        assert.equal((html.match(new RegExp(`name="run_guid" value="${run.guid}"`, 'g')) || []).length, 1);
+    }
+    course.runs = [makeRun('only-upcoming', 'upcoming')];
+    const single = await render();
+    assert.match(single, /Choose a class \(1\)[\s\S]*?0 in progress, 1 upcoming[\s\S]*?<\/summary>/);
+    assert.match(single, /Upcoming classes \(1\)/);
+    assert.doesNotMatch(single, /data-run-status-group="in_progress"|data-run-status-group="unknown"/);
+});
+
+test('customer run details do not invent unknown start dates or change booking controls', async () => {
+    const filename = path.join(__dirname, '../views/partials/course-run-details.ejs');
+    const run = { guid: 'run', name: 'Class', facility_name: 'Hall', current_price_pence: 500,
+        full_price_pence: 500, remaining_sessions: 1, total_sessions: 1, capacity: 2,
+        sessions: [{ starts_local: '2027-01-05 13:45', ends_local: '2027-01-05 14:30' }],
+        booking_status: 'unknown', start_date: null };
+    const html = await ejs.renderFile(filename, { run, currentProfile: { name: 'Resident' } });
+    assert.doesNotMatch(html, /Started [0-9]|Starts [0-9]|>Upcoming<|>In progress</);
+    assert.match(html, /Add to basket/);
+    const started = await ejs.renderFile(filename, { run: { ...run, booking_status: 'in_progress' } });
+    assert.doesNotMatch(started, />Upcoming<|>In progress<|Started [0-9]/);
 });
 
 test('customer run details show session lengths including variable durations and singular minutes', async () => {

@@ -60,6 +60,55 @@ test('mixed court and course checkout (PostgreSQL)', { skip: !databaseUrl }, asy
         return row.count;
     }
 
+    await t.test('course and court references retry collisions without changing older references', async () => {
+        const first = await person();
+        await Basket.add(first, run.guid, 'self', '/courses');
+        await Basket.addCourts(first, [slot()]);
+        let random = t.mock.method(crypto, 'randomInt', () => 3);
+        let firstOrder;
+        try {
+            firstOrder = await checkout(first);
+        } finally {
+            random.mock.restore();
+        }
+        const original = await Basket.order(first, firstOrder.guid);
+        assert.equal(original.items.find(item => item.kind !== 'court').booking_ref, 'AHC-DDDDDD');
+        assert.equal(original.items.find(item => item.kind === 'court').booking_ref, 'AH-DDDDDD');
+
+        const second = await person();
+        await Basket.add(second, run.guid, 'self', '/courses');
+        await Basket.addCourts(second, [slot()]);
+        let calls = 0;
+        random = t.mock.method(crypto, 'randomInt', () => 3 + Math.floor(calls++ / 6) % 2);
+        let secondOrder;
+        try {
+            secondOrder = await checkout(second);
+        } finally {
+            random.mock.restore();
+        }
+        const confirmed = await Basket.order(second, secondOrder.guid);
+        assert.equal(confirmed.items.find(item => item.kind !== 'court').booking_ref, 'AHC-EEEEEE');
+        assert.equal(confirmed.items.find(item => item.kind === 'court').booking_ref, 'AH-EEEEEE');
+        assert.equal(calls, 24);
+        assert.deepEqual((await Basket.order(first, firstOrder.guid)).items.map(item => item.booking_ref),
+            original.items.map(item => item.booking_ref));
+
+        const third = await person();
+        calls = 0;
+        random = t.mock.method(crypto, 'randomInt', () => calls++ < 6 ? 3 : 5);
+        try {
+            const booking = await Bookings.createBooking({ ...slot(), facility_guid: facility.guid, profile_guid: third });
+            assert.equal(booking.booking_ref, 'AH-FFFFFF');
+            assert.equal(calls, 12);
+        } finally {
+            random.mock.restore();
+        }
+
+        const legacy = `AHC-${crypto.randomUUID().toUpperCase()}`;
+        await db.query('UPDATE course_enrolments SET booking_ref = $1 WHERE order_guid = $2', [legacy, firstOrder.guid]);
+        assert.equal((await Basket.order(first, firstOrder.guid)).items.find(item => item.kind !== 'court').booking_ref, legacy);
+    });
+
     await t.test('mixed order, shared credit, duplicate submissions and immutable confirmation', async () => {
         const owner = await person();
         await db.query(`INSERT INTO credits (profile_guid, facility_name, amount_pence, remaining_pence)
@@ -86,6 +135,8 @@ test('mixed court and course checkout (PostgreSQL)', { skip: !databaseUrl }, asy
         assert.equal(spent.pence, 1200);
         const confirmation = await Basket.order(owner, order.guid);
         assert.equal(confirmation.items.length, 2);
+        assert.match(confirmation.items.find(item => item.kind !== 'court').booking_ref, /^AHC-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
+        assert.match(confirmation.items.find(item => item.kind === 'court').booking_ref, /^AH-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
         assert.equal(await Basket.order(await person(), order.guid), null);
         await db.query('DELETE FROM booking_reservations WHERE booking_guid IN (SELECT guid FROM bookings WHERE profile_guid = $1)', [owner]);
         await db.query('DELETE FROM bookings WHERE profile_guid = $1', [owner]);

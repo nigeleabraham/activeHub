@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
     <%- include('partials/accessibility-styles') %>
+    <style>
+        [data-manager-facilities][hidden] { display: none !important; }
+    </style>
 </head>
 
 <body class="bg-light">
@@ -58,6 +61,16 @@
                             </div>
                         <% }); %>
                     </fieldset>
+                    <fieldset class="form-group col-md-3" data-manager-facilities>
+                        <legend class="h6">Facility manager facilities</legend>
+                        <p class="small text-muted">No selection means no facility access. Administrators automatically have every facility, including new ones.</p>
+                        <% (locals.facilities || []).forEach((facility, index) => { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="profile-facility-<%= index %>" name="managed_facility_guids" value="<%= facility.guid %>">
+                                <label class="form-check-label" for="profile-facility-<%= index %>"><%= facility.name %></label>
+                            </div>
+                        <% }); %>
+                    </fieldset>
                     <div class="form-group col-md-auto">
                         <button class="btn btn-primary" type="submit">Add profile</button>
                     </div>
@@ -85,6 +98,9 @@
                                     <div data-profile-edit-feedback class="d-flex align-items-center flex-grow-1" style="height: 4.5rem; min-width: 0; overflow: auto;"></div>
                                     </div>
                                     <% (profile.roles || [profile.role]).forEach(role => { %><span class="badge badge-secondary ml-1"><%= role %></span><% }); %>
+                                    <% if ((profile.roles || [profile.role]).includes('Facility manager')) { %>
+                                    <p class="small mb-0">Managed facilities: <%= (locals.facilities || []).filter(facility => (profile.managed_facility_guids || []).includes(facility.guid)).map(facility => facility.name).join(', ') || 'None' %></p>
+                                    <% } %>
                                     <p class="text-muted small mb-0 text-break"><%= profile.email %></p>
                                     <p class="small mb-0">Booking credit: £<%= (profile.credit_pence / 100).toFixed(2) %></p>
                                 </div>
@@ -119,6 +135,16 @@
                                             </div>
                                         <% }); %>
                                     </fieldset>
+                                    <fieldset class="form-group" data-manager-facilities>
+                                        <legend class="h6">Facility manager facilities</legend>
+                                        <p class="small text-muted">No selection means no facility access. Administrators automatically have every facility, including new ones.</p>
+                                        <% (locals.facilities || []).forEach((facility, index) => { %>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="edit-profile-facility-<%= profile.guid %>-<%= index %>" name="managed_facility_guids" value="<%= facility.guid %>"<%= ((profile.roles || [profile.role]).includes('Administrator') || (profile.managed_facility_guids || []).includes(facility.guid)) ? ' checked' : '' %>>
+                                                <label class="form-check-label" for="edit-profile-facility-<%= profile.guid %>-<%= index %>"><%= facility.name %></label>
+                                            </div>
+                                        <% }); %>
+                                    </fieldset>
                                     <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
                                     <button class="btn btn-outline-secondary btn-sm ml-1" type="button" data-cancel-edit>Cancel</button>
                                 </form>
@@ -133,6 +159,30 @@
             </div>
         </section>
     </main>
+    <script>
+        function updateManagerFacilities(form) {
+            const role = form.querySelector('input[name="roles"][value="Facility manager"]');
+            const administrator = form.querySelector('input[name="roles"][value="Administrator"]');
+            const facilities = form.querySelector('[data-manager-facilities]');
+            if (!facilities) return;
+            facilities.disabled = !role?.checked;
+            facilities.hidden = !role?.checked;
+            facilities.querySelectorAll('input[name="managed_facility_guids"]').forEach(input => {
+                if (administrator?.checked) input.checked = true;
+                input.disabled = Boolean(administrator?.checked);
+            });
+        }
+        document.querySelectorAll('form').forEach(updateManagerFacilities);
+        document.addEventListener('change', event => {
+            if (event.target.matches('input[name="roles"][value="Facility manager"], input[name="roles"][value="Administrator"]')) updateManagerFacilities(event.target.form);
+        });
+        document.addEventListener('focusin', event => {
+            if (event.target.form) updateManagerFacilities(event.target.form);
+        });
+        document.addEventListener('reset', event => {
+            setTimeout(() => updateManagerFacilities(event.target), 0);
+        });
+    </script>
 </body>
 
 </html>

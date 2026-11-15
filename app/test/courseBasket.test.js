@@ -66,6 +66,35 @@ test('course booking popup presents server conflicts and preserves the attendee 
     assert.match(html, /<dialog[^>]*aria-labelledby="course-booking-dialog-heading"[^>]*aria-describedby=/);
 });
 
+test('returning from basket restores disclosures by identity even when a class disappears', async () => {
+    const vm = require('node:vm');
+    const html = await ejs.renderFile(path.join(__dirname, '../views/partials/course-basket-return.ejs'));
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const details = [
+        { dataset: { returnKey: 'sport-group-tennis' }, open: false },
+        { dataset: { returnKey: 'course-runs' }, open: false },
+        { dataset: { returnKey: 'attendee-remaining-booking' }, open: false }
+    ];
+    let restoredScroll;
+    let removed = false;
+    vm.runInNewContext(script, {
+        document: { getElementById: () => ({}), addEventListener() {}, querySelectorAll: () => details },
+        location: { pathname: '/courses' },
+        window: { scrollTo(_x, y) { restoredScroll = y; } },
+        sessionStorage: {
+            getItem: () => JSON.stringify({ path: '/courses', scroll: 350, open: {
+                'sport-group-tennis': true, 'course-runs': true,
+                'attendee-sold-out-booking': true, 'attendee-remaining-booking': false
+            } }),
+            removeItem() { removed = true; }
+        },
+        requestAnimationFrame: callback => callback(), console
+    });
+    assert.deepEqual(details.map(detail => detail.open), [true, true, false]);
+    assert.equal(restoredScroll, 350);
+    assert.equal(removed, true);
+});
+
 test('basket omits confirmed order history and does not load previous orders', async t => {
     const basket = { return_to: '/courses', items: [], valid: false };
     t.mock.method(CourseOrders, 'basket', async () => basket);
@@ -187,6 +216,14 @@ test('course run controls include saved family members and replace purchase cont
     assert.match(soldOut, /Sold out/);
     assert.doesNotMatch(soldOut, /action="\/basket\/add"|Add to basket/);
     const html = await ejs.renderFile(filename, { ...values, run: { ...values.run, spaces_remaining: 2 } });
+    assert.match(html, /<details class="course-run-disclosure" data-run-disclosure[^>]*>\s*<summary>/);
+    const summary = html.match(/<details class="course-run-disclosure"[^>]*>\s*<summary>([\s\S]*?)<\/summary>/)[1];
+    assert.match(summary, /Hall/);
+    assert.match(summary, /&pound;5\.00/);
+    assert.match(summary, /Spaces remaining: 2/);
+    assert.match(summary, /View details and book/);
+    assert.doesNotMatch(summary, /Who is attending\?|<form/);
+    assert.doesNotMatch(html, /<details class="course-run-disclosure"[^>]*\bopen\b/);
     assert.match(html, /Spaces remaining: 2/);
     assert.match(html, /value="self">Resident \(myself\)/);
     assert.match(html, /value="123e4567-e89b-42d3-a456-426614174001">Child/);

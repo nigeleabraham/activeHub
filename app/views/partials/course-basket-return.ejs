@@ -33,7 +33,8 @@
                 sessionStorage.setItem(key, JSON.stringify({
                     path: location.pathname,
                     scroll: window.scrollY,
-                    open: Array.from(document.querySelectorAll('details')).map(detail => detail.open)
+                    open: Object.fromEntries(Array.from(document.querySelectorAll('details[data-return-key]'))
+                        .map(detail => [detail.dataset.returnKey, detail.open]))
                 }));
             } catch (error) {
                 console.warn('Unable to remember the course page position:', error);
@@ -66,7 +67,9 @@
             const saved = JSON.parse(sessionStorage.getItem(key) || 'null');
             if (!saved || saved.path !== location.pathname) return;
             sessionStorage.removeItem(key);
-            document.querySelectorAll('details').forEach((detail, index) => { detail.open = saved.open[index] === true; });
+            document.querySelectorAll('details[data-return-key]').forEach(detail => {
+                detail.open = saved.open?.[detail.dataset.returnKey] === true;
+            });
             requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
         } catch (error) {
             console.warn('Unable to restore the course page position:', error);

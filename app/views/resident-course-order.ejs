@@ -20,7 +20,7 @@
     <%- include('partials/customer-navigation') %>
     <main class="container py-4">
         <h1>Booking confirmed</h1>
-        <output aria-live="polite">Your bookings are confirmed. Card payments are simulated; no money has been taken.</output>
+        <output aria-live="polite">Your bookings are confirmed. <%= order.manual_booking ? 'This booking was made by an administrator; no card payment was taken.' : 'Card payments are simulated; no money has been taken.' %></output>
         <p>Order reference: <strong><%= order.guid %></strong></p>
         <ul class="list-unstyled">
             <% order.items.forEach(item => { %>
@@ -32,7 +32,7 @@
             <% }); %>
         </ul>
         <p>Total: <%= money(order.total_pence) %>. Account credit used: <%= money(order.credit_pence) %>.
-            Card payment (simulated): <%= money(order.total_pence - order.credit_pence) %>.</p>
+            <%= order.manual_booking ? 'Not paid in ActiveHub' : 'Card payment (simulated)' %>: <%= money(order.total_pence - order.credit_pence) %>.</p>
         <a class="btn btn-primary" href="/bookings">View my bookings</a>
     </main>
 </body>

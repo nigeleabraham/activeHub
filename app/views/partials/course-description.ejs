@@ -3,7 +3,7 @@ const singleDescription = typeof course.description_text === 'string';
 const hasDescription = singleDescription ? course.description_text.trim() :
     (!course.description_sport_guid && course.description) || (course.resolved_sections || []).length;
 if (collapseDescription && hasDescription) { %>
-<details class="mb-3" data-course-description>
+<details class="mb-3" data-course-description<% if (locals.returnKey) { %> data-return-key="<%= returnKey %>"<% } %>>
     <summary>Course description</summary>
     <div class="mt-3">
 <% } %>

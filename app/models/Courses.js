@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const { parseRunInput, priceForRemainingSessions, compareCourses, compareRuns } = require('../courseRuns');
 const { descriptionConfig, resolveDescription, courseDescriptionText, hasCustomDescription } = require('../courseDescriptions');
+const { isValidCourseDates } = require('../validation');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
@@ -69,6 +70,9 @@ async function initialize() {
         );
         CREATE INDEX IF NOT EXISTS course_runs_course_idx ON course_runs(course_guid);
         CREATE INDEX IF NOT EXISTS course_runs_facility_idx ON course_runs(facility_guid);
+        ALTER TABLE course_runs ADD COLUMN IF NOT EXISTS start_date date;
+        ALTER TABLE course_runs ADD COLUMN IF NOT EXISTS end_date date;
+        ALTER TABLE course_runs ADD COLUMN IF NOT EXISTS incomplete_history boolean NOT NULL DEFAULT false;
         CREATE TABLE IF NOT EXISTS course_sessions (
             guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             run_guid uuid NOT NULL REFERENCES course_runs(guid) ON DELETE CASCADE,
@@ -87,7 +91,39 @@ async function initialize() {
     `);
 }
 
-async function findAll({ availableOnly = false } = {}) {
+async function backfillRunDates(client = pool) {
+    const markers = await client.query("SELECT key, value FROM site_settings WHERE key LIKE 'camden\\_course\\_import:%' ESCAPE '\\' AND value LIKE '{%'");
+    const incomplete = [];
+    for (const marker of markers.rows) {
+        let data;
+        try {
+            data = JSON.parse(marker.value);
+        } catch (error) {
+            throw new Error(`Invalid course import metadata for ${marker.key}`, { cause: error });
+        }
+        if (typeof data.guid !== 'string' || !Number.isInteger(data.original_sessions) ||
+            !Number.isInteger(data.advertised_remaining)) {
+            throw new Error(`Invalid course import metadata for ${marker.key}`);
+        }
+        if (data.original_sessions > data.advertised_remaining) incomplete.push(data.guid);
+    }
+    if (incomplete.length) {
+        await client.query(`UPDATE course_runs SET incomplete_history = true, start_date = NULL
+            WHERE guid = ANY($1::uuid[]) AND NOT incomplete_history`, [incomplete]);
+    }
+    await client.query(`UPDATE course_runs r SET
+        start_date = CASE WHEN r.incomplete_history THEN r.start_date ELSE dates.first_date END,
+        end_date = dates.last_date
+        FROM (
+            SELECT run_guid, min((starts_at AT TIME ZONE 'Europe/London')::date) AS first_date,
+                max((ends_at AT TIME ZONE 'Europe/London')::date) AS last_date
+            FROM course_sessions GROUP BY run_guid
+        ) dates WHERE r.guid = dates.run_guid
+        AND (r.end_date IS DISTINCT FROM dates.last_date OR
+            (NOT r.incomplete_history AND r.start_date IS DISTINCT FROM dates.first_date))`);
+}
+
+async function findAll({ availableOnly = false, includeUnscheduled = false } = {}) {
     const { rows } = await pool.query(`
         SELECT courses.guid, courses.name, courses.description, courses.created_at,
                courses.description_sport_guid, courses.description_overrides, courses.description_sections,
@@ -95,14 +131,37 @@ async function findAll({ availableOnly = false } = {}) {
                to_char(courses.end_date, 'YYYY-MM-DD') AS end_date,
                to_char(courses.start_date, 'YYYY-MM-DD') AS start_date,
                ARRAY(SELECT DISTINCT facility_guid FROM course_runs WHERE course_guid = courses.guid AND (NOT $1::boolean OR published)) AS facility_guids,
-               ARRAY(SELECT sport_guid FROM course_sports WHERE course_guid = courses.guid ORDER BY sport_guid) AS sport_guids
+               ARRAY(SELECT sport_guid FROM course_sports WHERE course_guid = courses.guid ORDER BY sport_guid) AS sport_guids,
+               COALESCE(availability.has_scheduled_classes, false) AS has_scheduled_classes,
+               COALESCE(availability.has_current_classes, false) AS has_current_classes,
+               COALESCE(availability.has_upcoming_classes, false) AS has_upcoming_classes,
+               COALESCE(availability.has_unknown_start_classes, false) AS has_unknown_start_classes
         FROM courses
         LEFT JOIN sports description_sport ON description_sport.guid=courses.description_sport_guid
-        WHERE NOT $1::boolean OR EXISTS (
+        LEFT JOIN LATERAL (
+            SELECT true AS has_scheduled_classes,
+                bool_or(r.start_date <= (statement_timestamp() AT TIME ZONE 'Europe/London')::date OR
+                    (r.start_date IS NULL AND EXISTS (
+                        SELECT 1 FROM course_sessions past
+                        WHERE past.run_guid = r.guid AND (past.starts_at AT TIME ZONE 'Europe/London')::date <=
+                            (statement_timestamp() AT TIME ZONE 'Europe/London')::date))) AS has_current_classes,
+                bool_or(r.start_date > (statement_timestamp() AT TIME ZONE 'Europe/London')::date) AS has_upcoming_classes,
+                bool_or(r.start_date IS NULL AND NOT EXISTS (
+                    SELECT 1 FROM course_sessions past
+                    WHERE past.run_guid = r.guid AND (past.starts_at AT TIME ZONE 'Europe/London')::date <=
+                        (statement_timestamp() AT TIME ZONE 'Europe/London')::date)) AS has_unknown_start_classes
+            FROM course_runs r
+            WHERE r.course_guid = courses.guid AND r.published
+                AND (r.end_date IS NULL OR r.end_date >= (statement_timestamp() AT TIME ZONE 'Europe/London')::date)
+                AND EXISTS (SELECT 1 FROM course_sessions s WHERE s.run_guid = r.guid AND s.starts_at > statement_timestamp())
+            HAVING count(*) > 0
+        ) availability ON $2::boolean
+        WHERE NOT $1::boolean OR $2::boolean OR EXISTS (
             SELECT 1 FROM course_runs r JOIN course_sessions s ON s.run_guid = r.guid
-            WHERE r.course_guid = courses.guid AND r.published AND s.starts_at > statement_timestamp())
+            WHERE r.course_guid = courses.guid AND r.published AND s.starts_at > statement_timestamp()
+                AND (r.end_date IS NULL OR r.end_date >= (statement_timestamp() AT TIME ZONE 'Europe/London')::date))
         ORDER BY LOWER(courses.name), courses.guid
-    `, [availableOnly]);
+    `, [availableOnly, includeUnscheduled]);
     const runs = await findRuns({ availableOnly });
     return rows.sort(compareCourses).map(course => ({ ...course,
         description_text: courseDescriptionText(course, course.default_sections),
@@ -162,8 +221,18 @@ async function save(guid, { name, description, sport_guids, description_sport_gu
 
 async function findRuns({ availableOnly = false } = {}) {
     const { rows } = await pool.query(`
-            SELECT r.*, f.name AS facility_name,
-                r.capacity - (SELECT count(*)::int FROM course_enrolments WHERE run_guid = r.guid AND cancelled_at IS NULL) AS spaces_remaining,
+            SELECT r.*, to_char(r.start_date, 'YYYY-MM-DD') AS start_date,
+                to_char(r.end_date, 'YYYY-MM-DD') AS end_date, f.name AS facility_name,
+                CASE
+                    WHEN r.end_date < (statement_timestamp() AT TIME ZONE 'Europe/London')::date THEN 'completed'
+                    WHEN r.start_date > (statement_timestamp() AT TIME ZONE 'Europe/London')::date THEN 'upcoming'
+                    WHEN r.start_date <= (statement_timestamp() AT TIME ZONE 'Europe/London')::date OR
+                        (r.start_date IS NULL AND EXISTS (SELECT 1 FROM course_sessions s
+                            WHERE s.run_guid = r.guid AND (s.starts_at AT TIME ZONE 'Europe/London')::date <=
+                                (statement_timestamp() AT TIME ZONE 'Europe/London')::date)) THEN 'in_progress'
+                    ELSE 'unknown'
+                END AS booking_status,
+                r.capacity - enrolments.booked AS spaces_remaining,
                 (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid) AS total_sessions,
                 (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()) AS remaining_sessions,
                 COALESCE((SELECT json_agg(json_build_object(
@@ -172,14 +241,20 @@ async function findRuns({ availableOnly = false } = {}) {
                     ORDER BY starts_at) FROM course_sessions WHERE run_guid = r.guid
                     AND (NOT $1::boolean OR starts_at > statement_timestamp())), '[]') AS sessions
             FROM course_runs r JOIN facilities f ON f.guid = r.facility_guid
+            CROSS JOIN LATERAL (
+                SELECT count(*)::int AS booked FROM course_enrolments
+                WHERE run_guid = r.guid AND cancelled_at IS NULL
+            ) enrolments
             WHERE NOT $1::boolean OR (r.published AND EXISTS (
-                SELECT 1 FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()))
+                SELECT 1 FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp())
+                AND (r.end_date IS NULL OR r.end_date >= (statement_timestamp() AT TIME ZONE 'Europe/London')::date)
+                AND enrolments.booked < r.capacity)
             ORDER BY LOWER(f.name), LOWER(r.name), r.guid`, [availableOnly]);
     return rows.sort(compareRuns).map(run => ({ ...run, current_price_pence: run.full_price_pence !== null && run.total_sessions
         ? priceForRemainingSessions(run.full_price_pence, run.total_sessions, run.remaining_sessions) : null }));
 }
 
-async function saveRun(guid, courseGuid, { facility_guid, name, full_price_pence, capacity, sessions }) {
+async function saveRun(guid, courseGuid, { facility_guid, name, full_price_pence, capacity, sessions, original_start_date }, allowedFacilities = null) {
     const valid = Number.isInteger(full_price_pence) && full_price_pence >= 0 && full_price_pence <= 99999999 &&
         Number.isInteger(capacity) && Array.isArray(sessions) && sessions.every(session =>
             session && typeof session.starts_local === 'string' && typeof session.ends_local === 'string' &&
@@ -190,11 +265,36 @@ async function saveRun(guid, courseGuid, { facility_guid, name, full_price_pence
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        const firstDate = valid.sessions[0].starts_local.slice(0, 10);
+        const lastDate = valid.sessions.at(-1).ends_local.slice(0, 10);
+        let startDate = firstDate;
+        if (guid) {
+            const existing = await client.query(`SELECT incomplete_history, to_char(start_date, 'YYYY-MM-DD') AS start_date
+                FROM course_runs WHERE guid=$1 AND course_guid=$2
+                AND ($3::uuid[] IS NULL OR (facility_guid = ANY($3::uuid[]) AND $4::uuid = ANY($3::uuid[]))) FOR UPDATE`,
+            [guid, courseGuid, allowedFacilities, facility_guid]);
+            if (!existing.rowCount) {
+                await client.query('ROLLBACK');
+                return null;
+            }
+            if (existing.rows[0].incomplete_history) {
+                startDate = original_start_date === undefined ? existing.rows[0].start_date : original_start_date || null;
+                if (startDate !== null && (typeof startDate !== 'string' || !isValidCourseDates(startDate, firstDate))) {
+                    const error = new Error('The original start date must be a valid date no later than the first listed session.');
+                    error.code = 'INVALID_RUN_START_DATE';
+                    throw error;
+                }
+            }
+        }
         const { rows } = guid ? await client.query(`UPDATE course_runs SET facility_guid=$3, name=$4,
-                full_price_pence=$5, capacity=$6, published=true WHERE guid=$1 AND course_guid=$2 RETURNING guid`,
-            [guid, courseGuid, facility_guid, name, full_price_pence, capacity]) :
-                await client.query(`INSERT INTO course_runs (course_guid, facility_guid, name, full_price_pence, capacity, published)
-                    VALUES ($1,$2,$3,$4,$5,true) RETURNING guid`, [courseGuid, facility_guid, name, full_price_pence, capacity]);
+                full_price_pence=$5, capacity=$6, published=true, start_date=$8, end_date=$9 WHERE guid=$1 AND course_guid=$2
+                AND ($7::uuid[] IS NULL OR (facility_guid = ANY($7::uuid[]) AND $3::uuid = ANY($7::uuid[]))) RETURNING guid`,
+            [guid, courseGuid, facility_guid, name, full_price_pence, capacity, allowedFacilities, startDate, lastDate]) :
+                await client.query(`INSERT INTO course_runs (course_guid, facility_guid, name, full_price_pence, capacity, published, start_date, end_date)
+                    SELECT $1,$2,$3,$4,$5,true,$7,$8 WHERE $6::uuid[] IS NULL OR (
+                        $2::uuid = ANY($6::uuid[]) AND EXISTS (
+                            SELECT 1 FROM course_runs WHERE course_guid = $1 AND facility_guid = ANY($6::uuid[])))
+                    RETURNING guid`, [courseGuid, facility_guid, name, full_price_pence, capacity, allowedFacilities, startDate, lastDate]);
         if (!rows.length) {
             await client.query('ROLLBACK');
             return null;
@@ -229,8 +329,10 @@ async function saveRun(guid, courseGuid, { facility_guid, name, full_price_pence
     }
 }
 
-async function removeRun(guid, courseGuid) {
-    return (await pool.query('DELETE FROM course_runs WHERE guid=$1 AND course_guid=$2 RETURNING guid', [guid, courseGuid])).rows[0] || null;
+async function removeRun(guid, courseGuid, allowedFacilities = null) {
+    return (await pool.query(`DELETE FROM course_runs WHERE guid=$1 AND course_guid=$2
+        AND ($3::uuid[] IS NULL OR facility_guid = ANY($3::uuid[])) RETURNING guid`,
+    [guid, courseGuid, allowedFacilities])).rows[0] || null;
 }
 
 async function remove(guid) {
@@ -332,4 +434,4 @@ async function changeFaqOrder(sportGuid, guid, direction, order) {
     }
 }
 
-module.exports = { initialize, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, saveFaqText, removeFaq, moveFaq, reorderFaqs };
+module.exports = { initialize, backfillRunDates, findAll, create, update, remove, findRuns, saveRun, removeRun, findFaqs, saveFaq, saveFaqText, removeFaq, moveFaq, reorderFaqs };

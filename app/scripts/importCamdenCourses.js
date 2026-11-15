@@ -147,10 +147,12 @@ async function importCourses(pool, courses) {
                 const date = new Date(run.sessions[0].starts_local.slice(0, 10) + 'T12:00:00Z');
                 const day = date.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
                 const name = `${day} ${run.sessions[0].starts_local.slice(11)} (imported draft)`;
+                const dates = run.sessions.map(session => session.starts_local.slice(0, 10)).sort();
+                const incomplete = run.original_sessions > run.advertised_remaining;
                 const { rows: [created] } = await client.query(`INSERT INTO course_runs
-                    (course_guid,facility_guid,name,full_price_pence,capacity,published)
-                    VALUES ($1,$2,$3,$4,NULL,false) RETURNING guid`,
-                [guid, matched[0].guid, name, run.full_price_pence]);
+                    (course_guid,facility_guid,name,full_price_pence,capacity,published,start_date,end_date,incomplete_history)
+                    VALUES ($1,$2,$3,$4,NULL,false,$5,$6,$7) RETURNING guid`,
+                [guid, matched[0].guid, name, run.full_price_pence, incomplete ? null : dates[0], dates.at(-1), incomplete]);
                 for (const session of run.sessions) {
                     await client.query(`INSERT INTO course_sessions (run_guid,starts_at,ends_at)
                         VALUES ($1,$2::timestamp AT TIME ZONE 'Europe/London',$3::timestamp AT TIME ZONE 'Europe/London')`,

@@ -46,7 +46,7 @@
 </head>
 
 <body class="bg-light">
-    <a class="skip-link" href="#add-facility-section">Skip to add facility form</a>
+    <% if (currentProfile.role !== 'Facility manager') { %><a class="skip-link" href="#add-facility-section">Skip to add facility form</a><% } %>
     <a class="skip-link" href="#facility-directory">Skip to facility directory</a>
     <%- include('partials/navigation') %>
     <main class="container py-5">
@@ -59,15 +59,21 @@
         </header>
 
         <div class="admin-save-feedback mb-4">
-            <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit facilities here. Assign sports and configure booking arrangements for each facility.</p>
+            <p class="alert text-muted mb-0" data-admin-save-placeholder><%= currentProfile.role === 'Facility manager'
+                ? 'You can edit your assigned facilities. Assign sports and configure booking arrangements for each facility.'
+                : isAdmin
+                    ? 'You can add, remove, and edit facilities here. Assign sports and configure booking arrangements for each facility.'
+                    : 'You can add and edit facilities here. Only Administrators can remove facilities.' %></p>
         </div>
         <div class="row">
+            <% if (currentProfile.role !== 'Facility manager') { %>
             <section id="add-facility-section" tabindex="-1" class="col-12 mb-4" aria-labelledby="add-facility-heading">
                 <details id="add-facility-panel" class="admin-disclosure bg-white border rounded shadow-sm p-4" data-editor-disclosure>
                     <summary class="admin-card-summary"><h2 id="add-facility-heading" class="h5 d-inline mb-0">Add facility</h2></summary>
                     <%- include('partials/facility-form', { facility: {} }) %>
                 </details>
             </section>
+            <% } %>
 
             <section id="facility-directory" tabindex="-1" class="col-12" aria-labelledby="facility-list-heading" data-facilities-directory>
                 <div class="d-flex align-items-center justify-content-between mb-3">
@@ -93,7 +99,7 @@
                                         <% facility.courses.forEach(course => { %>
                                             <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center px-0">
                                                 <span><%= course.name %></span>
-                                                <% if (isAdmin || (locals.can && locals.can('courses.manage'))) { %>
+                                                <% if (currentProfile.role !== 'Facility manager' && (isAdmin || (locals.can && locals.can('courses.manage')))) { %>
                                                 <form method="POST" action="/admin/facilities/courses/destroy">
                                                     <input type="hidden" name="guid" value="<%= course.guid %>">
                                                     <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">
@@ -111,10 +117,12 @@
                                 <% } %>
                             </details>
                             <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                            <% if (isAdmin) { %>
                             <form method="POST" action="/admin/facilities/destroy" data-facility-delete-name="<%= facility.name %>">
                                 <input type="hidden" name="guid" value="<%= facility.guid %>">
                                 <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete facility: <%= facility.name %>">Delete facility</button>
                             </form>
+                            <% } %>
                         </article>
                     <% }); %>
                 <% } else { %>

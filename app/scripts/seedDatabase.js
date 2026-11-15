@@ -119,6 +119,7 @@ async function main() {
                 console.log(`role_permissions: ${added} added`);
             }
         }
+        await require('../models/Courses').backfillRunDates(client);
         await client.query(
             `INSERT INTO site_settings (key, value) VALUES ($1, $2)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,

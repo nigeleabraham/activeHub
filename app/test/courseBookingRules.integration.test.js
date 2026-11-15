@@ -44,7 +44,7 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
     }
     async function rules(duplicate, multiple) {
         await Settings.set('course_prevent_duplicate_class', duplicate ? '1' : '0');
-        await Settings.set('course_prevent_multiple_classes', multiple ? '1' : '0');
+        await Settings.set('course_prevent_overlapping_runs', multiple ? '1' : '0');
     }
     async function pay(owner, current = null) {
         current ||= await Basket.basket(owner);
@@ -66,7 +66,7 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
         await assert.rejects(Basket.add(await person(), first, child.guid, '/courses'), /saved family member/);
         await buy(owner, first, child.guid);
         await assert.rejects(Basket.add(owner, first, child.guid, '/courses'), /already enrolled on this class/);
-        await assert.rejects(Basket.add(owner, second, child.guid, '/courses'), /different class/);
+        await assert.rejects(Basket.add(owner, second, child.guid, '/courses'), /dates overlapping/);
         assert.equal(await Basket.itemCount(owner), 0);
         await buy(owner, second, sibling.guid);
         await buy(owner, second);
@@ -97,7 +97,7 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
         await Basket.add(owner, first, 'self', '/courses');
         await assert.rejects(Basket.add(owner, first, 'self', '/courses'), /already has a place in your basket/);
         assert.equal(await Basket.itemCount(owner), 1);
-        await assert.rejects(Basket.add(owner, second, 'self', '/courses'), /different class/);
+        await assert.rejects(Basket.add(owner, second, 'self', '/courses'), /dates overlapping/);
         assert.equal(await Basket.itemCount(owner), 1);
         await Basket.add(owner, different, 'self', '/courses');
         assert.equal((await Basket.basket(owner)).valid, true);
@@ -113,7 +113,7 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
         await Basket.add(owner, first, 'self', '/courses');
         assert.equal(await Basket.itemCount(owner), 1);
         await pay(owner);
-        await assert.rejects(Basket.add(owner, second, 'self', '/courses'), /different class/);
+        await assert.rejects(Basket.add(owner, second, 'self', '/courses'), /dates overlapping/);
         await rules(true, false);
         await assert.rejects(Basket.add(owner, first, 'self', '/courses'), /already enrolled/);
         await buy(owner, second);
@@ -126,14 +126,89 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
         assert.equal(await count('course_enrolments', owner), 4);
     });
 
-    await t.test('all past bookings count against a different future class', async () => {
+    await t.test('completed non-overlapping runs do not prevent booking a later run', async () => {
         await rules(true, true);
         const owner = await person();
         const past = await run(course.guid, 'Completed class');
         await buy(owner, past);
         await db.query(`UPDATE course_sessions SET starts_at = starts_at - interval '1 year',
             ends_at = ends_at - interval '1 year' WHERE run_guid = $1`, [past]);
-        await assert.rejects(Basket.add(owner, first, 'self', '/courses'), /different class/);
+        await buy(owner, first);
+    });
+
+    await t.test('inclusive run ranges allow later runs and block touching or enclosed ranges', async () => {
+        await rules(true, true);
+        const owner = await person();
+        const base = await run(course.guid, 'Range base');
+        const touching = await run(course.guid, 'Range boundary');
+        const enclosed = await run(course.guid, 'Enclosed range');
+        const later = await run(course.guid, 'Later range');
+        await db.query(`UPDATE course_runs SET start_date = current_date + 1, end_date = current_date + 10 WHERE guid = $1`, [base]);
+        await db.query(`UPDATE course_runs SET start_date = current_date + 10, end_date = current_date + 20 WHERE guid = $1`, [touching]);
+        await db.query(`UPDATE course_runs SET start_date = current_date + 3, end_date = current_date + 4 WHERE guid = $1`, [enclosed]);
+        await db.query(`UPDATE course_runs SET start_date = current_date + 11, end_date = current_date + 20 WHERE guid = $1`, [later]);
+        await buy(owner, base);
+        await assert.rejects(Basket.add(owner, touching, 'self', '/courses'), /dates overlapping/);
+        await assert.rejects(Basket.add(owner, enclosed, 'self', '/courses'), /dates overlapping/);
+        await buy(owner, later);
+        assert.equal(await count('course_enrolments', owner), 2);
+
+        const basketOwner = await person();
+        await Basket.add(basketOwner, base, 'self', '/courses');
+        await Basket.add(basketOwner, later, 'self', '/courses');
+        assert.equal((await Basket.basket(basketOwner)).valid, true);
+        await assert.rejects(Basket.add(basketOwner, touching, 'self', '/courses'), /dates overlapping/);
+    });
+
+    await t.test('unknown original starts use earliest known UK session; unavailable dates are explained', async () => {
+        await rules(true, true);
+        const owner = await person();
+        const imported = await run(course.guid, 'Imported history');
+        const earlier = await run(course.guid, 'Earlier run');
+        const overlap = await run(course.guid, 'Known session boundary');
+        await db.query(`UPDATE course_runs SET incomplete_history = true, start_date = NULL,
+            end_date = current_date + 10 WHERE guid = $1`, [imported]);
+        const { rows: [date] } = await db.query(`SELECT (min(starts_at) AT TIME ZONE 'Europe/London')::date AS first_date
+            FROM course_sessions WHERE run_guid = $1`, [imported]);
+        await db.query(`UPDATE course_runs SET start_date = $2::date - 2, end_date = $2::date - 1 WHERE guid = $1`, [earlier, date.first_date]);
+        await db.query(`UPDATE course_runs SET start_date = $2::date, end_date = $2::date + 1 WHERE guid = $1`, [overlap, date.first_date]);
+        await buy(owner, imported);
+        await assert.rejects(Basket.add(owner, overlap, 'self', '/courses'), /dates overlapping/);
+        await buy(owner, earlier);
+        await db.query(`UPDATE course_runs SET start_date = $2::date - 2 WHERE guid = $1`, [imported, date.first_date]);
+        const ownerWithOriginalStart = await person();
+        await buy(ownerWithOriginalStart, imported);
+        await assert.rejects(Basket.add(ownerWithOriginalStart, earlier, 'self', '/courses'), /dates overlapping/);
+        await db.query('UPDATE course_runs SET start_date = NULL WHERE guid = $1', [imported]);
+        await db.query('DELETE FROM course_sessions WHERE run_guid = $1', [imported]);
+        await assert.rejects(Basket.add(owner, overlap, 'self', '/courses'), /dates.*could not be checked/);
+    });
+
+    await t.test('manual booking and checkout recheck overlapping dates and preserve other attendees', async () => {
+        await rules(true, true);
+        const owner = await person();
+        const actor = { guid: owner, name: 'Test administrator', role: 'Administrator' };
+        const firstRun = await run(course.guid, 'Manual first');
+        const secondRun = await run(course.guid, 'Manual second');
+        const child = await Basket.addFamilyMember(owner, 'Child');
+        const preview = await Basket.previewManual(owner, 'self', firstRun);
+        const expected = { amount: preview.amount, credit: 0, useCredit: 'no', confirmFull: false };
+        await Basket.createManual(owner, 'self', firstRun, crypto.randomUUID(), expected, actor);
+        await assert.rejects(Basket.previewManual(owner, 'self', secondRun), /dates overlapping/);
+        await assert.rejects(Basket.createManual(owner, 'self', secondRun, crypto.randomUUID(), expected, actor), /dates overlapping/);
+        await Basket.createManual(owner, child.guid, secondRun, crypto.randomUUID(), expected, actor);
+        await db.query(`UPDATE course_runs SET start_date = current_date + 10, end_date = current_date + 11 WHERE guid = $1`, [secondRun]);
+        assert.ok(await Basket.previewManual(owner, 'self', secondRun));
+
+        const basketOwner = await person();
+        await Basket.add(basketOwner, firstRun, 'self', '/courses');
+        await Basket.add(basketOwner, secondRun, 'self', '/courses');
+        const quote = await Basket.basket(basketOwner);
+        assert.equal(quote.valid, true);
+        await db.query('UPDATE course_runs SET start_date = NULL, end_date = NULL WHERE guid = $1', [secondRun]);
+        assert.equal((await Basket.basket(basketOwner)).valid, false);
+        await assert.rejects(pay(basketOwner, quote), /changed/);
+        assert.equal(await count('course_orders', basketOwner), 0);
     });
 
     await t.test('enabling rules invalidates stale baskets and payment without spending credit or creating an order', async () => {
@@ -175,6 +250,23 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
         assert.equal(await count('course_enrolments', owner), 1);
     });
 
+    await t.test('manual and customer booking of overlapping runs cannot both succeed concurrently', async () => {
+        await rules(true, true);
+        const owner = await person();
+        const actor = { guid: owner, name: 'Test administrator', role: 'Administrator' };
+        const preview = await Basket.previewManual(owner, 'self', second);
+        await Basket.add(owner, first, 'self', '/courses');
+        const current = await Basket.basket(owner);
+        const expected = { amount: preview.amount, credit: 0, useCredit: 'no', confirmFull: false };
+        const outcomes = await Promise.allSettled([
+            pay(owner, current),
+            Basket.createManual(owner, 'self', second, crypto.randomUUID(), expected, actor)
+        ]);
+        assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+        assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+        assert.equal(await count('course_enrolments', owner), 1);
+    });
+
     await t.test('rule changes wait for booking transaction locks rather than taking effect mid-purchase', async () => {
         await rules(true, true);
         const booking = await db.connect();
@@ -185,6 +277,11 @@ test('course and class booking rules (PostgreSQL)', { skip: !databaseUrl }, asyn
             await editor.query('BEGIN');
             await editor.query("SET LOCAL lock_timeout = '100ms'");
             await assert.rejects(editor.query("UPDATE site_settings SET value = '0' WHERE key = 'course_prevent_duplicate_class'"),
+                { code: '55P03' });
+            await editor.query('ROLLBACK');
+            await editor.query('BEGIN');
+            await editor.query("SET LOCAL lock_timeout = '100ms'");
+            await assert.rejects(editor.query("UPDATE site_settings SET value = '0' WHERE key = 'course_prevent_overlapping_runs'"),
                 { code: '55P03' });
             await editor.query('ROLLBACK');
             await booking.query('COMMIT');

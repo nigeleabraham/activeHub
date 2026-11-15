@@ -4,9 +4,23 @@ const schedules = [...new Set(run.sessions.map(session => {
         .toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
     return `${day}, ${session.starts_local.slice(11)}–${session.ends_local.slice(11)}`;
 }))]; %>
-<h4 class="h5"><%= schedules.length === 1 ? schedules[0] : run.name %></h4>
-<% if (schedules.length === 1) { %><p class="small mb-1"><%= run.name %></p><% } %>
-<p class="mb-2"><%= run.facility_name %></p>
+<details class="course-run-disclosure" data-run-disclosure data-return-key="<%= (locals.attendeeId || 'attendee-' + run.guid) + '-booking' %>">
+<summary>
+<h5 class="h5 mb-1"><%= run.name %></h5>
+<% if (schedules.length === 1) { %><p class="small mb-1"><%= schedules[0] %></p><% } %>
+<% if (run.start_date) { %>
+    <p class="small mb-1"><%= run.booking_status === 'in_progress' ? 'Started' : 'Starts' %> <%= run.start_date.split('-').reverse().join('/') %></p>
+<% } %>
+<p class="small mb-1"><%= run.facility_name %></p>
+<p class="mb-1"><strong>&pound;<%= (run.current_price_pence / 100).toFixed(2) %></strong> for <%= run.remaining_sessions %> remaining <%= run.remaining_sessions === 1 ? 'session' : 'sessions' %></p>
+<% if (spaces <= 0) { %>
+    <span class="font-weight-bold text-danger">Sold out</span>
+<% } else { %>
+    <p class="small mb-1">Spaces remaining: <%= spaces %>.</p>
+<% } %>
+<span class="course-run-toggle"><span class="course-run-open">View details and book &#8595;</span><span class="course-run-close">Hide details &#8593;</span></span>
+</summary>
+<div class="course-run-expanded">
 <% if (run.sessions.length) {
     const lengths = run.sessions.map(session =>
         (Date.parse(session.ends_local.replace(' ', 'T') + ':00Z') -
@@ -16,14 +30,9 @@ const schedules = [...new Set(run.sessions.map(session => {
 %>
     <p class="mb-1">Session length: <%= shortest === longest ? shortest : `${shortest}–${longest}` %> <%= longest === 1 ? 'minute' : 'minutes' %>.</p>
 <% } %>
-<p class="mb-2"><strong class="h4">&pound;<%= (run.current_price_pence / 100).toFixed(2) %></strong> for <%= run.remaining_sessions %> remaining sessions</p>
-<% if (spaces <= 0) { %>
-    <output class="font-weight-bold text-danger" aria-live="polite"><span class="bg-danger text-white px-2 rounded">Sold out</span></output>
-<% } else { %>
-    <p class="small mb-2">Spaces remaining: <%= spaces %>.</p>
-<% } %>
-<details class="mb-3">
+<details class="mb-3" data-return-key="<%= (locals.attendeeId || 'attendee-' + run.guid) + '-dates' %>">
     <summary>Dates and price details</summary>
+    <% if (run.start_date || run.end_date) { %><p class="mt-2 mb-1">Full run dates: <%= run.start_date ? run.start_date.split('-').reverse().join('/') : 'Start date unknown' %> to <%= run.end_date ? run.end_date.split('-').reverse().join('/') : 'End date unknown' %>.</p><% } %>
     <p class="mt-2 mb-1">Full course: &pound;<%= (run.full_price_pence / 100).toFixed(2) %> for <%= run.total_sessions %> sessions.</p>
     <p class="small">Session dates and times (UK time)</p>
     <div class="table-responsive mt-2">
@@ -64,3 +73,5 @@ const schedules = [...new Set(run.sessions.map(session => {
         <a class="small d-inline-block mt-2" href="/profile#my-children">Manage my children</a>
     </form>
 <% } %>
+</div>
+</details>

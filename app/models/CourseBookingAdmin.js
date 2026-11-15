@@ -29,16 +29,21 @@ function parseFilters(query) {
     return filters;
 }
 
-async function catalogue() {
+async function catalogue(allowedFacilities = null) {
     const { rows } = await pool.query(`
         SELECT c.guid, c.name,
             COALESCE((SELECT json_agg(json_build_object('guid', s.guid, 'name', s.name) ORDER BY lower(s.name))
                 FROM course_sports cs JOIN sports s ON s.guid = cs.sport_guid WHERE cs.course_guid = c.guid), '[]') AS sports,
             COALESCE((SELECT json_agg(json_build_object('guid', r.guid, 'name', r.name,
-                'facility_guid', f.guid, 'facility_name', f.name) ORDER BY lower(r.name), r.guid)
-                FROM course_runs r JOIN facilities f ON f.guid = r.facility_guid WHERE r.course_guid = c.guid), '[]') AS runs
-        FROM courses c WHERE EXISTS (SELECT 1 FROM course_runs WHERE course_guid = c.guid)
-        ORDER BY lower(c.name), c.guid`);
+                'facility_guid', f.guid, 'facility_name', f.name,
+                'bookable', r.published AND r.full_price_pence IS NOT NULL AND r.capacity IS NOT NULL AND
+                    EXISTS (SELECT 1 FROM course_sessions s WHERE s.run_guid = r.guid AND s.starts_at > statement_timestamp()))
+                ORDER BY lower(r.name), r.guid)
+                FROM course_runs r JOIN facilities f ON f.guid = r.facility_guid WHERE r.course_guid = c.guid
+                AND ($1::uuid[] IS NULL OR r.facility_guid = ANY($1::uuid[]))), '[]') AS runs
+        FROM courses c WHERE EXISTS (SELECT 1 FROM course_runs WHERE course_guid = c.guid
+            AND ($1::uuid[] IS NULL OR facility_guid = ANY($1::uuid[])))
+        ORDER BY lower(c.name), c.guid`, [allowedFacilities]);
     return rows;
 }
 
@@ -60,6 +65,7 @@ function conditions(filters) {
     if (filters.course) add('r.course_guid = ?', filters.course);
     if (filters.run) add('e.run_guid = ?', filters.run);
     if (filters.facility) add('r.facility_guid = ?', filters.facility);
+    if (filters.allowed_facilities) add('r.facility_guid = ANY(?::uuid[])', filters.allowed_facilities);
     if (filters.q) add(`(e.attendee_name ILIKE ? ESCAPE '\\' OR p.name ILIKE ? ESCAPE '\\' OR e.booking_ref ILIKE ? ESCAPE '\\')`,
         `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`);
     if (filters.from) add("(o.created_at AT TIME ZONE 'Europe/London')::date >= ?::date", filters.from);
@@ -75,14 +81,20 @@ async function search(filters) {
     const { where, values } = conditions(filters);
     const { rows: [count] } = await pool.query(`SELECT count(*)::int AS total ${base} ${where}`, values);
     const { rows } = await pool.query(`SELECT e.guid, e.booking_ref, e.attendee_name, e.member_guid, e.cancelled_at,
-        e.course_name, e.run_name, e.facility_name, p.name AS account_name, o.created_at,
+        e.amount_pence, e.credit_applied_pence, e.sessions, o.manual_booking,
+        e.course_name, e.run_name, e.facility_name, p.name AS account_name, p.email AS account_email, o.created_at,
         CASE WHEN e.cancelled_at IS NOT NULL THEN 'Removed' WHEN schedule.last_end > statement_timestamp() THEN 'Upcoming' ELSE 'Completed' END AS status
         ${base} ${where} ORDER BY o.created_at DESC, e.guid LIMIT 50 OFFSET $${values.length + 1}`,
     [...values, (filters.page - 1) * 50]);
-    return { entries: rows, total: count.total, pageSize: 50 };
+    const now = Date.now();
+    const entries = rows.map(entry => ({
+        ...entry,
+        remaining_session_value_pence: remainingSessionValue(entry, now)
+    }));
+    return { entries, total: count.total, pageSize: 50 };
 }
 
-async function register(runGuid, session = '') {
+async function register(runGuid, session = '', { allowMissingSession = false, allowedFacilities = null } = {}) {
     const { rows: [run] } = await pool.query(`SELECT r.*, c.name AS course_name, f.name AS facility_name,
         (SELECT count(*)::int FROM course_enrolments WHERE run_guid = r.guid AND cancelled_at IS NULL) AS booked,
         COALESCE((SELECT json_agg(json_build_object('starts_at', starts_at, 'ends_at', ends_at) ORDER BY starts_at)
@@ -94,9 +106,12 @@ async function register(runGuid, session = '') {
             FROM course_enrolments e CROSS JOIN LATERAL jsonb_array_elements(e.sessions) session WHERE e.run_guid = r.guid
         ) dates), '[]') AS dates
         FROM course_runs r JOIN courses c ON c.guid = r.course_guid JOIN facilities f ON f.guid = r.facility_guid
-        WHERE r.guid = $1`, [runGuid]);
+        WHERE r.guid = $1 AND ($2::uuid[] IS NULL OR r.facility_guid = ANY($2::uuid[]))`, [runGuid, allowedFacilities]);
     if (!run) return null;
-    if (session && !run.dates.includes(session)) throw new RangeError('Choose a session date from this class.');
+    if (session && !run.dates.includes(session)) {
+        if (!allowMissingSession) throw new RangeError('Choose a session date from this class.');
+        return { ...run, entries: [], spaces: run.capacity === null ? null : run.capacity - run.booked };
+    }
     const { where, values } = conditions({ run: runGuid, session });
     const { rows } = await pool.query(`SELECT e.guid, e.booking_ref, e.attendee_name, e.member_guid,
         p.name AS account_name, e.sessions, o.created_at,
@@ -119,12 +134,12 @@ async function register(runGuid, session = '') {
     return { ...run, entries, spaces: run.capacity - run.booked };
 }
 
-async function details(guid) {
+async function details(guid, allowedFacilities = null) {
     if (!GUID.test(guid)) return null;
-    const { rows: [booking] } = await pool.query(`SELECT e.*, p.name AS account_name, p.email AS account_email,
+    const { rows: [booking] } = await pool.query(`SELECT e.*, p.name AS account_name, p.email AS account_email, o.manual_booking,
         o.created_at, o.payment_reference,
         CASE WHEN e.cancelled_at IS NOT NULL THEN 'Removed' WHEN schedule.last_end > statement_timestamp() THEN 'Upcoming' ELSE 'Completed' END AS status
-        ${base} WHERE e.guid = $1`, [guid]);
+        ${base} WHERE e.guid = $1 AND ($2::uuid[] IS NULL OR r.facility_guid = ANY($2::uuid[]))`, [guid, allowedFacilities]);
     if (!booking) return null;
     return { booking };
 }
@@ -139,9 +154,23 @@ function removalAmount(value, maximum) {
     return pence;
 }
 
+function paidValue(booking) {
+    return booking.manual_booking ? booking.credit_applied_pence : booking.amount_pence;
+}
+
 function remainingValue(booking, now = Date.now()) {
-    const remaining = booking.sessions.filter(session => new Date(session.starts_at).getTime() > now).length;
-    return booking.sessions.length ? Math.round(booking.amount_pence * remaining / booking.sessions.length) : 0;
+    const remaining = remainingSessions(booking, now).length;
+    return booking.sessions.length ? Math.round(paidValue(booking) * remaining / booking.sessions.length) : 0;
+}
+
+function remainingSessions(booking, now = Date.now()) {
+    return booking.sessions.filter(session => new Date(session.starts_at).getTime() > now)
+        .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+}
+
+function remainingSessionValue(booking, now = Date.now()) {
+    if (booking.cancelled_at || !remainingSessions(booking, now).length) return null;
+    return Math.round(paidValue(booking) / booking.sessions.length);
 }
 
 async function removeAttendee(guid, mode, amount, actor) {
@@ -156,14 +185,14 @@ async function removeAttendee(guid, mode, amount, actor) {
         if (!identity) throw new RangeError('This booking no longer exists.');
         await client.query('SELECT guid FROM profiles WHERE guid = $1 FOR UPDATE', [identity.profile_guid]);
         await client.query('SELECT guid FROM course_runs WHERE guid = $1 FOR UPDATE', [identity.run_guid]);
-        const { rows: [booking] } = await client.query(`SELECT e.*, o.payment_reference
+        const { rows: [booking] } = await client.query(`SELECT e.*, o.payment_reference, o.manual_booking
             FROM course_enrolments e JOIN course_orders o ON o.guid = e.order_guid WHERE e.guid = $1 FOR UPDATE OF e`, [guid]);
         if (booking.cancelled_at) throw new RangeError('This attendee has already been removed. No further credit was issued.');
         if (mode !== 'none' && remainingValue(booking) <= 0) {
             throw new RangeError('No credit is available for the remaining purchased sessions. Choose removal without credit.');
         }
-        const pence = mode === 'none' ? 0 : removalAmount(amount, booking.amount_pence);
-        const funding = pence ? await Credits.grant(client, { ...booking, amount_paid_pence: booking.amount_pence },
+        const pence = mode === 'none' ? 0 : removalAmount(amount, paidValue(booking));
+        const funding = pence ? await Credits.grant(client, { ...booking, amount_paid_pence: paidValue(booking) },
             pence, actor.name, mode === 'refundable', { allowPartial: true, forceNonRefundable: mode === 'non-refundable' })
             : { refundable_pence: 0, non_refundable_pence: 0 };
         await client.query(`UPDATE course_enrolments SET cancelled_at = statement_timestamp(),
@@ -183,4 +212,4 @@ async function removeAttendee(guid, mode, amount, actor) {
     }
 }
 
-module.exports = { parseFilters, catalogue, search, register, details, removalAmount, remainingValue, removeAttendee };
+module.exports = { parseFilters, catalogue, search, register, details, paidValue, removalAmount, remainingSessions, remainingValue, removeAttendee };

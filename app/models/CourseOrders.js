@@ -6,10 +6,16 @@ const OpeningHours = require('./OpeningHours');
 const AuditLog = require('./AuditLog');
 const Settings = require('./Settings');
 const { priceForRemainingSessions } = require('../courseRuns');
+const BookingReferences = require('../bookingReferences');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isGuid = value => typeof value === 'string' && GUID.test(value);
+const bookingRunDates = `
+    to_char(COALESCE(r.start_date, (SELECT min((starts_at AT TIME ZONE 'Europe/London')::date)
+        FROM course_sessions WHERE run_guid = r.guid)), 'YYYY-MM-DD') AS booking_start_date,
+    to_char(COALESCE(r.end_date, (SELECT max((starts_at AT TIME ZONE 'Europe/London')::date)
+        FROM course_sessions WHERE run_guid = r.guid)), 'YYYY-MM-DD') AS booking_end_date`;
 
 class BasketError extends Error {
     constructor(message) {
@@ -86,6 +92,7 @@ async function initialize() {
             credit_applied_pence integer NOT NULL,
             booking_ref text NOT NULL UNIQUE
         );
+        ALTER TABLE course_orders ADD COLUMN IF NOT EXISTS manual_booking boolean NOT NULL DEFAULT false;
         ALTER TABLE course_enrolments
             ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
             ADD COLUMN IF NOT EXISTS cancelled_by_name text,
@@ -93,6 +100,7 @@ async function initialize() {
             ADD COLUMN IF NOT EXISTS cancellation_credit_pence integer NOT NULL DEFAULT 0;
         DROP INDEX IF EXISTS course_enrolment_attendee_idx;
         CREATE INDEX IF NOT EXISTS course_enrolment_profile_run_idx ON course_enrolments(profile_guid, run_guid);
+        CREATE INDEX IF NOT EXISTS course_enrolment_active_run_idx ON course_enrolments(run_guid) WHERE cancelled_at IS NULL;
         CREATE INDEX IF NOT EXISTS course_enrolment_order_idx ON course_enrolments(order_guid);
         CREATE TABLE IF NOT EXISTS order_court_bookings (
             guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -150,6 +158,7 @@ async function inventory(client, ids) {
     await client.query('SELECT guid FROM course_runs WHERE guid = ANY($1::uuid[]) ORDER BY guid FOR UPDATE', [ids]);
     const { rows } = await client.query(`
         SELECT r.*, c.name AS course_name, f.name AS facility_name,
+            ${bookingRunDates},
             (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid) AS total_sessions,
             (SELECT count(*)::int FROM course_sessions WHERE run_guid = r.guid AND starts_at > statement_timestamp()) AS remaining_sessions,
             r.capacity - (SELECT count(*)::int FROM course_enrolments WHERE run_guid = r.guid AND cancelled_at IS NULL) AS spaces_remaining,
@@ -158,6 +167,13 @@ async function inventory(client, ids) {
         FROM course_runs r JOIN courses c ON c.guid = r.course_guid
         JOIN facilities f ON f.guid = r.facility_guid WHERE r.guid = ANY($1::uuid[])`, [ids]);
     return rows;
+}
+
+function dateRangesOverlap(first, second) {
+    if (!first.booking_start_date || !first.booking_end_date || !second.booking_start_date || !second.booking_end_date) {
+        return null;
+    }
+    return first.booking_start_date <= second.booking_end_date && second.booking_start_date <= first.booking_end_date;
 }
 
 async function courtItems(client, profileGuid, role) {
@@ -218,7 +234,7 @@ async function quote(client, profileGuid, basket, role = 'Resident') {
     const rules = rows.length ? await Settings.getCourseBookingRules(client) : null;
     const runs = await inventory(client, [...new Set(rows.map(item => item.run_guid))]);
     const { rows: existing } = await client.query(`
-        SELECT e.run_guid, e.member_guid, r.course_guid, r.name AS run_name
+        SELECT e.run_guid, e.member_guid, r.course_guid, r.name AS run_name, ${bookingRunDates}
         FROM course_enrolments e JOIN course_runs r ON r.guid = e.run_guid
         WHERE e.profile_guid = $1 AND e.cancelled_at IS NULL`, [profileGuid]);
     const items = rows.map(item => {
@@ -231,16 +247,22 @@ async function quote(client, profileGuid, basket, role = 'Resident') {
         else if (rules.preventDuplicateClass && existing.some(enrolment =>
             enrolment.run_guid === item.run_guid && enrolment.member_guid === item.member_guid)) {
             error = `${item.attendee_name} is already enrolled on this class: ${run.name} (${run.course_name}). The repeat class booking rule is enabled. Choose another attendee or class.`;
-        } else if (rules.preventMultipleClasses && (existing.some(enrolment =>
-            enrolment.course_guid === run.course_guid && enrolment.run_guid !== item.run_guid && enrolment.member_guid === item.member_guid) ||
-            rows.some(other => other.run_guid !== item.run_guid && other.member_guid === item.member_guid &&
-                runs.find(otherRun => otherRun.guid === other.run_guid)?.course_guid === run.course_guid))) {
-            const booked = existing.find(enrolment => enrolment.course_guid === run.course_guid &&
+        } else if (rules.preventOverlappingRuns) {
+            const booked = existing.filter(enrolment => enrolment.course_guid === run.course_guid &&
                 enrolment.run_guid !== item.run_guid && enrolment.member_guid === item.member_guid);
-            const basketPlace = rows.find(other => other.run_guid !== item.run_guid && other.member_guid === item.member_guid &&
-                runs.find(otherRun => otherRun.guid === other.run_guid)?.course_guid === run.course_guid);
-            const otherClass = booked?.run_name || runs.find(otherRun => otherRun.guid === basketPlace?.run_guid)?.name;
-            error = `${item.attendee_name} already has ${booked ? 'a booking' : 'a basket place'} in a different class for ${run.course_name}: ${otherClass}. You selected ${run.name}. The one class per course rule is enabled. Choose another attendee or course.`;
+            const basketPlaces = rows.filter(other => other.run_guid !== item.run_guid && other.member_guid === item.member_guid)
+                .map(other => runs.find(otherRun => otherRun.guid === other.run_guid))
+                .filter(otherRun => otherRun?.course_guid === run.course_guid);
+            const candidates = [
+                ...booked.map(enrolment => ({ run: enrolment, name: enrolment.run_name, source: 'booking' })),
+                ...basketPlaces.map(otherRun => ({ run: otherRun, name: otherRun.name, source: 'basket place' }))
+            ];
+            const conflict = candidates.find(candidate => dateRangesOverlap(run, candidate.run) !== false);
+            if (conflict) {
+                error = dateRangesOverlap(run, conflict.run) === null
+                    ? `The dates for ${run.course_name} could not be checked against ${conflict.name}. Contact an administrator to update the run dates.`
+                    : `${item.attendee_name} already has a ${conflict.source} for ${run.course_name}: ${conflict.name}, with dates overlapping ${run.name}. Choose a run with different dates or another attendee.`;
+            }
         }
         return { ...item, course_name: run?.course_name, run_name: run?.name, facility_name: run?.facility_name,
             sessions: run?.sessions || [], remaining_sessions: run?.remaining_sessions || 0,
@@ -328,6 +350,92 @@ function remove(profileGuid, itemGuid) {
     });
 }
 
+async function manualQuote(client, profileGuid, memberGuid, runGuid, token = null) {
+    if (!isGuid(profileGuid) || (memberGuid !== 'self' && !isGuid(memberGuid)) || !isGuid(runGuid)) {
+        throw new BasketError('Choose an account holder, attendee and class.');
+    }
+    const profile = await client.query('SELECT name FROM profiles WHERE guid = $1 AND deleted_at IS NULL FOR UPDATE', [profileGuid]);
+    if (!profile.rowCount) throw new BasketError('This account is no longer available.');
+    if (token) {
+        const { rows: [previous] } = await client.query(
+            'SELECT guid FROM course_orders WHERE profile_guid = $1 AND checkout_token = $2', [profileGuid, token]);
+        if (previous) return { previous };
+    }
+    let member = { guid: null, name: profile.rows[0].name };
+    if (memberGuid !== 'self') {
+        const { rows } = await client.query(`SELECT guid, name FROM profile_family_members
+            WHERE guid = $1 AND profile_guid = $2 AND deleted_at IS NULL FOR SHARE`, [memberGuid, profileGuid]);
+        if (!rows.length) throw new BasketError('This attendee is no longer available for the selected account.');
+        member = rows[0];
+    }
+    const rules = await Settings.getCourseBookingRules(client);
+    const [run] = await inventory(client, [runGuid]);
+    if (!run?.published || !run.remaining_sessions || run.full_price_pence === null || run.capacity === null) {
+        throw new BasketError('This class is not available for booking.');
+    }
+    const { rows: existing } = await client.query(`SELECT e.run_guid, r.course_guid, r.name AS run_name, ${bookingRunDates}
+        FROM course_enrolments e
+        JOIN course_runs r ON r.guid = e.run_guid WHERE e.profile_guid = $1 AND e.member_guid IS NOT DISTINCT FROM $2::uuid AND e.cancelled_at IS NULL`,
+    [profileGuid, member.guid]);
+    if (rules.preventDuplicateClass && existing.some(item => item.run_guid === runGuid)) {
+        throw new BasketError('This attendee is already enrolled on this class.');
+    }
+    if (rules.preventOverlappingRuns) {
+        const conflict = existing.find(item => item.course_guid === run.course_guid && item.run_guid !== runGuid &&
+            dateRangesOverlap(run, item) !== false);
+        if (conflict) {
+            throw new BasketError(dateRangesOverlap(run, conflict) === null
+                ? `The dates for ${run.course_name} could not be checked against ${conflict.run_name}. Update the run dates before booking.`
+                : `This attendee is already enrolled on ${conflict.run_name} for ${run.course_name}, with dates overlapping ${run.name}.`);
+        }
+    }
+    const { rows: [balance] } = await client.query(`SELECT COALESCE(sum(remaining_pence), 0)::int AS pence FROM credits
+        WHERE profile_guid = $1 AND expires_at > statement_timestamp()`, [profileGuid]);
+    const amount = priceForRemainingSessions(run.full_price_pence, run.total_sessions, run.remaining_sessions);
+    return { run, member, amount, creditBalance: balance.pence, availableCredit: Math.min(amount, balance.pence) };
+}
+
+function previewManual(profileGuid, memberGuid, runGuid) {
+    return transaction(client => manualQuote(client, profileGuid, memberGuid, runGuid));
+}
+
+function createManual(profileGuid, memberGuid, runGuid, token, expected, actor) {
+    if (!isGuid(token) || !Number.isSafeInteger(expected.amount) || !Number.isSafeInteger(expected.credit) ||
+        !['yes', 'no'].includes(expected.useCredit) || ![true, false].includes(expected.confirmFull)) {
+        throw new BasketError('Review the booking before confirming.');
+    }
+    return transaction(async client => {
+        const quote = await manualQuote(client, profileGuid, memberGuid, runGuid, token);
+        if (quote.previous) return quote.previous;
+        const credit = expected.useCredit === 'yes' ? quote.availableCredit : 0;
+        if (quote.amount !== expected.amount || credit !== expected.credit) {
+            throw new BasketError('The price or available credit changed. Review the booking again.');
+        }
+        if (quote.run.spaces_remaining <= 0 && !expected.confirmFull) {
+            throw new BasketError('This class is full. Review the booking and confirm overbooking.');
+        }
+        const { rows: [order] } = await client.query(`INSERT INTO course_orders
+            (profile_guid, checkout_token, total_pence, credit_pence, payment_reference, manual_booking)
+            VALUES ($1, $2, $3, $4, $5, true) RETURNING guid`,
+        [profileGuid, token, quote.amount, credit, `MANUAL-${crypto.randomUUID().toUpperCase()}`]);
+        const enrolment = await BookingReferences.insert(client, 'AHC', `INSERT INTO course_enrolments
+            (order_guid, run_guid, profile_guid, member_guid, attendee_name, course_name, run_name, facility_name,
+             sessions, amount_pence, credit_applied_pence, booking_ref)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            ON CONFLICT (booking_ref) DO NOTHING RETURNING *`,
+        [order.guid, runGuid, profileGuid, quote.member.guid, quote.member.name, quote.run.course_name, quote.run.name,
+            quote.run.facility_name, JSON.stringify(quote.run.sessions), quote.amount, credit]);
+        if (credit) await Credits.spend(client, profileGuid, [enrolment]);
+        await AuditLog.record(actor, { action: 'course-booking.create', entityType: 'course-booking',
+            entityGuid: enrolment.guid, entityLabel: enrolment.booking_ref, details: {
+                profile_guid: profileGuid, member_guid: quote.member.guid, run_guid: runGuid,
+                price_pence: quote.amount, credit_pence: credit, unpaid_pence: quote.amount - credit,
+                overbooked: quote.run.spaces_remaining <= 0
+            } }, client);
+        return order;
+    });
+}
+
 function pay(profileGuid, token, expected, paymentReference, role = 'Resident') {
     if (!isGuid(token)) throw new BasketError('Reload your basket before paying.');
     return transaction(async client => {
@@ -374,13 +482,13 @@ function pay(profileGuid, token, expected, paymentReference, role = 'Resident') 
                 enrolments.push({ ...booking, credit_applied_pence: applied });
                 continue;
             }
-            const { rows: [enrolment] } = await client.query(`
+            const enrolment = await BookingReferences.insert(client, 'AHC', `
                 INSERT INTO course_enrolments(order_guid, run_guid, profile_guid, member_guid, attendee_name,
                     course_name, run_name, facility_name, sessions, amount_pence, credit_applied_pence, booking_ref)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                ON CONFLICT (booking_ref) DO NOTHING RETURNING *`,
             [order.guid, item.run_guid, profileGuid, item.member_guid, item.attendee_name, item.course_name,
-                item.run_name, item.facility_name, JSON.stringify(item.sessions), item.amount_pence, applied,
-                `AHC-${crypto.randomUUID().toUpperCase()}`]);
+                item.run_name, item.facility_name, JSON.stringify(item.sessions), item.amount_pence, applied]);
             enrolments.push(enrolment);
         }
         if (current.credit) await Credits.spend(client, profileGuid, enrolments);
@@ -400,6 +508,15 @@ async function order(profileGuid, guid) {
         WHERE order_guid = $1 ORDER BY snapshot->>'starts_at'`, [guid]);
     items.push(...courts.map(item => item.snapshot));
     return { ...result, items };
+}
+
+async function manualOrder(guid) {
+    if (!isGuid(guid)) return null;
+    const { rows: [result] } = await pool.query(`SELECT o.*, e.attendee_name, e.course_name, e.run_name,
+        e.facility_name, e.booking_ref, p.name AS parent_name
+        FROM course_orders o JOIN course_enrolments e ON e.order_guid = o.guid
+        JOIN profiles p ON p.guid = o.profile_guid WHERE o.guid = $1 AND o.manual_booking`, [guid]);
+    return result || null;
 }
 
 async function orders(profileGuid) {
@@ -434,4 +551,4 @@ async function itemCount(profileGuid) {
     return result.count;
 }
 
-module.exports = { initialize, BasketError, returnPath, familyMembers, addFamilyMember, removeFamilyMember, basket, add, addCourts, remove, pay, order, orders, upcomingForProfile, itemCount };
+module.exports = { initialize, BasketError, returnPath, familyMembers, addFamilyMember, removeFamilyMember, basket, add, addCourts, remove, previewManual, createManual, manualOrder, pay, order, orders, upcomingForProfile, itemCount };

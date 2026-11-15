@@ -5,7 +5,7 @@ const pool = new Pool({
 });
 
 const DEFAULTS = { site_title: 'ActiveHub', organisation_name: "Peck'em", membership_scheme: 'GLL Better Card', credit_request_days: '30', credit_slot_auto_approval: '0', credit_lifetime_days: '365', refunds_enabled: '1', booking_search_days: '30',
-    course_prevent_duplicate_class: '1', course_prevent_multiple_classes: '1' };
+    course_prevent_duplicate_class: '1', course_prevent_overlapping_runs: '1' };
 const SITE_TITLE_MAX_LENGTH = 60;
 
 function courseBookingRules(settings) {
@@ -16,13 +16,13 @@ function courseBookingRules(settings) {
     };
     return {
         preventDuplicateClass: enabled('course_prevent_duplicate_class'),
-        preventMultipleClasses: enabled('course_prevent_multiple_classes')
+        preventOverlappingRuns: enabled('course_prevent_overlapping_runs')
     };
 }
 
 async function getCourseBookingRules(client) {
     // Keep rule changes from racing the booking transaction.
-    const keys = ['course_prevent_duplicate_class', 'course_prevent_multiple_classes'];
+    const keys = ['course_prevent_duplicate_class', 'course_prevent_overlapping_runs'];
     const { rows } = await client.query(
         'SELECT key, value FROM site_settings WHERE key = ANY($1::text[]) ORDER BY key FOR SHARE', [keys]);
     if (rows.length !== keys.length) throw new Error('Course booking rules have not been initialized');
@@ -87,7 +87,7 @@ async function initialize() {
     await pool.query("INSERT INTO site_settings (key, value) VALUES ('refunds_enabled', '1') ON CONFLICT (key) DO NOTHING");
     await pool.query("INSERT INTO site_settings (key, value) VALUES ('booking_search_days', '30') ON CONFLICT (key) DO NOTHING");
     await pool.query(`INSERT INTO site_settings (key, value)
-        VALUES ('course_prevent_duplicate_class', '1'), ('course_prevent_multiple_classes', '1')
+        VALUES ('course_prevent_duplicate_class', '1'), ('course_prevent_overlapping_runs', '1')
         ON CONFLICT (key) DO NOTHING`);
     await pool.query(`
         CREATE TABLE IF NOT EXISTS site_logo (

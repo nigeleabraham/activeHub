@@ -90,6 +90,9 @@ test('read-only course booking management (PostgreSQL)', { skip: !databaseUrl },
         assert.equal(whole.entries.find(entry => !entry.member_guid).parental_contact, null);
         assert.equal((await Model.register(run.guid, '2090-07-12')).entries.length, 2);
         await assert.rejects(Model.register(run.guid, '2090-07-04'), RangeError);
+        const missingDate = await Model.register(run.guid, '2090-07-04', { allowMissingSession: true });
+        assert.deepEqual(missingDate.entries, []);
+        assert.equal(missingDate.booked, 3);
         assert.equal(await Model.register(crypto.randomUUID()), null);
     });
     await t.test('search matches literal names, account holders, references, status and inclusive UK purchase dates', async () => {
@@ -102,6 +105,13 @@ test('read-only course booking management (PostgreSQL)', { skip: !databaseUrl },
         assert.equal((await search({ run: run.guid, to: '2026-07-04' })).total, 0);
         const reference = (await Model.details(booking.guid)).booking.booking_ref;
         assert.equal((await search({ q: reference })).total, 1);
+        const found = (await search({ run: run.guid })).entries.find(entry => entry.guid === booking.guid);
+        assert.equal(found.account_name, 'Register parent');
+        assert.ok(found.account_email.endsWith('@example.test'));
+        assert.equal(found.amount_pence, 1000);
+        assert.equal(found.remaining_session_value_pence, 500);
+        const completed = (await search({ run: run.guid, status: 'completed' })).entries[0];
+        assert.equal(completed.remaining_session_value_pence, null);
     });
     await t.test('details keep original attendee, schedule and per-place payment separate from the whole order', async () => {
         const found = await Model.details(booking.guid);

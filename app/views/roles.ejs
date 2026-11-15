@@ -22,7 +22,7 @@
         </header>
 
         <p class="alert alert-info small" role="note">
-            Every role inherits Resident's base responsibilities. Configure only the additional responsibilities for other roles.
+            Configurable roles inherit Resident's base responsibilities. Facility manager has fixed, facility-scoped responsibilities.
             Login starts with Administrator when assigned; otherwise it uses the assigned role with the most additional responsibilities, with alphabetical ties.
             Responsibilities control access to the matching administration pages and actions.
             Settings and financial reviews remain Administrator-only.
@@ -31,9 +31,10 @@
         <% const messages = {
             'invalid-role': 'Enter a role name (up to 60 characters) and choose only listed responsibilities.',
             'duplicate-role': 'A role with that name already exists.',
-            'system-role': 'The Administrator role has every responsibility and cannot be edited or deleted.',
+            'system-role': 'Protected roles cannot be edited or deleted.',
             'resident-role': 'Resident is the base role and cannot be renamed or deleted. Its responsibilities can be edited.',
-            'role-in-use': 'This role is assigned to profiles. Move those profiles to another role before deleting it.'
+            'role-in-use': 'This role is assigned to active profiles. Remove the role from those profiles before deleting it.',
+            'delete-failed': 'The role could not be deleted. Please try again.'
         }; %>
         <% if (error && messages[error]) { %>
             <div class="alert alert-danger" role="alert"><%= messages[error] %></div>
@@ -43,7 +44,7 @@
             <fieldset class="form-group">
                 <legend class="h6">Responsibilities</legend>
                 <% if (locked) { %>
-                    <p class="small text-muted">The Administrator role always has every responsibility.</p>
+                    <p class="small text-muted">Responsibilities for protected roles cannot be edited.</p>
                 <% } %>
                 <div class="form-row">
                     <% permissions.forEach(permission => { %>

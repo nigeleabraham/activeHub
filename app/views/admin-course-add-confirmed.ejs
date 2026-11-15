@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course booking confirmed | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <h1 class="h2">Course booking confirmed</h1>
+        <section class="bg-white border rounded p-4">
+            <p><%= order.attendee_name %> has been added to <%= order.course_name %> &mdash; <%= order.run_name %>, <%= order.facility_name %>.</p>
+            <p>Account holder: <%= order.parent_name %>. Booking reference: <%= order.booking_ref %>.</p>
+            <p>Course price: <%= money(Number(order.total_pence)) %>. Account credit used: <%= money(order.credit_pence) %>.</p>
+            <p>Not paid in ActiveHub: <strong><%= money(Number(order.total_pence) - order.credit_pence) %></strong>. No card payment was taken; any external payment must be arranged separately.</p>
+            <a class="btn btn-primary" href="/admin/course-management">Course management</a>
+        </section>
+    </main>
+</body>
+</html>

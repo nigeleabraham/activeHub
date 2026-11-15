@@ -4,6 +4,8 @@ const { Pool } = require('pg');
 const path = require('node:path');
 const ejs = require('ejs');
 const Model = require('../models/CourseBookingAdmin');
+const Orders = require('../models/CourseOrders');
+const Profiles = require('../models/Profiles');
 const routes = require('../routes/courseBookingAdmin');
 const auth = require('../middleware/auth');
 
@@ -37,6 +39,8 @@ test('removal amounts are exact pence, bounded by payment, and default to unstar
         { starts_at: '2027-01-08T10:00:00Z' }
     ] };
     assert.equal(Model.remainingValue(booking, Date.parse('2027-01-01T10:00:00Z')), 334);
+    assert.deepEqual(Model.remainingSessions(booking, Date.parse('2027-01-01T10:00:00Z')), [booking.sessions[2]]);
+    assert.deepEqual(Model.remainingSessions(booking, Date.parse('2026-01-01T00:00:00Z')), booking.sessions.slice(1));
     assert.equal(Model.remainingValue({ ...booking, sessions: [] }), 0);
 });
 
@@ -56,14 +60,14 @@ test('removal routes require active Administrator and signed token, but no confi
     assert.equal(remove.mock.callCount(), 0);
     const cookie = `activehub_course_removal=${auth.createSessionValue(guid)}`;
     const req = { headers: { cookie }, params: { guid }, profile: { guid, role: 'Administrator', name: 'Admin' },
-        body: { token: guid, mode: 'refundable', amount: '5.00', run: guid } };
+        body: { token: guid, mode: 'refundable', amount: '5.00', facility: guid, course: 'all', run: 'all', page: '3' } };
     req.body.token = 'invalid';
     await handler(req, res);
     assert.equal(remove.mock.callCount(), 0);
     req.body.token = guid;
     await handler(req, res);
     assert.equal(remove.mock.callCount(), 1);
-    assert.match(res.url, /^\/admin\/course-management\?/);
+    assert.match(res.url, /facility=.*&course=all&run=all&page=3/);
     remove.mock.mockImplementation(async () => { throw new RangeError('Already removed'); });
     await handler(req, res);
     assert.equal(res.code, 400);
@@ -94,6 +98,109 @@ test('credit removal rejects free and completed places before writing credit or 
     assert.ok(!statements.some(sql => /INSERT|UPDATE/.test(sql.replace(/FOR UPDATE/g, ''))));
 });
 
+test('manual course bookings require administrator and a signed confirmation', async t => {
+    const route = routes.stack.find(layer => layer.route?.path === '/add' && layer.route.methods.post).route;
+    const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; },
+        render() {}, redirect(url) { this.url = url; } };
+    let passed = false;
+    route.stack[0].handle({ profile: { role: 'Staff', permissions: ['course_bookings.view'] }, headers: {}, path: '/test' },
+        res, () => { passed = true; });
+    assert.equal(passed, false);
+    assert.equal(res.code, 403);
+    const create = t.mock.method(Orders, 'createManual', async () => ({ guid }));
+    const handler = route.stack[1].handle;
+    await handler({ headers: {}, body: {} }, res);
+    assert.equal(res.code, 403);
+    assert.equal(create.mock.callCount(), 0);
+    const req = { headers: { cookie: `activehub_course_manual=${auth.createSessionValue(guid)}` },
+        body: { token: guid, profile: guid, member: guid, run: guid, amount: '1000',
+            available_credit: '400', use_credit: 'yes', confirm_full: 'yes' },
+        profile: { guid, role: 'Administrator', name: 'Admin' } };
+    await handler(req, res);
+    assert.equal(create.mock.callCount(), 1);
+    assert.deepEqual(create.mock.calls[0].arguments[4], { amount: 1000, credit: 400, useCredit: 'yes', confirmFull: true });
+    assert.equal(res.url, '/admin/course-management/add/confirmed/' + guid);
+    req.body.available_credit = ['400'];
+    await handler(req, res);
+    assert.equal(res.code, 400);
+    assert.equal(create.mock.callCount(), 1);
+});
+
+test('manual booking review clearly displays unpaid value, credit choice and full-class confirmation', async () => {
+    const locals = { activePage: 'course-management', currentProfile: null, isAdmin: true, canSwitchRole: false,
+        q: '', profiles: [], parent: { guid, name: 'Parent', email: 'parent@example.test' },
+        members: [{ guid, name: 'Child' }], courses: [], member: guid, facility: guid, course: guid, run: guid, token: guid,
+        quote: { member: { name: 'Child' }, amount: 1000, creditBalance: 400, availableCredit: 400,
+            run: { course_name: 'Course', name: 'Class', facility_name: 'Hall', remaining_sessions: 2, spaces_remaining: 0 } },
+        money: pence => `£${(pence / 100).toFixed(2)}`, dateTime: String };
+    const html = await ejs.renderFile(path.join(__dirname, '../views/admin-course-add.ejs'), locals);
+    assert.match(html, /Course price for 2 remaining sessions: <strong>£10\.00/);
+    assert.match(html, /<label for="attendee">Attendee<\/label>/);
+    assert.match(html, /value="self"[^>]*>Parent \(account holder\)/);
+    assert.match(html, /<label for="facility">Facility<\/label>/);
+    assert.match(html, /<label for="course">Course<\/label>/);
+    assert.match(html, /<label for="class">Class<\/label>/);
+    assert.match(html, /data-add-selection/);
+    assert.match(html, /form\[data-add-selection\] select\.form-control:disabled\s*\{[\s\S]*background-color: #d6d8db;[\s\S]*cursor: not-allowed;/);
+    assert.match(html, /review\.hidden = true/);
+    assert.match(html, /Bill this booking to the account holder’s credit\?/);
+    assert.match(html, /action="\/admin\/course-management\/add" data-course-manual-booking/);
+    assert.match(html, /booking price and account credit options appear when you review the booking/);
+    assert.match(html, /id="credit-yes" type="radio" name="use_credit" value="yes" required >/);
+    assert.match(html, /id="credit-no" type="radio" name="use_credit" value="no" required >/);
+    assert.match(html, /Yes, use £4\.00 of account credit \(remaining not paid in ActiveHub: £6\.00\)/);
+    assert.match(html, /No, do not use account credit \(not paid in ActiveHub: £10\.00\)/);
+    assert.match(html, /<button class="btn btn-primary" type="submit">Confirm<\/button>/);
+    assert.match(html, /This class is full/);
+    assert.match(html, /name="confirm_full" value="yes" required/);
+    locals.quote.availableCredit = 0;
+    locals.quote.run.spaces_remaining = 1;
+    const noCredit = await ejs.renderFile(path.join(__dirname, '../views/admin-course-add.ejs'), locals);
+    assert.match(noCredit, /No account credit is available/);
+    assert.match(noCredit, /id="credit-yes" type="radio" name="use_credit" value="yes" required disabled/);
+    assert.match(noCredit, /id="credit-no" type="radio" name="use_credit" value="no" required checked/);
+    assert.doesNotMatch(noCredit, /name="confirm_full"/);
+    locals.quote.amount = 0;
+    const free = await ejs.renderFile(path.join(__dirname, '../views/admin-course-add.ejs'), locals);
+    assert.match(free, /No credit is needed for this free course/);
+    locals.member = '';
+    locals.facility = '';
+    locals.course = '';
+    locals.run = '';
+    locals.quote = null;
+    locals.members = [];
+    const empty = await ejs.renderFile(path.join(__dirname, '../views/admin-course-add.ejs'), locals);
+    assert.match(empty, /value="self"[^>]*>Parent \(account holder\)/);
+    assert.match(empty, /id="facility" name="facility" required disabled/);
+    assert.match(empty, /id="course" name="course" required disabled/);
+    assert.match(empty, /id="class" name="run" required disabled/);
+});
+
+test('manual booking review validates the selected facility, course and class', async t => {
+    const handler = routes.stack.find(layer => layer.route?.path === '/add' && layer.route.methods.get).route.stack[1].handle;
+    const other = '123e4567-e89b-42d3-a456-426614174001';
+    t.mock.method(Profiles, 'findByGuid', async () => ({ guid, name: 'Parent' }));
+    t.mock.method(Orders, 'familyMembers', async () => [{ guid, name: 'Child' }]);
+    t.mock.method(Model, 'catalogue', async () => [{ guid, runs: [{ guid, facility_guid: guid, bookable: true }] }]);
+    const preview = t.mock.method(Orders, 'previewManual', async () => ({ amount: 1000 }));
+    const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; },
+        append() {}, render(_view, locals) { this.locals = locals; } };
+    const query = { profile: guid, member: guid, facility: guid, course: guid, run: guid };
+    await handler({ query }, res);
+    assert.equal(preview.mock.callCount(), 1);
+    assert.equal(res.locals.facility, guid);
+    assert.equal(res.locals.course, guid);
+    await handler({ query: { ...query, facility: other } }, res);
+    assert.equal(res.code, 400);
+    await handler({ query: { ...query, course: other } }, res);
+    assert.equal(res.code, 400);
+    await handler({ query: { ...query, facility: '' } }, res);
+    assert.equal(res.code, 400);
+    assert.equal(preview.mock.callCount(), 1);
+    await handler({ query: { ...query, member: 'self' } }, res);
+    assert.equal(preview.mock.calls[1].arguments[1], 'self');
+});
+
 test('search escapes literal wildcards, binds filters and paginates without interpolating input', async t => {
     const calls = [];
     t.mock.method(Pool.prototype, 'query', async (sql, values) => {
@@ -111,6 +218,34 @@ test('search escapes literal wildcards, binds filters and paginates without inte
     assert.match(calls[1].sql, /last_end <= statement_timestamp/);
 });
 
+test('search calculates the value per unstarted purchased session', async t => {
+    const past = { starts_at: '2020-01-01T10:00:00Z' };
+    const future = { starts_at: '2090-01-01T10:00:00Z' };
+    const bookings = [
+        { amount_pence: 1001, sessions: [past, future, future], cancelled_at: null },
+        { amount_pence: 0, sessions: [future], cancelled_at: null },
+        { amount_pence: 1000, sessions: [past], cancelled_at: null },
+        { amount_pence: 1000, sessions: [], cancelled_at: null },
+        { amount_pence: 1000, sessions: [future], cancelled_at: new Date() }
+    ];
+    t.mock.method(Pool.prototype, 'query', async sql =>
+        ({ rows: sql.includes('AS total') ? [{ total: bookings.length }] : bookings }));
+    const result = await Model.search(Model.parseFilters({}));
+    assert.deepEqual(result.entries.map(entry => entry.remaining_session_value_pence), [334, 0, null, null, null]);
+    assert.equal(Model.remainingValue(bookings[0]), 667);
+});
+
+test('multi-class registers skip dates absent from a class without rejecting the selection', async t => {
+    const query = t.mock.method(Pool.prototype, 'query', async () => ({
+        rows: [{ dates: ['2090-01-01'], capacity: 10, booked: 2 }]
+    }));
+    await assert.rejects(Model.register(guid, '2090-01-02'), RangeError);
+    const register = await Model.register(guid, '2090-01-02', { allowMissingSession: true });
+    assert.deepEqual(register.entries, []);
+    assert.equal(register.spaces, 8);
+    assert.equal(query.mock.callCount(), 2);
+});
+
 test('admin routes surface validation, missing bookings and unexpected failures', async t => {
     const handler = route => routes.stack.find(layer => layer.route?.path === route).route.stack[0].handle;
     const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; },
@@ -124,12 +259,23 @@ test('admin routes surface validation, missing bookings and unexpected failures'
     assert.match(res.url, /^\/admin\/course-management\?/);
     assert.equal(search.mock.callCount(), 0);
     await handler('/')({ baseUrl: '/admin/course-management', query: {
+        facility: guid, course: guid, run: guid,
         view: 'search', q: 'Hidden filter', status: 'completed', from: '2020-01-01', session: '2020-01-01'
     } }, res);
     assert.equal(search.mock.callCount(), 1);
     for (const key of ['q', 'status', 'from', 'to', 'session', 'sport']) {
         assert.equal(search.mock.calls[0].arguments[0][key], '');
     }
+    await handler('/')({ baseUrl: '/admin/course-management', query: {
+        facility: guid, course: 'all', run: 'all'
+    } }, res);
+    assert.equal(search.mock.callCount(), 2);
+    assert.equal(search.mock.calls[1].arguments[0].course, '');
+    assert.equal(search.mock.calls[1].arguments[0].run, '');
+    assert.match(res.locals.pageLink(2), /course=all&run=all/);
+    await handler('/')({ baseUrl: '/admin/course-management', query: { facility: guid } }, res);
+    assert.equal(res.code, 400);
+    assert.equal(search.mock.callCount(), 2);
     await handler('/')({ query: { view: 'register' } }, res);
     assert.equal(res.code, 400);
     t.mock.method(Model, 'register', async () => null);
@@ -144,19 +290,59 @@ test('admin routes surface validation, missing bookings and unexpected failures'
     assert.equal(res.code, 500);
 });
 
+test('register all selections are restricted to the facility and course and preserve session dates', async t => {
+    const handler = routes.stack.find(layer => layer.route?.path === '/').route.stack[0].handle;
+    const course = '123e4567-e89b-42d3-a456-426614174001';
+    const otherCourse = '123e4567-e89b-42d3-a456-426614174002';
+    const run1 = '123e4567-e89b-42d3-a456-426614174003';
+    const run2 = '123e4567-e89b-42d3-a456-426614174004';
+    const otherRun = '123e4567-e89b-42d3-a456-426614174005';
+    const otherFacility = '123e4567-e89b-42d3-a456-426614174006';
+    t.mock.method(Model, 'catalogue', async () => [
+        { guid: course, runs: [{ guid: run1, facility_guid: guid }, { guid: otherRun, facility_guid: otherFacility }] },
+        { guid: otherCourse, runs: [{ guid: run2, facility_guid: guid }] }
+    ]);
+    const register = t.mock.method(Model, 'register', async id => ({
+        guid: id, dates: id === run1 ? ['2090-01-01'] : ['2090-01-02'], entries: []
+    }));
+    const res = { status(code) { this.code = code; return this; }, send(message) { this.message = message; },
+        sendStatus(code) { this.code = code; }, render(_view, locals) { this.locals = locals; } };
+    const request = query => handler({ baseUrl: '/admin/course-bookings', query }, res);
+    await request({ view: 'register', facility: guid, course: 'all', run: 'all' });
+    assert.deepEqual(res.locals.registers.map(item => item.guid), [run1, run2]);
+    assert.deepEqual(res.locals.register.dates, ['2090-01-01', '2090-01-02']);
+    assert.equal(res.locals.managementCourse, 'all');
+    assert.equal(res.locals.managementRun, 'all');
+    assert.equal(register.mock.callCount(), 2);
+    await request({ view: 'register', facility: guid, course, run: 'all', session: '2090-01-01' });
+    assert.deepEqual(res.locals.registers.map(item => item.guid), [run1]);
+    await request({ view: 'register', facility: guid, course: 'all', run: 'all', session: '2090-01-02' });
+    assert.deepEqual(res.locals.registers.map(item => item.guid), [run2]);
+    await request({ view: 'register', facility: guid, course, run: 'all', session: '2090-01-02' });
+    assert.equal(res.code, 400);
+    await request({ view: 'register', course: 'all', run: 'all' });
+    assert.equal(res.code, 400);
+    register.mock.mockImplementation(async () => null);
+    await request({ view: 'register', facility: guid, course: 'all', run: 'all' });
+    assert.equal(res.code, 409);
+});
+
 test('register and booking details render safe snapshots, read-only actions and print-safe registers', async () => {
-    const entry = { guid, attendee_name: '<Child>', member_guid: guid, account_name: 'Parent', booking_ref: 'AHC-TEST',
+    const entry = { guid, attendee_name: '<Child>', member_guid: guid, account_name: 'Parent', account_email: 'parent@example.test', booking_ref: 'AHC-TEST', amount_pence: 1000,
         course_name: 'Gymnastics', run_name: 'Tuesday', facility_name: 'Hall', created_at: new Date(), status: 'Upcoming',
+        remaining_session_value_pence: 500,
         sessions: [{ starts_at: '2027-01-05T18:00:00Z', ends_at: '2027-01-05T19:00:00Z' }] };
     Object.assign(entry, { medical_concern: true, medical_conditions: ['asthma', 'epipen', 'other'],
         medical_other: '<script>Needs assistance</script>', activity_limitation: 'limited_a_little' });
     entry.parental_contact = { parental_contact_name: '<Parent>', parental_contact_email: 'parent@example.test',
         parental_contact_telephone: '020 1234 5678' };
-    const shared = { activePage: 'course-bookings', currentProfile: null, isAdmin: false, canSwitchRole: false };
+    const shared = { activePage: 'course-bookings', currentProfile: null, isAdmin: false, canSwitchRole: false,
+        managementCourse: '', managementRun: '', registers: [] };
+    const register = { guid, name: 'Tuesday', course_name: 'Gymnastics', facility_name: 'Hall', capacity: 12, booked: 1, spaces: 11,
+        dates: ['2027-01-05'], entries: [entry] };
     const html = await ejs.renderFile(path.join(__dirname, '../views/admin-course-bookings.ejs'), {
         ...shared, filters: Model.parseFilters({ view: 'register', run: guid }), courses: [],
-        register: { name: 'Tuesday', course_name: 'Gymnastics', facility_name: 'Hall', capacity: 12, booked: 1, spaces: 11,
-            dates: ['2027-01-05'], entries: [entry] }, results: null, pageLink: () => '', dateTime: String
+        register, registers: [register], results: null, pageLink: () => '', dateTime: String
     });
     assert.match(html, /&lt;Child&gt;/);
     assert.match(html, /Print register/);
@@ -170,12 +356,26 @@ test('register and booking details render safe snapshots, read-only actions and 
     assert.match(html, /<label for="register-location">Facility<\/label>/);
     assert.match(html, /Choose a facility/);
     assert.match(html, /id="register-course" name="course" data-course-filter required/);
+    assert.match(html, /data-all-courses[^>]*>All courses<\/option>/);
+    assert.match(html, /data-all-classes[^>]*>All classes<\/option>/);
     assert.doesNotMatch(html, /id="register-sport"/);
     assert.match(html, /<title>Course\/Class register \| ActiveHub<\/title>/);
     assert.match(html, /<h1 class="h2">Course\/Class register<\/h1>/);
     assert.doesNotMatch(html, /id="course-booking-search-heading"/);
+    const multiHtml = await ejs.renderFile(path.join(__dirname, '../views/admin-course-bookings.ejs'), {
+        ...shared, managementCourse: 'all', managementRun: 'all', filters: Model.parseFilters({ view: 'search', facility: guid }), courses: [],
+        register: { dates: register.dates }, registers: [register, { ...register, guid: 'another', name: 'Wednesday' }],
+        results: null, pageLink: () => '', dateTime: String
+    });
+    assert.match(multiHtml, /data-all-courses selected>All courses/);
+    assert.match(multiHtml, /data-all-classes selected>All classes/);
+    assert.match(multiHtml, />Whole classes<\/option>/);
+    assert.match(multiHtml, /Print registers/);
+    assert.match(multiHtml, /Gymnastics &mdash; Tuesday/);
+    assert.match(multiHtml, /Gymnastics &mdash; Wednesday/);
     const managementHtml = await ejs.renderFile(path.join(__dirname, '../views/admin-course-bookings.ejs'), {
-        ...shared, activePage: 'course-management', filters: Model.parseFilters({ view: 'search' }), courses: [],
+        ...shared, activePage: 'course-management', managementCourse: '', managementRun: '',
+        filters: Model.parseFilters({ view: 'search' }), courses: [],
         register: null, results: null, pageLink: () => '', dateTime: String
     });
     assert.match(managementHtml, /<title>Course management \| ActiveHub<\/title>/);
@@ -183,27 +383,58 @@ test('register and booking details render safe snapshots, read-only actions and 
     assert.ok(managementHtml.indexOf('>Clear filters</a>') < managementHtml.indexOf('>Search bookings</button>'));
     assert.match(managementHtml, /<label for="search-facility">Location<\/label>/);
     assert.match(managementHtml, /id="search-facility" name="facility" data-location-filter/);
+    assert.match(managementHtml, /id="search-facility" name="facility" data-location-filter required/);
+    assert.match(managementHtml, /id="search-course" name="course" data-course-filter required/);
+    assert.match(managementHtml, /id="search-run" name="run" data-run-filter required/);
+    assert.match(managementHtml, />All courses<\/option>/);
+    assert.match(managementHtml, />All classes<\/option>/);
+    assert.match(managementHtml, /form\[data-course-filters\] select\.form-control:disabled\s*\{[\s\S]*background-color: #d6d8db;[\s\S]*cursor: not-allowed;/);
+    assert.match(managementHtml, /!\(location\?\.required && !location\.value\)/);
+    assert.match(managementHtml, /course\.replaceChildren\(coursePlaceholder, \.\.\.courseOptionsToShow\)/);
+    assert.match(managementHtml, /run\.replaceChildren\(runPlaceholder, \.\.\.runOptionsToShow\)/);
+    assert.doesNotMatch(managementHtml, /option\.disabled = option\.hidden|option\.hidden = Boolean/);
     assert.doesNotMatch(managementHtml, /id="search-sport"/);
     assert.doesNotMatch(managementHtml, /id="booking-query"|id="search-status"|id="search-from"|id="search-to"/);
     assert.doesNotMatch(managementHtml, /id="register-select-heading"/);
-    const renderResults = isAdmin => ejs.renderFile(path.join(__dirname, '../views/admin-course-bookings.ejs'), {
-        ...shared, isAdmin, activePage: 'course-management', filters: Model.parseFilters({ run: guid }), courses: [],
+    const renderResults = (isAdmin, managementCourse = guid, managementRun = guid) => ejs.renderFile(path.join(__dirname, '../views/admin-course-bookings.ejs'), {
+        ...shared, isAdmin, activePage: 'course-management', managementCourse, managementRun,
+        filters: Model.parseFilters({ facility: guid, run: guid }), courses: [],
         register: null, results: { total: 1, pageSize: 50, entries: [entry] }, pageLink: () => '', dateTime: String
     });
     const actions = await renderResults(true);
     assert.doesNotMatch(actions, /<th scope="col">(?:Course \/ class|Purchased|Status|Booking)<\/th>|AHC-TEST/);
-    assert.match(actions, /<th scope="col">Attendee<\/th><th scope="col">Booked by<\/th><th scope="col">Actions<\/th>/);
+    assert.match(actions, /<th scope="col">Attendee<\/th><th scope="col">Booked by<\/th><th scope="col">Course<\/th><th scope="col">Course price paid<\/th><th scope="col">Value per remaining session<\/th><th scope="col">Actions<\/th>/);
+    assert.match(actions, /<td>Gymnastics<\/td>/);
+    assert.match(actions, /<td>£10\.00<\/td>/);
+    assert.match(actions, /<td>£5\.00<\/td>/);
+    entry.amount_pence = 0;
+    entry.remaining_session_value_pence = 0;
+    assert.match(await renderResults(true), /<td>£0\.00<\/td>/);
+    entry.amount_pence = 1000;
+    entry.remaining_session_value_pence = null;
+    assert.match(await renderResults(false), /<td>Not applicable<\/td>/);
+    entry.remaining_session_value_pence = 500;
     assert.equal((actions.match(/>Remove attendee<\/a>/g) || []).length, 1);
+    const allOptionsActions = await renderResults(true, 'all', 'all');
+    assert.match(allOptionsActions, new RegExp(`/admin/course-management/${guid}/remove\\?facility=${guid}&amp;course=all&amp;run=all&amp;page=1`));
+    assert.match(actions, /Parent[\s\S]*parent@example\.test/);
     assert.doesNotMatch(actions, /Remove attendee \(/);
-    assert.doesNotMatch(await renderResults(false), />Remove attendee<\/a>/);
+    const readOnlyResults = await renderResults(false);
+    assert.match(readOnlyResults, /<td>Gymnastics<\/td>/);
+    assert.doesNotMatch(readOnlyResults, />Remove attendee<\/a>/);
+    entry.course_name = 'Tennis <junior>';
+    assert.match(await renderResults(true, 'all', 'all'), /<td>Tennis &lt;junior&gt;<\/td>/);
+    entry.course_name = 'Gymnastics';
     entry.cancelled_at = new Date();
     assert.doesNotMatch(await renderResults(true), />Remove attendee<\/a>/);
     delete entry.cancelled_at;
     const removal = await ejs.renderFile(path.join(__dirname, '../views/admin-course-removal.ejs'), {
         ...shared, booking: { ...entry, amount_pence: 1000 }, actionLabel: 'Remove attendee (refundable credit)',
         mode: 'refundable', token: guid, filters: {}, returnUrl: '/admin/course-management',
-        defaultPence: 500, money: String
+        defaultPence: 500, paidPence: 1000, remainingSessions: entry.sessions, money: String, dateTime: String
     });
+    assert.match(removal, /Remaining class dates and times \(UK time\)/);
+    assert.match(removal, /2027-01-05T18:00:00Z/);
     assert.match(removal, /name="amount"[\s\S]*value="5.00"/);
     assert.doesNotMatch(removal, /name="confirm"|confirm-removal|I confirm/);
     assert.match(removal, /original non-refundable credit stays non-refundable/);
@@ -211,7 +442,8 @@ test('register and booking details render safe snapshots, read-only actions and 
     assert.doesNotMatch(removal, /type="hidden" name="mode"/);
     const noCredit = await ejs.renderFile(path.join(__dirname, '../views/admin-course-removal.ejs'), {
         ...shared, booking: { ...entry, amount_pence: 0 }, mode: '', token: guid,
-        filters: {}, returnUrl: '/admin/course-management', defaultPence: 0, money: String
+        filters: {}, returnUrl: '/admin/course-management', defaultPence: 0, paidPence: 0, remainingSessions: [],
+        money: String, dateTime: String
     });
     assert.equal((noCredit.match(/type="radio" name="mode"/g) || []).length, 1);
     assert.match(noCredit, /value="none" required checked/);

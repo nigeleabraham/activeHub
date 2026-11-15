@@ -60,6 +60,7 @@ Facilities.initialize()
     .then(() => AuditLog.initialize())
     .then(() => Bookings.initialize())
     .then(() => require('./models/CourseOrders').initialize())
+    .then(() => Courses.backfillRunDates())
     .then(() => {
         console.log('PostgreSQL connected');
         void AuditLog.purgeOnStartup();

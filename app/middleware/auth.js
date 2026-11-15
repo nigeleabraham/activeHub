@@ -8,6 +8,7 @@ const { PERMISSION_KEYS, adminPermissions } = require('../permissions');
 const COOKIE_NAME = 'activehub_profile';
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VIEW_AS_COOKIE = 'activehub_view_as';
+const ROLE_RETURN_COOKIE = 'activehub_role_return';
 const ADMINISTRATOR = 'Administrator';
 
 const secret = process.env.SESSION_SECRET ||
@@ -72,6 +73,38 @@ function clearViewAs(res) {
     res.append('Set-Cookie', `${VIEW_AS_COOKIE}=; ${cookieAttributes()}; Max-Age=0`);
 }
 
+function safeReturnUrl(value) {
+    return typeof value === 'string' && value.length <= 1800 && /^\/(?!\/)/.test(value) &&
+        !/[\\\x00-\x20\x7f#]/.test(value) ? value : '/';
+}
+
+function roleSwitchReturnUrl(value) {
+    const url = safeReturnUrl(value);
+    const queryIndex = url.indexOf('?');
+    if (queryIndex < 0 || !url.startsWith('/admin/')) return url;
+    const params = new URLSearchParams(url.slice(queryIndex + 1));
+    if (!params.has('admin_saved')) return url;
+    params.delete('admin_saved');
+    params.delete('admin_saved_target');
+    params.delete('section_created');
+    const query = params.toString();
+    return url.slice(0, queryIndex) + (query ? `?${query}` : '');
+}
+
+function setRoleReturn(res, profileGuid, role, url) {
+    const encoded = Buffer.from(url).toString('base64url');
+    const signature = sign(`role-return:${profileGuid}:${role}:${encoded}`);
+    res.append('Set-Cookie', `${ROLE_RETURN_COOKIE}=${encoded}.${signature}; ${cookieAttributes()}; Max-Age=60`);
+}
+
+function isRoleReturn(value, profileGuid, role, url) {
+    if (typeof value !== 'string') return false;
+    const encoded = Buffer.from(url).toString('base64url');
+    const expected = Buffer.from(`${encoded}.${sign(`role-return:${profileGuid}:${role}:${encoded}`)}`);
+    const actual = Buffer.from(value);
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
 function readViewAs(value, profileGuid) {
     if (typeof value !== 'string') return null;
     const separator = value.lastIndexOf('.');
@@ -85,6 +118,14 @@ function readViewAs(value, profileGuid) {
 
 function isAdministrator(profile) {
     return Boolean(profile) && profile.role === ADMINISTRATOR;
+}
+
+function isFacilityManager(profile) {
+    return Boolean(profile) && profile.role === Roles.FACILITY_MANAGER;
+}
+
+function canManageFacility(profile, facilityGuid) {
+    return !isFacilityManager(profile) || (profile.managed_facility_guids || []).includes(facilityGuid);
 }
 
 async function switchableRoles(profile) {
@@ -126,14 +167,27 @@ async function loadProfile(req, res, next) {
             } else if (cookies[VIEW_AS_COOKIE]) {
                 clearViewAs(res);
             }
+            if (isFacilityManager(req.profile) && (req.realProfile.roles || [req.realProfile.role]).includes(ADMINISTRATOR)) {
+                req.profile = { ...req.profile, managed_facility_guids: await Profiles.allFacilityGuids() };
+            }
             req.profile.permissions = await Roles.permissionsFor(req.profile.role);
             res.locals.canSwitchRole = roleNames.length > 1;
             res.locals.switchableRoles = roleNames;
         }
         res.locals.currentProfile = req.profile;
+        res.locals.currentUrl = req.method === 'GET' ? safeReturnUrl(req.originalUrl) : '/';
         res.locals.can = permission => can(req.profile, permission);
         res.locals.isAdmin = isAdministrator(req.profile);
         res.locals.canAccessAdmin = path => canAccessAdmin(req.profile, path);
+        if (req.profile && req.method === 'GET' &&
+            isRoleReturn(cookies[ROLE_RETURN_COOKIE], req.profile.guid, req.profile.role, req.originalUrl)) {
+            res.append('Set-Cookie', `${ROLE_RETURN_COOKIE}=; ${cookieAttributes()}; Max-Age=0`);
+            const send = res.send;
+            res.send = function (...args) {
+                if (res.statusCode === 403) return res.redirect('/');
+                return send.apply(this, args);
+            };
+        }
         next();
     } catch (error) {
         next(error);
@@ -166,8 +220,13 @@ module.exports = {
     clearSession,
     setViewAs,
     clearViewAs,
+    safeReturnUrl,
+    roleSwitchReturnUrl,
+    setRoleReturn,
     readViewAs,
     isAdministrator,
+    isFacilityManager,
+    canManageFacility,
     switchableRoles,
     can,
     canAccessAdmin,

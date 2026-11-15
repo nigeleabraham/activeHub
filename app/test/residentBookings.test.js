@@ -36,7 +36,7 @@ test('bookings loads course places using only the signed-in owner and renders co
     assert.match(html, /<details class="panel" data-course-bookings>/);
     assert.doesNotMatch(html, /<div[^>]*data-booking-calendar/);
     assert.match(html, /href="\/court-bookings">Book a court or space/);
-    assert.match(html, /href="\/courses">Browse course bookings/);
+    assert.match(html, /href="\/courses">Book a place on a course/);
     assert.match(html, /Course bookings \(2\)/);
     assert.match(html, /Parent &lt;one&gt;<\/strong> \(you\)/);
     assert.match(html, /Child &lt;two&gt;<\/strong> \(child\)/);

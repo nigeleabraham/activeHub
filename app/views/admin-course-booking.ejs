@@ -46,14 +46,18 @@
             <dl class="row">
                 <dt class="col-sm-4">Place price</dt><dd class="col-sm-8"><%= money(booking.amount_pence) %></dd>
                 <dt class="col-sm-4">Account credit applied</dt><dd class="col-sm-8"><%= money(booking.credit_applied_pence) %></dd>
-                <dt class="col-sm-4">Card-paid portion</dt><dd class="col-sm-8"><%= money(booking.amount_pence - booking.credit_applied_pence) %></dd>
+                <% if (booking.manual_booking) { %>
+                    <dt class="col-sm-4">Not paid in ActiveHub</dt><dd class="col-sm-8"><%= money(booking.amount_pence - booking.credit_applied_pence) %></dd>
+                <% } else { %>
+                    <dt class="col-sm-4">Card-paid portion</dt><dd class="col-sm-8"><%= money(booking.amount_pence - booking.credit_applied_pence) %></dd>
+                <% } %>
                 <dt class="col-sm-4">Payment reference</dt><dd class="col-sm-8 text-break"><%= booking.payment_reference %></dd>
             </dl>
-            <p class="mb-0">Payments are simulated. No card details are stored or shown.</p>
+            <p class="mb-0"><%= booking.manual_booking ? 'No card payment was taken for this booking. External payments are not recorded in ActiveHub.' : 'Payments are simulated. No card details are stored or shown.' %></p>
         </section>
         <section class="bg-white border rounded p-4" aria-labelledby="history-heading">
             <h2 class="h5" id="history-heading">Booking history</h2>
-            <p>Purchased and confirmed on <%= dateTime(booking.created_at) %> (UK time).</p>
+            <p><%= booking.manual_booking ? 'Added by an administrator and confirmed' : 'Purchased and confirmed' %> on <%= dateTime(booking.created_at) %> (UK time).</p>
             <% if (booking.cancelled_at) { %>
                 <p>Attendee removed on <%= dateTime(booking.cancelled_at) %> (UK time) by <%= booking.cancelled_by_name %>.</p>
                 <p class="mb-0">Removal: <%= booking.cancellation_mode %>. Account credit issued: <%= money(booking.cancellation_credit_pence) %>. Credit eligibility and payment history are retained in the credit ledger.</p>

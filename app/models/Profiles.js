@@ -81,6 +81,21 @@ async function initialize() {
         )
     `);
     await pool.query('CREATE INDEX IF NOT EXISTS profile_roles_role_idx ON profile_roles (role, profile_guid)');
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS deleted_profile_roles (
+            profile_guid uuid NOT NULL REFERENCES profiles(guid) ON DELETE CASCADE,
+            role text NOT NULL,
+            was_default boolean NOT NULL,
+            PRIMARY KEY (profile_guid, role)
+        )
+    `);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS facility_manager_assignments (
+            profile_guid uuid NOT NULL REFERENCES profiles(guid) ON DELETE CASCADE,
+            facility_guid uuid NOT NULL REFERENCES facilities(guid) ON DELETE CASCADE,
+            PRIMARY KEY (profile_guid, facility_guid)
+        )
+    `);
 
     const { rows } = await pool.query('SELECT 1 FROM profiles LIMIT 1');
     if (!rows.length) {
@@ -98,6 +113,7 @@ async function initialize() {
 async function findAll() {
     const { rows } = await pool.query(
         `SELECT guid, name, email, role, ${assignedRoles},
+                ARRAY(SELECT facility_guid FROM facility_manager_assignments WHERE profile_guid = profiles.guid ORDER BY facility_guid) AS managed_facility_guids,
                 (SELECT COALESCE(SUM(remaining_pence), 0)::int FROM credits
                  WHERE profile_guid = profiles.guid AND expires_at > statement_timestamp()) AS credit_pence,
                 created_at FROM profiles WHERE deleted_at IS NULL
@@ -111,6 +127,7 @@ async function findByGuid(guid) {
         `SELECT guid, name, email, telephone, emergency_contact_name, emergency_contact_telephone,
                 address_line_1, address_line_2, town_city, county, postcode,
                 medical_concern, medical_conditions, medical_other, activity_limitation, membership_number, role, ${assignedRoles},
+                ARRAY(SELECT facility_guid FROM facility_manager_assignments WHERE profile_guid = profiles.guid ORDER BY facility_guid) AS managed_facility_guids,
                 ARRAY(SELECT guid FROM sports WHERE guid = ANY(profiles.interest_sport_guids) ORDER BY LOWER(name)) AS interest_sport_guids,
                 (SELECT COALESCE(SUM(remaining_pence), 0)::int FROM credits
                  WHERE profile_guid = profiles.guid AND expires_at > statement_timestamp()) AS credit_pence,
@@ -118,6 +135,11 @@ async function findByGuid(guid) {
         [guid]
     );
     return rows[0] || null;
+}
+
+async function allFacilityGuids() {
+    const { rows } = await pool.query('SELECT guid FROM facilities ORDER BY guid');
+    return rows.map(row => row.guid);
 }
 
 async function search(query, limit = 20) {
@@ -167,10 +189,11 @@ async function protectLastAdministrator(client, guid) {
     }
 }
 
-async function save(guid, { name, email, roles = [] }) {
+async function save(guid, { name, email, roles = [], managed_facility_guids = [] }) {
     if (!Array.isArray(roles) || roles.some(role => typeof role !== 'string' || !role)) {
         throw new Error('Invalid profile roles');
     }
+    if (!Array.isArray(managed_facility_guids)) throw new Error('Invalid facility assignments');
     const selected = [...new Set(['Resident', ...roles])].sort((first, second) => first.localeCompare(second));
     const client = await pool.connect();
     try {
@@ -195,8 +218,13 @@ async function save(guid, { name, email, roles = [] }) {
         );
         await client.query('DELETE FROM profile_roles WHERE profile_guid = $1', [rows[0].guid]);
         await client.query('INSERT INTO profile_roles (profile_guid, role) SELECT $1, unnest($2::text[])', [rows[0].guid, selected]);
+        await client.query('DELETE FROM facility_manager_assignments WHERE profile_guid = $1', [rows[0].guid]);
+        if (selected.includes('Facility manager')) {
+            await client.query(`INSERT INTO facility_manager_assignments (profile_guid, facility_guid)
+                SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`, [rows[0].guid, managed_facility_guids]);
+        }
         await client.query('COMMIT');
-        return { ...rows[0], roles: selected };
+        return { ...rows[0], roles: selected, managed_facility_guids: selected.includes('Facility manager') ? managed_facility_guids : [] };
     } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -242,7 +270,7 @@ async function updateDetails(guid, { name, email, telephone = null, emergency_co
     return rows[0] || null;
 }
 
-async function remove(guid, byName = null) {
+async function remove(guid, byName = null, confirmedCreditPence = null) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -251,6 +279,16 @@ async function remove(guid, byName = null) {
         if (!found.rowCount) {
             await client.query('COMMIT');
             return false;
+        }
+        if (confirmedCreditPence !== null) {
+            const { rows: [credit] } = await client.query(`
+                SELECT COALESCE(SUM(remaining_pence), 0)::bigint AS active_credit
+                FROM credits WHERE profile_guid = $1 AND expires_at > statement_timestamp()`, [guid]);
+            if (Number(credit.active_credit) !== confirmedCreditPence) {
+                const error = new Error('Active credit changed after confirmation');
+                error.code = 'CREDIT_CHANGED';
+                throw error;
+            }
         }
         await protectLastAdministrator(client, guid);
         await client.query(`
@@ -278,6 +316,7 @@ module.exports = {
     initialize,
     findAll,
     findByGuid,
+    allFacilityGuids,
     search,
     create,
     countAdministrators,

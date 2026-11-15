@@ -15,7 +15,18 @@
         <section class="bg-white border rounded p-4">
             <h2 class="h5"><%= booking.attendee_name %></h2>
             <p><%= booking.course_name %> &mdash; <%= booking.run_name %><br><%= booking.facility_name %></p>
-            <p>Reference: <%= booking.booking_ref %>. Place price paid: <%= money(booking.amount_pence) %>.</p>
+            <p>Reference: <%= booking.booking_ref %>. Place price paid: <%= money(paidPence) %>.</p>
+            <% if (booking.manual_booking) { %><p>Course price: <%= money(booking.amount_pence) %>. Only account credit used is recorded as paid; the balance was not paid in ActiveHub.</p><% } %>
+            <section aria-labelledby="remaining-sessions-heading">
+                <h3 class="h6" id="remaining-sessions-heading">Remaining class dates and times (UK time)</h3>
+                <% if (remainingSessions.length) { %>
+                    <ul>
+                        <% remainingSessions.forEach(session => { %><li><%= dateTime(session.starts_at) %>–<%= dateTime(session.ends_at) %></li><% }); %>
+                    </ul>
+                <% } else { %>
+                    <p>No purchased class sessions remain.</p>
+                <% } %>
+            </section>
             <p>This removes the attendee from the whole class and all its session registers, freeing one place. Booking, payment and removal history will be kept. This cannot be undone here.</p>
             <form method="POST" action="/admin/course-management/<%= booking.guid %>/remove" data-course-removal>
                 <input type="hidden" name="token" value="<%= token %>">
@@ -30,7 +41,7 @@
                     <% }); %>
                 </fieldset>
                 <% if (defaultPence <= 0) { %>
-                    <p>No credit is available because the remaining purchased sessions have no credit value. Only removal without credit is available.</p>
+                    <p>No credit is available because the remaining purchased sessions have no credit value<%= booking.manual_booking ? ' based on the account credit used' : '' %>. Only removal without credit is available.</p>
                 <% } %>
                 <% Object.entries(filters).forEach(([name, value]) => { %>
                     <input type="hidden" name="<%= name %>" value="<%= value %>">
@@ -39,9 +50,9 @@
                     <div class="form-group" id="credit-fields">
                         <label for="credit-amount">Account credit amount (pounds)</label>
                         <input class="form-control" id="credit-amount" name="amount" type="number" min="0.01"
-                            max="<%= (booking.amount_pence / 100).toFixed(2) %>" step="0.01"
+                            max="<%= (paidPence / 100).toFixed(2) %>" step="0.01"
                             value="<%= (defaultPence / 100).toFixed(2) %>" aria-describedby="credit-help">
-                        <p class="small mt-2" id="credit-help">Defaults to <%= money(defaultPence) %>: the place price divided equally across purchased sessions, counting only sessions that have not started. You can change this up to the price paid.
+                        <p class="small mt-2" id="credit-help">Defaults to <%= money(defaultPence) %>: the amount paid divided equally across purchased sessions, counting only sessions that have not started. You can change this up to the amount paid.
                             <span data-credit-help="refundable">
                                 Credit is split proportionally by the original payment: card-paid and refundable-credit funding is refundable; original non-refundable credit stays non-refundable.
                             </span>

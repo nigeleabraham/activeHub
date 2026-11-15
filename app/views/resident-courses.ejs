@@ -16,11 +16,19 @@
         .page-head a { color: #fff; }
         .course-card { background: #fff; border: 1px solid #b1b4b6; border-left: 0.4rem solid #113255; padding: 1.5rem; height: 100%; }
         .sport-panel { background: #fff; border: 1px solid #b1b4b6; border-top: 0.3rem solid #113255; }
-        .sport-panel > summary { padding: 1.25rem; cursor: pointer; color: #113255; overflow-wrap: anywhere; }
+        .sport-panel > summary, .sport-panel > .sport-panel-heading { padding: 1.25rem; color: #113255; overflow-wrap: anywhere; }
+        .sport-panel > summary { cursor: pointer; }
         .sport-panel > summary:hover { background: #eaf0f6; }
-        .sport-panel[open] > summary { border-bottom: 1px solid #b1b4b6; }
+        .sport-panel[open] > summary, .sport-panel > .sport-panel-heading { border-bottom: 1px solid #b1b4b6; }
         .sport-courses { padding: 1rem; }
         .sport-courses > .course-card:last-child { margin-bottom: 0 !important; }
+        .course-run-disclosure > summary { cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+        .course-run-disclosure > summary::-webkit-details-marker { display: none; }
+        .course-run-disclosure > summary:focus-visible { outline: 3px solid #ffde02; outline-offset: 3px; }
+        .course-run-toggle { display: inline-block; color: #003e90; text-decoration: underline; font-weight: 600; }
+        .course-run-close, .course-run-disclosure[open] .course-run-open { display: none; }
+        .course-run-disclosure[open] .course-run-close { display: inline; }
+        .course-run-expanded { border-top: 1px solid #b1b4b6; padding-top: 0.75rem; margin-top: 0.75rem; }
         .sport-faqs { padding: 1rem; background: #fff; border: 1px solid #b1b4b6; border-left: 0.25rem solid #003e90; }
         .sport-faqs > summary { cursor: pointer; }
         @media (min-width: 768px) { .sport-courses { padding: 1.5rem; } }
@@ -53,18 +61,29 @@
             <p>No courses are available at the moment. Please check back soon.</p>
         <% } %>
         <% const linkedCourses = new Set();
-        courseGroups.filter(group => group.courses.length).forEach((group, groupIndex) => {
+        const visibleGroups = courseGroups.filter(group => group.courses.length);
+        visibleGroups.forEach((group, groupIndex) => {
             const groupId = 'sport-group-' + (group.guid || groupIndex);
+            const singleGroup = visibleGroups.length === 1;
         %>
         <section class="mb-4" data-course-sport-group="<%= group.guid || groupIndex %>" aria-labelledby="<%= groupId %>">
-            <details class="sport-panel" data-course-sport-disclosure>
+            <% if (singleGroup) { %>
+            <div class="sport-panel">
+                <div class="sport-panel-heading">
+            <% } else { %>
+            <details class="sport-panel" data-course-sport-disclosure data-return-key="<%= groupId %>">
                 <summary>
+            <% } %>
                     <h2 class="h4 d-inline mb-0" id="<%= groupId %>"><%= group.name %></h2>
                     <span class="badge badge-light ml-2"><%= group.courses.length %> <%= group.courses.length === 1 ? 'course' : 'courses' %></span>
+            <% if (singleGroup) { %>
+                </div>
+            <% } else { %>
                 </summary>
+            <% } %>
                 <div class="sport-courses">
                     <% if (group.faqs.length) { %>
-                    <details class="sport-faqs mb-4" data-sport-faqs>
+                    <details class="sport-faqs mb-4" data-sport-faqs data-return-key="<%= groupId %>-faq">
                         <summary class="h5 mb-0"><%= group.name %> FAQs</summary>
                         <div class="mt-3">
                             <%- include('partials/sport-faq-content', { faqs: group.faqs }) %>
@@ -77,26 +96,57 @@
                     %>
                     <section class="course-card mb-4" aria-labelledby="<%= courseHeadingId %>">
                         <h3 class="h5 mb-3" id="<%= courseHeadingId %>"><%= course.name %></h3>
-                        <%- include('partials/course-description', { course, collapsible: true }) %>
-                        <% if ((course.runs || []).length) { %>
-                        <details class="mb-3" data-course-runs>
-                            <summary class="h6">Choose a class (<%= course.runs.length %>)</summary>
-                            <div class="row mt-3">
-                            <% course.runs.forEach(run => { %>
+                        <%- include('partials/course-description', { course, collapsible: true, returnKey: courseHeadingId + '-description' }) %>
+                        <% if ((course.runs || []).length) {
+                            const statusGroups = [
+                                { key: 'in_progress', title: 'Classes in progress' },
+                                { key: 'upcoming', title: 'Upcoming classes' },
+                                { key: 'unknown', title: 'Classes with an unknown start date' }
+                            ].map(group => ({ ...group, runs: course.runs.filter(run => group.key === 'unknown'
+                                ? !['in_progress', 'upcoming'].includes(run.booking_status)
+                                : run.booking_status === group.key) }));
+                        %>
+                        <details class="mb-3" data-course-runs data-return-key="<%= courseHeadingId %>-runs">
+                            <summary class="h6">Choose a class (<%= course.runs.length %>)
+                                <span class="small text-muted"> &mdash; <%= statusGroups[0].runs.length %> in progress, <%= statusGroups[1].runs.length %> upcoming<% if (statusGroups[2].runs.length) { %>, <%= statusGroups[2].runs.length %> with an unknown start date<% } %></span>
+                            </summary>
+                            <% statusGroups.forEach(statusGroup => {
+                                const runs = statusGroup.runs;
+                                if (!runs.length) return;
+                                const statusHeadingId = courseHeadingId + '-' + statusGroup.key;
+                            %>
+                            <section class="mt-4" aria-labelledby="<%= statusHeadingId %>" data-run-status-group="<%= statusGroup.key %>">
+                                <h4 class="h5 mb-3" id="<%= statusHeadingId %>"><%= statusGroup.title %> (<%= runs.length %>)</h4>
+                                <div class="row">
+                            <% runs.forEach(run => { %>
                                 <div class="col-12 col-lg-6 col-xl-4 mb-3">
-                                    <article class="border rounded bg-light p-3 h-100" data-course-run>
+                                    <article class="border rounded bg-light p-3" data-course-run>
                                         <%- include('partials/course-run-details', { run, returnTo: '/courses#' + courseHeadingId,
                                             attendeeId: 'attendee-' + run.guid + '-' + groupId }) %>
                                     </article>
                                 </div>
                             <% }); %>
-                            </div>
+                                </div>
+                            </section>
+                            <% }); %>
                         </details>
+                        <% } %>
+                        <% if (course.has_current_classes && !(course.runs || []).some(run => run.booking_status === 'in_progress')) { %>
+                        <p class="text-danger mb-2">All classes that are in progress are fully booked.</p>
+                        <% } else if (!(course.runs || []).length) { %>
+                        <p class="text-danger mb-2">No classes are currently available to book.</p>
+                        <% } %>
+                        <% if (!(course.runs || []).some(run => run.booking_status === 'upcoming') && !course.has_unknown_start_classes) { %>
+                            <% if (course.has_upcoming_classes) { %>
+                        <p class="text-danger mb-0">All upcoming classes are fully booked. Check back here for future dates.</p>
+                            <% } else if (!course.has_upcoming_classes) { %>
+                        <p class="text-danger mb-0">Upcoming classes have not yet been made available for booking.</p>
+                            <% } %>
                         <% } %>
                     </section>
                     <% }); %>
                 </div>
-            </details>
+            <% if (singleGroup) { %></div><% } else { %></details><% } %>
         </section>
         <% }); %>
     </main>

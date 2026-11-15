@@ -12,6 +12,7 @@ const TABLES = [
     { name: 'opening_hours_rules', orderBy: 'template_guid, day_of_week', remap: { template_guid: 'opening_hours_templates' },
         upsert: { conflict: ['template_guid', 'day_of_week'], update: ['opens_at', 'closes_at'] } },
     { name: 'facilities', orderBy: 'name', remap: { opening_hours_template_guid: 'opening_hours_templates' } },
+    { name: 'facility_manager_assignments', orderBy: 'profile_guid, facility_guid', remap: { profile_guid: 'profiles' } },
     { name: 'facility_sports', orderBy: 'facility_guid, sport_guid', remap: { sport_guid: 'sports' } },
     { name: 'courses', orderBy: 'name', remap: { description_sport_guid: 'sports' },
         json: ['description_overrides', 'description_sections'] },

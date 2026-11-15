@@ -54,12 +54,17 @@
         <header class="mb-4">
             <p class="text-uppercase text-muted small mb-1">ActiveHub</p>
             <h1 class="h2 mb-1">Courses and course runs</h1>
-            <p class="text-muted mb-0">Manage shared course details and course runs, sessions, prices and spaces</p>
+            <p class="text-muted mb-0"><%= currentProfile.role === 'Facility manager'
+                ? 'Manage course runs, sessions, prices and spaces at your assigned facilities'
+                : 'Manage shared course details and course runs, sessions, prices and spaces' %></p>
         </header>
         <div class="admin-save-feedback mb-4">
-            <p class="alert text-muted mb-0" data-admin-save-placeholder>You can add, remove, and edit courses and course runs here. Assign sports and descriptions to courses, and configure locations, sessions, prices and spaces for each run.</p>
+            <p class="alert text-muted mb-0" data-admin-save-placeholder><%= currentProfile.role === 'Facility manager'
+                ? 'You can add, remove, and edit runs for courses at your assigned facilities. Shared course details are managed by unrestricted users.'
+                : 'You can add, remove, and edit courses and course runs here. Assign sports and descriptions to courses, and configure locations, sessions, prices and spaces for each run.' %></p>
         </div>
         <section id="course-directory" data-course-facility aria-labelledby="course-list-heading">
+            <% if (currentProfile.role !== 'Facility manager') { %>
             <details id="add-course-panel-directory" class="admin-disclosure bg-white border rounded shadow-sm p-4 mb-4" data-editor-disclosure>
                 <summary class="admin-card-summary">
                     <h2 id="add-course-heading" class="h5 d-inline mb-0">Add course</h2>
@@ -71,6 +76,7 @@
                     <button class="btn btn-primary" type="submit">Add course</button>
                 </form>
             </details>
+            <% } %>
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h2 id="course-list-heading" class="h5 mb-0">Course directory</h2>
                 <span class="badge badge-secondary" data-course-count><%= courses.length %></span>
@@ -97,20 +103,42 @@
                         <h2 id="course-group-<%= group.key %>" class="h5 d-inline mb-0"><%= group.name %></h2>
                         <span class="badge badge-info ml-2"><%= group.courses.length %></span>
                     </summary>
-                <% group.courses.forEach(course => { %>
+                <% group.courses.forEach(course => {
+                    const counts = (course.runs || []).reduce((result, run) => {
+                        if (Object.hasOwn(result, run.booking_status)) {
+                            result[run.booking_status][run.published ? 'published' : 'draft']++;
+                        }
+                        return result;
+                    }, {
+                        in_progress: { published: 0, draft: 0 },
+                        upcoming: { published: 0, draft: 0 },
+                        unknown: { published: 0, draft: 0 }
+                    });
+                %>
                     <article id="course-<%= course.guid %>" class="admin-course-card bg-white rounded shadow-sm p-4 mb-3 position-relative" data-course-guid="<%= course.guid %>" data-course-name="<%= course.name %>">
                         <details class="admin-disclosure" data-course-edit data-editor-disclosure>
                             <summary class="admin-card-summary" style="padding-right: 6rem;">
                                 <h3 class="h5 d-inline mb-0 text-break"><%= course.name %></h3>
                                 <% if (!course.sport_guids.length) { %><span class="badge badge-warning align-middle ml-2">Sport assignment needed</span><% } %>
                                 <span data-course-delete-slot class="ml-2"></span>
+                                <span class="small text-muted d-block mt-1" data-course-run-counts>
+                                    In progress: <%= counts.in_progress.published %> published, <%= counts.in_progress.draft %> draft
+                                    &nbsp;|&nbsp; Upcoming: <%= counts.upcoming.published %> published, <%= counts.upcoming.draft %> draft
+                                    <% if (counts.unknown.published || counts.unknown.draft) { %>
+                                    &nbsp;|&nbsp; Unknown start date: <%= counts.unknown.published %> published, <%= counts.unknown.draft %> draft
+                                    <% } %>
+                                </span>
                             </summary>
+                            <% if (currentProfile.role !== 'Facility manager') { %>
                             <form method="POST" action="/admin/courses/update" data-editor-preview="false" data-editor-label="Edit <%= course.name %>">
                                 <input type="hidden" name="guid" value="<%= course.guid %>">
                                 <%- include('partials/course-form', { course, prefix: 'course-' + course.guid, facilities, sports }) %>
                                 <button class="btn btn-outline-secondary mr-2" type="button" data-cancel-edit data-cancel-immediate>Cancel</button>
                                 <button class="btn btn-primary" type="submit">Save changes</button>
                             </form>
+                            <% } else { %>
+                                <p class="small text-muted mt-3">Shared course details are managed by unrestricted users. You can manage runs at your assigned facilities.</p>
+                            <% } %>
                             <details class="admin-disclosure admin-form-section mt-4 mb-0" data-course-runs-disclosure>
                                 <summary class="admin-card-summary">
                                     <h4 id="course-runs-heading-<%= course.guid %>" class="admin-form-section-title course-runs-title d-inline mb-0">3. Course runs</h4>
@@ -130,8 +158,10 @@
                                             <button class="btn btn-outline-danger btn-sm" type="submit">Delete run</button>
                                         </form>
                                         <button class="btn btn-outline-secondary btn-sm ml-2" type="button" data-edit-toggle aria-expanded="false" aria-controls="edit-run-<%= run.guid %>">Edit run</button>
+                                        <button class="btn btn-outline-secondary btn-sm ml-2" type="button" data-copy-run hidden aria-label="Copy run <%= run.name %> at <%= run.facility_name %>">Copy run</button>
                                         </div>
                                         </div>
+                                        <p class="small mt-1 mb-0">Run dates: <%= run.start_date ? run.start_date.split('-').reverse().join('/') : 'Start date unknown' %> to <%= run.end_date ? run.end_date.split('-').reverse().join('/') : 'End date unknown' %>.<% if (run.incomplete_history) { %> The original import omitted earlier sessions.<% } %></p>
                                         <% if (!run.published) { %>
                                             <p class="small text-warning mt-1 mb-0">Draft: complete the price, spaces and sessions before this run appears to customers.</p>
                                             <% if (course.start_date || course.end_date) { %><p class="small mt-1 mb-0">Previous course dates: <%= course.start_date || 'Not set' %> to <%= course.end_date || 'Not set' %>. Use these to complete the schedule.</p><% } %>
@@ -151,6 +181,7 @@
                                 <button class="btn btn-outline-secondary btn-sm" type="button" data-edit-toggle aria-expanded="false" aria-controls="add-run-<%= course.guid %>">Add course run</button>
                                 <div id="add-run-<%= course.guid %>" data-edit-panel hidden>
                                     <form method="POST" action="/admin/courses/runs" class="mt-3" data-editor-preview="false">
+                                        <p class="small text-muted">When copying a run, its existing session dates are copied too. Review and update the details before adding it.</p>
                                         <%- include('partials/course-run-form', { course, run: null, facilities, prefix: 'new-run-' + course.guid }) %>
                                         <button class="btn btn-outline-secondary btn-sm mr-2" type="button" data-cancel-edit>Cancel</button>
                                         <button class="btn btn-primary btn-sm" type="submit">Add run</button>
@@ -160,10 +191,12 @@
                             </details>
                         </details>
                         <%# Last in tab order so the destructive action isn't the first stop; shown top right %>
+                        <% if (currentProfile.role !== 'Facility manager') { %>
                         <form class="position-absolute" style="top: 1.5rem; right: 1.5rem;" method="POST" action="/admin/courses/destroy" data-course-delete>
                             <input type="hidden" name="guid" value="<%= course.guid %>">
                             <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete <%= course.name %>">Delete</button>
                         </form>
+                        <% } %>
                     </article>
                 <% }); %>
                     </details>

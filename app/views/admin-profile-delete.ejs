@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirm profile deletion | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <h1 class="h2">Delete profile: <%= profile.name %></h1>
+        <% if (creditChanged) { %>
+            <p class="alert alert-warning" role="alert">Active credit changed. Review the current amount and confirm again.</p>
+        <% } %>
+        <div class="alert alert-danger">
+            <p><strong>Active credit: £<%= (profile.credit_pence / 100).toFixed(2) %>.</strong> All remaining credit will be voided, including any expired credit.</p>
+            <p>This deactivates the profile, removes future court bookings, and cancels pending booking-credit and bank-refund requests. Past and in-progress bookings and payment history are retained. The person will no longer be able to sign in or make bookings.</p>
+            <p class="mb-0"><strong>No refund is issued. This cannot be undone.</strong></p>
+        </div>
+        <form method="POST" action="/admin/profiles/destroy" data-profile-delete-confirm>
+            <input type="hidden" name="guid" value="<%= profile.guid %>">
+            <input type="hidden" name="confirmed_credit_pence" value="<%= profile.credit_pence %>">
+            <button type="submit" class="btn btn-danger">Confirm deletion</button>
+            <a class="btn btn-outline-secondary" href="/admin/profiles">Cancel</a>
+        </form>
+    </main>
+</body>
+</html>

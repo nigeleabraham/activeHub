@@ -173,6 +173,42 @@ admin.use(auth.requireAdminAccess, async (req, res, next) => {
     next();
 });
 
+admin.use(async (req, res, next) => {
+    if (!auth.isFacilityManager(req.profile)) return next();
+    const allowed = req.profile.managed_facility_guids || [];
+    if (req.method === 'GET') {
+        const match = req.path.match(/^\/bookings\/availability\/([^/]+)$/);
+        if (match && !allowed.includes(match[1])) return res.sendStatus(403);
+        return next();
+    }
+    const facilityPaths = new Set([
+        '/facilities/update',
+        '/bookings/create', '/bookings/create-batch', '/bookings/cancel',
+        '/bookings/resources', '/bookings/resources/update', '/bookings/resources/destroy',
+        '/bookings/options', '/bookings/options/update', '/bookings/options/destroy',
+        '/bookings/sports/months'
+    ]);
+    if (facilityPaths.has(req.path)) {
+        const guid = req.path.startsWith('/facilities/') ? req.body.guid : req.body.facility_guid;
+        if (!allowed.includes(guid)) return res.sendStatus(403);
+        return next();
+    }
+    if (['/courses/runs', '/courses/runs/update', '/courses/runs/destroy'].includes(req.path)) {
+        try {
+            const courses = await Courses.findAll();
+            const course = courses.find(item => item.guid === req.body.course_guid);
+            if (!course || !course.runs.some(run => allowed.includes(run.facility_guid))) return res.sendStatus(403);
+            if (req.path !== '/courses/runs/destroy' && !allowed.includes(req.body.facility_guid)) return res.sendStatus(403);
+            if (req.path !== '/courses/runs' &&
+                !course.runs.some(run => run.guid === req.body.guid && allowed.includes(run.facility_guid))) return res.sendStatus(403);
+            return next();
+        } catch (error) {
+            return next(error);
+        }
+    }
+    return res.sendStatus(403);
+});
+
 // Management actions: audited once the handler has redirected without an error.
 const labelFrom = body => (typeof body.name === 'string' ? body.name.trim() : null);
 const findLabel = async (list, guid) => (await list).find(item => item.guid === guid)?.name || null;
@@ -264,17 +300,20 @@ router.post('/logout', async (req, res) => {
 router.post('/view-as', auth.requireLogin, async (req, res) => {
     if (!req.realProfile) return res.sendStatus(403);
     const role = typeof req.body.role === 'string' ? req.body.role : '';
+    const returnUrl = auth.roleSwitchReturnUrl(req.body.return_to);
     try {
         const assigned = await auth.switchableRoles(req.realProfile);
         if (!role || role === req.realProfile.role) {
             auth.clearViewAs(res);
             await recordAudit(req.profile, { action: 'auth.view_as', entityType: 'role', entityLabel: req.realProfile.role, details: { view_as: req.realProfile.role } });
-            return res.redirect('/');
+            auth.setRoleReturn(res, req.realProfile.guid, req.realProfile.role, returnUrl);
+            return res.redirect(returnUrl);
         }
         if (!assigned.includes(role)) return res.sendStatus(403);
         auth.setViewAs(res, req.realProfile.guid, role);
         await recordAudit(req.profile, { action: 'auth.view_as', entityType: 'role', entityLabel: role, details: { view_as: role } });
-        return res.redirect('/');
+        auth.setRoleReturn(res, req.realProfile.guid, role, returnUrl);
+        return res.redirect(returnUrl);
     } catch (error) {
         return res.sendStatus(500);
     }
@@ -891,7 +930,7 @@ admin.post('/settings/refunds', async (req, res) => {
 
 for (const [path, key, label] of [
     ['duplicate-class', 'course_prevent_duplicate_class', 'Prevent repeat class bookings'],
-    ['multiple-classes', 'course_prevent_multiple_classes', 'Prevent different classes for the same course']
+    ['overlapping-runs', 'course_prevent_overlapping_runs', 'Prevent overlapping runs of the same course']
 ]) {
     admin.post(`/settings/course-booking-rules/${path}`, async (req, res) => {
         if (!['0', '1'].includes(req.body.enabled)) return res.status(400).send('Select Enabled or Disabled for the course booking rule.');
@@ -1298,10 +1337,14 @@ router.get('/facilities', async (req, res) => {
 });
 router.get('/courses', async (req, res) => {
     try {
-        const [settings, logo, courses, facilities, sports, faqs, familyMembers] = await Promise.all([
-            Settings.getAll(), Settings.getLogo(), Courses.findAll({ availableOnly: true }), Facilities.findAll(), Sports.findAll(), Courses.findFaqs(),
+        const [settings, logo, courseRows, facilities, sports, faqs, familyMembers] = await Promise.all([
+            Settings.getAll(), Settings.getLogo(), Courses.findAll({ availableOnly: true, includeUnscheduled: true }), Facilities.findAll(), Sports.findAll(), Courses.findFaqs(),
             CourseOrders.familyMembers(req.profile.guid)
         ]);
+        const courses = courseRows.map(course => ({
+            ...course,
+            runs: (course.runs || []).filter(run => (run.spaces_remaining ?? run.capacity) > 0)
+        }));
         const courseGroups = sports.map(sport => ({
             guid: sport.guid, name: sport.name,
             courses: courses.filter(course => course.sport_guids.includes(sport.guid)),
@@ -1336,9 +1379,39 @@ admin.get('/profiles/search', async (req, res) => {
     }
 });
 
+admin.get('/profiles/delete-preview', async (req, res) => {
+    const guid = req.query.guid;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.sendStatus(400);
+    try {
+        const profile = await Profiles.findByGuid(guid);
+        if (!profile) return res.sendStatus(404);
+        res.set('Cache-Control', 'no-store');
+        return res.json({ name: profile.name, credit_pence: profile.credit_pence });
+    } catch (error) {
+        console.error('Unable to preview profile deletion:', error);
+        return res.sendStatus(500);
+    }
+});
+
+admin.get('/profiles/delete-confirm', async (req, res) => {
+    const guid = req.query.guid;
+    if (typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.sendStatus(400);
+    if (guid === req.profile.guid) return res.redirect('/admin/profiles?error=delete-self');
+    try {
+        const profile = await Profiles.findByGuid(guid);
+        if (!profile) return res.sendStatus(404);
+        res.set('Cache-Control', 'no-store');
+        return res.render('admin-profile-delete', { profile, creditChanged: req.query.error === 'credit-changed', activePage: 'profiles' });
+    } catch (error) {
+        console.error('Unable to prepare profile deletion:', error);
+        return res.sendStatus(500);
+    }
+});
+
 admin.get('/profiles', async (req, res) => {
     try {
-        res.render('profiles', { profiles: await Profiles.findAll(), roles: await Roles.names(), error: req.query.error, activePage: 'profiles' });
+        const [profiles, roles, facilities] = await Promise.all([Profiles.findAll(), Roles.names(), Facilities.findAll()]);
+        res.render('profiles', { profiles, roles, facilities, error: req.query.error, activePage: 'profiles' });
     } catch (error) {
         res.sendStatus(500);
     }
@@ -1348,11 +1421,15 @@ function parseProfileInput(body, roleNames) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
     const submitted = body.roles === undefined ? [] : Array.isArray(body.roles) ? body.roles : [body.roles];
+    const facilities = body.managed_facility_guids === undefined ? [] :
+        Array.isArray(body.managed_facility_guids) ? body.managed_facility_guids : [body.managed_facility_guids];
     if (!name || name.length > 120 || email.length > 254 || !isValidEmail(email) ||
-        submitted.some(role => !roleNames.includes(role))) {
+        submitted.some(role => !roleNames.includes(role)) ||
+        facilities.some(guid => typeof guid !== 'string' || !GUID_PATTERN.test(guid)) ||
+        (facilities.length && !submitted.includes(Roles.FACILITY_MANAGER) && !submitted.includes(Roles.ADMINISTRATOR))) {
         return null;
     }
-    return { name, email, roles: [...new Set(['Resident', ...submitted])] };
+    return { name, email, roles: [...new Set(['Resident', ...submitted])], managed_facility_guids: [...new Set(facilities)] };
 }
 
 function parseRoleInput(body) {
@@ -1416,11 +1493,13 @@ admin.post('/roles/destroy', async (req, res) => {
         if (existing.is_system) return res.redirect('/admin/roles?error=system-role');
         if (existing.name === 'Resident') return res.redirect('/admin/roles?error=resident-role');
         if (existing.member_count > 0) return res.redirect('/admin/roles?error=role-in-use');
-        await Roles.remove(guid);
+        if (!await Roles.remove(guid)) return res.sendStatus(404);
         await recordAudit(req.profile, { action: 'role.delete', entityType: 'role', entityGuid: guid, entityLabel: existing.name });
         return res.redirect('/admin/roles');
     } catch (error) {
-        return res.redirect('/admin/roles?error=role-in-use');
+        if (error.code === 'ROLE_IN_USE' || error.code === '23503') return res.redirect('/admin/roles?error=role-in-use');
+        console.error('Unable to delete role:', error);
+        return res.redirect('/admin/roles?error=delete-failed');
     }
 });
 
@@ -1429,7 +1508,8 @@ admin.post('/profiles', async (req, res) => {
     if (!profile) return res.redirect('/admin/profiles?error=invalid-profile');
     try {
         const created = await Profiles.create(profile);
-        await recordAudit(req.profile, { action: 'profile.create', entityType: 'profile', entityGuid: created.guid, entityLabel: created.name, details: { email: created.email, roles: created.roles } });
+        await recordAudit(req.profile, { action: 'profile.create', entityType: 'profile', entityGuid: created.guid, entityLabel: created.name,
+            details: { email: created.email, roles: created.roles, managed_facility_guids: created.managed_facility_guids } });
         return res.redirect('/admin/profiles?admin_saved=profile-created');
     } catch (error) {
         console.error('Unable to create profile:', error);
@@ -1452,7 +1532,8 @@ admin.post('/profiles/update', async (req, res) => {
         if (!updated) return res.sendStatus(404);
         await recordAudit(req.profile, {
             action: 'profile.update', entityType: 'profile', entityGuid: guid, entityLabel: updated.name,
-            details: { from: { name: existing.name, email: existing.email, roles: existing.roles || [existing.role] }, to: profile }
+            details: { from: { name: existing.name, email: existing.email, roles: existing.roles || [existing.role],
+                managed_facility_guids: existing.managed_facility_guids }, to: profile }
         });
         if (guid === req.profile.guid && !profile.roles.includes(req.profile.role)) {
             auth.clearViewAs(res);
@@ -1469,6 +1550,11 @@ admin.post('/profiles/update', async (req, res) => {
 admin.post('/profiles/destroy', async (req, res) => {
     const guid = req.body.guid;
     if (typeof guid !== 'string' || !GUID_PATTERN.test(guid)) return res.sendStatus(400);
+    const credit = req.body.confirmed_credit_pence;
+    if (credit !== undefined && (typeof credit !== 'string' || !/^\d{1,15}$/.test(credit) || !Number.isSafeInteger(Number(credit)))) {
+        return res.sendStatus(400);
+    }
+    if (credit === undefined) return res.redirect(`/admin/profiles/delete-confirm?guid=${encodeURIComponent(guid)}`);
     try {
         const existing = await Profiles.findByGuid(guid);
         if (!existing) return res.sendStatus(404);
@@ -1476,11 +1562,15 @@ admin.post('/profiles/destroy', async (req, res) => {
         if ((existing.roles || [existing.role]).includes(auth.ADMINISTRATOR) && await Profiles.countAdministrators() <= 1) {
             return res.redirect('/admin/profiles?error=last-administrator');
         }
-        if (!await Profiles.remove(guid, req.profile.name)) return res.sendStatus(404);
+        if (!await Profiles.remove(guid, req.profile.name, credit === undefined ? null : Number(credit))) return res.sendStatus(404);
         await recordAudit(req.profile, { action: 'profile.delete', entityType: 'profile', entityGuid: guid, entityLabel: existing.name, details: { email: existing.email, roles: existing.roles || [existing.role] } });
         return res.redirect('/admin/profiles');
     } catch (error) {
         if (error.code === 'LAST_ADMINISTRATOR') return res.redirect('/admin/profiles?error=last-administrator');
+        if (error.code === 'CREDIT_CHANGED') {
+            if (req.accepts('html')) return res.redirect(`/admin/profiles/delete-confirm?guid=${encodeURIComponent(guid)}&error=credit-changed`);
+            return res.status(409).json({ error: 'The active credit changed. Please review the current amount and confirm deletion again.' });
+        }
         console.error('Unable to delete profile and cancel associated activity:', error);
         return res.sendStatus(500);
     }
@@ -1666,7 +1756,8 @@ admin.get('/facilities', async (req, res) => {
             Sports.findAll(),
             OpeningHours.findAll()
         ]);
-        const facilities = await Promise.all(facilityRows.map(async facility => ({
+        const visibleFacilities = facilityRows.filter(facility => auth.canManageFacility(req.profile, facility.guid));
+        const facilities = await Promise.all(visibleFacilities.map(async facility => ({
             ...facility,
             today_opening_hours: await OpeningHours.getToday(facility.opening_hours_template_guid, new Date(), facility)
         })));
@@ -1710,7 +1801,7 @@ admin.post('/facilities/update', async (req, res) => {
     }
 });
 
-admin.post('/facilities/destroy', async (req, res) => {
+admin.post('/facilities/destroy', auth.requireAdministrator, async (req, res) => {
     const guid = req.body.guid;
     if (typeof guid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid)) {
         return res.sendStatus(400);
@@ -1726,11 +1817,16 @@ admin.post('/facilities/destroy', async (req, res) => {
 
 admin.get('/courses', async (req, res) => {
     try {
-        const [courses, facilities, sports] = await Promise.all([
+        const [allCourses, allFacilities, sports] = await Promise.all([
             Courses.findAll(),
             Facilities.findAll(),
             Sports.findAll()
         ]);
+        const restricted = auth.isFacilityManager(req.profile);
+        const facilities = allFacilities.filter(facility => auth.canManageFacility(req.profile, facility.guid));
+        const courses = restricted ? allCourses.map(course => ({
+            ...course, runs: course.runs.filter(run => auth.canManageFacility(req.profile, run.facility_guid))
+        })).filter(course => course.runs.length) : allCourses;
         res.render('courses', {
             courses, facilities, sports,
             activePage: 'courses'
@@ -1805,7 +1901,8 @@ for (const [path, updating] of [['/courses/runs', false], ['/courses/runs/update
         if (!details) return res.status(422).json({ error: 'Enter a run name, location, non-negative price, capacity (1–99999) and a valid schedule. Sessions must not overlap; use at most 366 sessions within a two-year weekly schedule. Individual lines must be YYYY-MM-DD HH:mm HH:mm, with the end after the start on the same day. All times are UK local time.' });
         try {
             const run = await Courses.saveRun(updating ? req.body.guid : null, req.body.course_guid,
-                { ...details, facility_guid: req.body.facility_guid });
+                { ...details, facility_guid: req.body.facility_guid, original_start_date: req.body.original_start_date },
+                auth.isFacilityManager(req.profile) ? req.profile.managed_facility_guids || [] : null);
             if (!run) return res.sendStatus(404);
             await recordAudit(req.profile, { action: updating ? 'course-run.update' : 'course-run.create',
                 entityType: 'course-run', entityGuid: run.guid, entityLabel: details.name,
@@ -1815,6 +1912,7 @@ for (const [path, updating] of [['/courses/runs', false], ['/courses/runs/update
             console.error('Unable to save course run:', error);
             if (error.code === '23503') return res.status(422).json({ error: 'Choose an existing course and location. Reload the page and try again.' });
             if (error.code === 'INVALID_SESSION_TIME') return res.status(422).json({ error: error.message });
+            if (error.code === 'INVALID_RUN_START_DATE') return res.status(422).json({ error: error.message });
             if (error.code === 'COURSE_CAPACITY') return res.status(409).json({ error: error.message });
             return res.sendStatus(500);
         }
@@ -1825,7 +1923,8 @@ admin.post('/courses/runs/destroy', async (req, res) => {
     if (typeof req.body.guid !== 'string' || !GUID_PATTERN.test(req.body.guid) ||
         typeof req.body.course_guid !== 'string' || !GUID_PATTERN.test(req.body.course_guid)) return res.sendStatus(400);
     try {
-        if (!await Courses.removeRun(req.body.guid, req.body.course_guid)) return res.sendStatus(404);
+        if (!await Courses.removeRun(req.body.guid, req.body.course_guid,
+            auth.isFacilityManager(req.profile) ? req.profile.managed_facility_guids || [] : null)) return res.sendStatus(404);
         await recordAudit(req.profile, { action: 'course-run.delete', entityType: 'course-run', entityGuid: req.body.guid });
         return res.redirect(`/admin/courses?admin_saved=1#course-${req.body.course_guid}`);
     } catch (error) {
@@ -2145,9 +2244,10 @@ async function adminBookingsPage(req, res) {
     }
     try {
         if (searching) {
-            const [facilities, maxDays, settings] = await Promise.all([
+            const [allFacilities, maxDays, settings] = await Promise.all([
                 Bookings.findBookingFacilities(), Settings.getBookingSearchDays(), Settings.getAll()
             ]);
+            const facilities = allFacilities.filter(facility => auth.canManageFacility(req.profile, facility.guid));
             const filters = Object.fromEntries(['facility_guid', 'reference', 'profile', 'from', 'to'].map(key =>
                 [key, typeof req.query[key] === 'string' ? req.query[key].trim() : '']));
             const searched = Object.values(filters).some(Boolean);
@@ -2156,7 +2256,8 @@ async function adminBookingsPage(req, res) {
                 : searched && (filters.reference.length > 100 || filters.profile.length > 100 ||
                     !isValidDateRange(filters.from, filters.to, maxDays + 1))
                     ? `Enter both dates with To between From and From +${maxDays} days, and search text of no more than 100 characters.` : '';
-            const results = searched && !searchError ? await Bookings.searchBookings(filters) : { bookings: [], truncated: false };
+            const results = searched && !searchError ? await Bookings.searchBookings(auth.isFacilityManager(req.profile)
+                ? { ...filters, allowed_facilities: req.profile.managed_facility_guids || [] } : filters) : { bookings: [], truncated: false };
             if (!searched) {
                 const parts = new Intl.DateTimeFormat('en-GB', {
                     timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -2173,7 +2274,13 @@ async function adminBookingsPage(req, res) {
                 refundsEnabled: Settings.refundsEnabled(settings)
             });
         }
-        const facilityRows = await Bookings.findInAppFacilities();
+        const [inAppFacilities, allFacilities] = await Promise.all([
+            Bookings.findInAppFacilities(),
+            configuring && auth.isFacilityManager(req.profile) ? Facilities.findAll() : Promise.resolve([])
+        ]);
+        const facilityRows = inAppFacilities.filter(facility => auth.canManageFacility(req.profile, facility.guid));
+        const externalFacilities = allFacilities.filter(facility =>
+            facility.booking_mode === 'external' && auth.canManageFacility(req.profile, facility.guid));
         const facilities = await Promise.all(facilityRows.map(async facility => {
             if (configuring) {
                 const [sports, resources, options] = await Promise.all([
@@ -2187,7 +2294,7 @@ async function adminBookingsPage(req, res) {
             return { ...facility, options, bookings: [] };
         }));
         res.render('bookings', {
-            facilities,
+            facilities, externalFacilities,
             error: req.query.error,
             created: Number.parseInt(req.query.created, 10) || 0,
             activePage: configuring ? 'court-configuration' : 'bookings'

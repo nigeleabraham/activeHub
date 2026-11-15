@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add attendee to a course | ActiveHub</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <%- include('partials/accessibility-styles') %>
+    <style>
+        form[data-add-selection] select.form-control:disabled {
+            background-color: #d6d8db;
+            border-color: #adb5bd;
+            color: #495057;
+            opacity: 1;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <%- include('partials/navigation') %>
+    <main class="container py-5">
+        <p><a href="/admin/course-management">Back to Course management</a></p>
+        <h1 class="h2">Add attendee to a course</h1>
+        <section class="bg-white border rounded p-4 mb-4">
+            <h2 class="h5">Find the account holder</h2>
+            <form method="get" action="/admin/course-management/add">
+                <label for="parent-search">Account holder name or email</label>
+                <div class="d-flex" style="gap: .5rem">
+                    <input class="form-control" id="parent-search" name="q" value="<%= q %>" required maxlength="120">
+                    <button class="btn btn-primary" type="submit">Search</button>
+                </div>
+            </form>
+            <% if (q.trim()) { %>
+                <% if (!profiles.length) { %><p class="mt-3 mb-0">No matching accounts found.</p><% } else { %>
+                <ul class="mt-3 mb-0">
+                    <% profiles.forEach(profile => { %><li><a href="/admin/course-management/add?profile=<%= profile.guid %>"><%= profile.name %> &mdash; <%= profile.email || 'Email not provided' %></a></li><% }); %>
+                </ul>
+                <% } %>
+            <% } %>
+        </section>
+        <% if (parent) { %>
+        <section class="bg-white border rounded p-4 mb-4">
+            <h2 class="h5">Choose attendee and class</h2>
+            <p>Account holder: <strong><%= parent.name %></strong> (<%= parent.email || 'Email not provided' %>)</p>
+            <form method="get" action="/admin/course-management/add" data-add-selection>
+                <input type="hidden" name="profile" value="<%= parent.guid %>">
+                <div class="form-group">
+                    <label for="attendee">Attendee</label>
+                    <select class="form-control" id="attendee" name="member" required>
+                        <option value="">Choose an attendee</option>
+                        <option value="self" <%= member === 'self' ? 'selected' : '' %>><%= parent.name %> (account holder)</option>
+                        <% members.forEach(child => { %><option value="<%= child.guid %>" <%= child.guid === member ? 'selected' : '' %>><%= child.name %></option><% }); %>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="facility">Facility</label>
+                    <select class="form-control" id="facility" name="facility" required <%= member ? '' : 'disabled' %>>
+                        <option value="">Choose a facility</option>
+                        <% const facilities = [...new Map(courses.flatMap(item => item.runs.filter(run => run.bookable))
+                            .map(run => [run.facility_guid, run.facility_name])).entries()].sort((a, b) => a[1].localeCompare(b[1])); %>
+                        <% facilities.forEach(([guid, name]) => { %><option value="<%= guid %>" <%= facility === guid ? 'selected' : '' %>><%= name %></option><% }); %>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="course">Course</label>
+                    <select class="form-control" id="course" name="course" required <%= member && facility ? '' : 'disabled' %>>
+                        <option value="">Choose a course</option>
+                        <% courses.forEach(item => { const runs = item.runs.filter(run => run.bookable); if (runs.length) { %>
+                            <option value="<%= item.guid %>" data-facilities="<%= [...new Set(runs.map(run => run.facility_guid))].join(' ') %>" <%= item.guid === course ? 'selected' : '' %>><%= item.name %></option>
+                        <% } }); %>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="class">Class</label>
+                    <select class="form-control" id="class" name="run" required <%= member && facility && course ? '' : 'disabled' %>>
+                        <option value="">Choose a class</option>
+                        <% courses.forEach(courseItem => { courseItem.runs.filter(item => item.bookable).forEach(item => { %>
+                            <option value="<%= item.guid %>" data-facility="<%= item.facility_guid %>" data-course="<%= courseItem.guid %>" <%= item.guid === run ? 'selected' : '' %>><%= item.name %></option>
+                        <% }); }); %>
+                    </select>
+                </div>
+                <p class="small text-muted">The booking price and account credit options appear when you review the booking.</p>
+                <button class="btn btn-primary" type="submit">Review booking</button>
+            </form>
+        </section>
+        <% } %>
+        <% if (quote) { %>
+        <section class="bg-white border rounded p-4" data-booking-review>
+            <h2 class="h5">Review booking</h2>
+            <p><strong><%= quote.member.name %></strong> &mdash; <%= quote.run.course_name %>, <%= quote.run.name %>, <%= quote.run.facility_name %></p>
+            <p>Course price for <%= quote.run.remaining_sessions %> remaining sessions: <strong><%= money(quote.amount) %></strong>.</p>
+            <p>Account holder's available credit: <strong><%= money(quote.creditBalance) %></strong>.</p>
+            <p>Available spaces: <%= Math.max(0, quote.run.spaces_remaining) %>.</p>
+            <% if (quote.run.spaces_remaining <= 0) { %>
+                <p class="alert alert-warning">This class is full. Adding this attendee will exceed its capacity.</p>
+            <% } %>
+            <p>No card payment is taken. Any amount not covered by account credit is not recorded as paid in ActiveHub; you may arrange payment separately.</p>
+            <form method="post" action="/admin/course-management/add" data-course-manual-booking>
+                <input type="hidden" name="token" value="<%= token %>">
+                <input type="hidden" name="profile" value="<%= parent.guid %>">
+                <input type="hidden" name="member" value="<%= member %>">
+                <input type="hidden" name="run" value="<%= run %>">
+                <input type="hidden" name="amount" value="<%= quote.amount %>">
+                <input type="hidden" name="available_credit" value="<%= quote.availableCredit %>">
+                <fieldset class="form-group">
+                    <legend class="h6">Bill this booking to the account holder’s credit?</legend>
+                    <div class="form-check"><input class="form-check-input" id="credit-yes" type="radio" name="use_credit" value="yes" required <%= quote.availableCredit === 0 ? 'disabled' : '' %>><label class="form-check-label" for="credit-yes">Yes, use <%= money(quote.availableCredit) %> of account credit (remaining not paid in ActiveHub: <%= money(quote.amount - quote.availableCredit) %>)</label></div>
+                    <div class="form-check"><input class="form-check-input" id="credit-no" type="radio" name="use_credit" value="no" required <%= quote.availableCredit === 0 ? 'checked' : '' %>><label class="form-check-label" for="credit-no">No, do not use account credit (not paid in ActiveHub: <%= money(quote.amount) %>)</label></div>
+                    <% if (quote.availableCredit === 0) { %>
+                    <p class="small mt-2 mb-0"><%= quote.amount === 0 ? 'No credit is needed for this free course.' : 'No account credit is available for this booking.' %></p>
+                    <% } %>
+                </fieldset>
+                <% if (quote.run.spaces_remaining <= 0) { %>
+                    <div class="form-check mb-3"><input class="form-check-input" id="confirm-full" type="checkbox" name="confirm_full" value="yes" required><label class="form-check-label" for="confirm-full">I confirm I want to add this attendee even though the class is full.</label></div>
+                <% } %>
+                <button class="btn btn-primary" type="submit">Confirm</button>
+            </form>
+        </section>
+        <% } %>
+    </main>
+    <script>
+        const selection = document.querySelector('[data-add-selection]');
+        if (selection) {
+            const attendee = selection.elements.member;
+            const facility = selection.elements.facility;
+            const course = selection.elements.course;
+            const run = selection.elements.run;
+            const coursePlaceholder = course.options[0];
+            const runPlaceholder = run.options[0];
+            const courses = Array.from(course.options).slice(1);
+            const runs = Array.from(run.options).slice(1);
+            function update() {
+                facility.disabled = !attendee.value;
+                if (facility.disabled) facility.value = '';
+                const oldCourse = course.value;
+                const availableCourses = courses.filter(option => option.dataset.facilities.split(' ').includes(facility.value));
+                course.replaceChildren(coursePlaceholder, ...availableCourses);
+                course.value = availableCourses.some(option => option.value === oldCourse) ? oldCourse : '';
+                course.disabled = !facility.value;
+                const oldRun = run.value;
+                const availableRuns = runs.filter(option => facility.value && course.value &&
+                    option.dataset.facility === facility.value && option.dataset.course === course.value);
+                run.replaceChildren(runPlaceholder, ...availableRuns);
+                run.value = availableRuns.some(option => option.value === oldRun) ? oldRun : '';
+                run.disabled = !facility.value || !course.value;
+            }
+            selection.addEventListener('change', () => {
+                update();
+                const review = document.querySelector('[data-booking-review]');
+                if (review) review.hidden = true;
+            });
+            update();
+        }
+    </script>
+</body>
+</html>

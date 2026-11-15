@@ -150,13 +150,13 @@
         </section>
         <section class="bg-white border rounded shadow-sm p-4 mb-4" aria-labelledby="course-booking-rules-heading">
             <h2 id="course-booking-rules-heading" class="h5 mb-3">Course and class booking rules</h2>
-            <p>Apply these rules separately to each attendee, including the account holder and their children. All past and future course bookings count. Rules are checked when adding a place and again at payment, including other places in the basket. Changing a rule does not cancel existing bookings.</p>
-            <% const rules = locals.courseBookingRules || { preventDuplicateClass: true, preventMultipleClasses: true };
+            <p>Apply these rules separately to each attendee, including the account holder and their children. Rules are checked when adding a place and again at payment, including other places in the basket. Changing a rule does not cancel existing bookings.</p>
+            <% const rules = locals.courseBookingRules || { preventDuplicateClass: true, preventOverlappingRuns: true };
             [
                 { path: 'duplicate-class', title: 'Prevent repeat class bookings', enabled: rules.preventDuplicateClass,
                     help: 'Prevent an attendee booking a class they are already booked on. Disabling allows another purchase of the same class. The basket still contains at most one place per attendee per class.' },
-                { path: 'multiple-classes', title: 'Prevent different classes for the same course', enabled: rules.preventMultipleClasses,
-                    help: 'Prevent an attendee booking a different class of a course they have already booked, or adding two different classes of the same course to the basket. Different attendees and different courses are unaffected.' }
+                { path: 'overlapping-runs', title: 'Prevent overlapping runs of the same course', enabled: rules.preventOverlappingRuns,
+                    help: 'Prevent an attendee booking different runs of the same course when their inclusive start and end dates overlap, including runs in the basket. When an original start is unknown, the earliest known session is used. Different attendees and different courses are unaffected.' }
             ].forEach(rule => { %>
             <div class="admin-form-section" data-settings-item>
                 <h3 class="h6"><%= rule.title %></h3>

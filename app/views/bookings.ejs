@@ -1,6 +1,7 @@
 <% const configuring = activePage === 'court-configuration'; %>
 <% const searching = activePage === 'booking-search'; %>
 <% const pageTitle = configuring ? 'Court configuration' : searching ? 'Court bookings search' : 'Court bookings'; %>
+<% const externalFacilities = locals.externalFacilities || []; %>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -223,7 +224,23 @@
                 <% } %>
             <% }); %>
         <% } else { %>
-            <p class="text-muted border-top pt-3">No in-app-managed facilities are available.</p>
+            <% if (!configuring || !externalFacilities.length) { %>
+            <p class="text-muted border-top pt-3"><%= currentProfile.role === 'Facility manager'
+                ? 'No assigned in-app-managed facilities are available.'
+                : 'No in-app-managed facilities are available.' %></p>
+            <% } %>
+        <% } %>
+        <% if (configuring && externalFacilities.length) { %>
+            <section aria-labelledby="external-facilities-heading" class="mt-4">
+                <h2 id="external-facilities-heading" class="h5 mb-3">Facilities with external booking</h2>
+                <% externalFacilities.forEach(facility => { %>
+                    <article class="bg-white border rounded shadow-sm p-4 mb-3" data-external-court-facility>
+                        <h3 class="h6 mb-2"><%= facility.name %></h3>
+                        <p class="mb-2">Court bookings for this facility are made on another website. Courts, resources and booking months cannot be configured here while external booking is selected.</p>
+                        <a href="/admin/facilities#facility-<%= facility.guid %>">View facility settings</a>
+                    </article>
+                <% }); %>
+            </section>
         <% } %>
     </main>
     <% if (!configuring) { %>

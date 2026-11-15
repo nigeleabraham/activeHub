@@ -50,6 +50,7 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
     }
     async function granted(profile, refundable = true) {
         const booking = await Bookings.createBooking(bookingInput(profile));
+        assert.match(booking.booking_ref, /^AH-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
         assert.equal(await Bookings.addCreditToBooking(facility.guid, booking.guid, 'Test admin', refundable), 1000);
         const credits = await Credits.findForProfile(profile.guid);
         const { rows: [source] } = await db.query('SELECT payment_reference FROM bookings WHERE guid = $1', [booking.guid]);
@@ -135,7 +136,10 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         const future = await Bookings.createBooking(bookingInput(resident));
         const unaffected = await Bookings.createBooking({ ...bookingInput(other), booked_by_guid: resident.guid });
         const { rows: [stored] } = await db.query('SELECT email FROM profiles WHERE guid = $1', [resident.guid]);
-        assert.equal(await Profiles.remove(resident.guid, 'Deletion admin'), true);
+        await assert.rejects(Profiles.remove(resident.guid, 'Deletion admin', 999), { code: 'CREDIT_CHANGED' });
+        assert.ok(await Profiles.findByGuid(resident.guid));
+        assert.ok(await Bookings.findBooking(facility.guid, future.guid));
+        assert.equal(await Profiles.remove(resident.guid, 'Deletion admin', 1000), true);
         assert.equal(await Profiles.findByGuid(resident.guid), null);
         assert.equal((await Profiles.findAll()).some(p => p.guid === resident.guid), false);
         assert.deepEqual(await Profiles.search(stored.email), []);
@@ -392,6 +396,10 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
     await t.test('course run prices count only future session starts and hide completed or draft runs', async () => {
         const Courses = require('../models/Courses');
         const course = await Courses.create({ name: 'Session price test', sport_guids: [sport.guid] });
+        const customerCourse = async () => (await Courses.findAll({ availableOnly: true, includeUnscheduled: true }))
+            .find(item => item.guid === course.guid);
+        assert.equal((await customerCourse()).has_scheduled_classes, false);
+        assert.equal((await customerCourse()).has_current_classes, false);
         const { rows: [run] } = await db.query(`INSERT INTO course_runs
             (course_guid, facility_guid, name, full_price_pence, capacity, published)
             VALUES ($1,$2,'Tuesday',1000,12,true) RETURNING guid`, [course.guid, facility.guid]);
@@ -400,6 +408,9 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
                    ($1, now()+interval '1 day', now()+interval '1 day 1 hour'),
                    ($1, now()+interval '2 days', now()+interval '2 days 1 hour')`, [run.guid]);
         const visible = (await Courses.findAll({ availableOnly: true })).find(item => item.guid === course.guid);
+        assert.equal((await customerCourse()).has_scheduled_classes, true);
+        assert.equal((await customerCourse()).has_current_classes, true);
+        assert.equal((await customerCourse()).has_unknown_start_classes, false);
         assert.equal(visible.runs[0].current_price_pence, 667);
         assert.equal(visible.runs[0].remaining_sessions, 2);
         assert.equal(visible.runs[0].total_sessions, 3);
@@ -410,11 +421,35 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(adminRun.current_price_pence, 667);
         assert.equal((await db.query('SELECT count(*)::int AS count FROM course_sessions WHERE run_guid=$1',
             [run.guid])).rows[0].count, 3);
+        await db.query(`UPDATE course_runs SET end_date = (statement_timestamp() AT TIME ZONE 'Europe/London')::date - 1
+            WHERE guid = $1`, [run.guid]);
+        assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid));
+        assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        assert.equal((await customerCourse()).has_scheduled_classes, false);
+        assert.equal((await customerCourse()).has_current_classes, false);
+        assert.ok((await Courses.findRuns()).some(item => item.guid === run.guid), 'Administrators still see expired runs');
+        await db.query(`UPDATE course_runs SET end_date = (statement_timestamp() AT TIME ZONE 'Europe/London')::date
+            WHERE guid = $1`, [run.guid]);
+        assert.ok((await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid),
+            'The UK-local end date is inclusive');
+        await db.query('UPDATE course_runs SET end_date = NULL WHERE guid = $1', [run.guid]);
+        assert.ok((await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid),
+            'An unknown end date with future sessions remains available');
+        await db.query(`UPDATE course_runs SET start_date = (statement_timestamp() AT TIME ZONE 'Europe/London')::date + 1
+            WHERE guid = $1`, [run.guid]);
+        assert.equal((await customerCourse()).has_upcoming_classes, true);
+        assert.equal((await customerCourse()).has_current_classes, false);
+        await db.query('DELETE FROM course_sessions WHERE run_guid = $1 AND starts_at < statement_timestamp()', [run.guid]);
+        await db.query('UPDATE course_runs SET start_date = NULL WHERE guid = $1', [run.guid]);
+        assert.equal((await customerCourse()).has_unknown_start_classes, true);
+        assert.equal((await customerCourse()).has_current_classes, false);
         await db.query('UPDATE course_runs SET published=false WHERE guid=$1', [run.guid]);
         assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        assert.equal((await customerCourse()).has_scheduled_classes, false, 'Draft runs are not advertised');
         await db.query('UPDATE course_runs SET published=true WHERE guid=$1', [run.guid]);
         await db.query("UPDATE course_sessions SET starts_at=starts_at-interval '1 year', ends_at=ends_at-interval '1 year' WHERE run_guid=$1", [run.guid]);
         assert.ok(!(await Courses.findAll({ availableOnly: true })).some(item => item.guid === course.guid));
+        assert.equal((await customerCourse()).has_scheduled_classes, false, 'Completed sessions do not count as upcoming');
         assert.equal((await Courses.findAll()).find(item => item.guid === course.guid).runs[0].current_price_pence, 0);
         await Courses.remove(course.guid);
     });
@@ -475,6 +510,21 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(outcomes.find(result => result.status === 'rejected').reason.code, 'BASKET_CONFLICT');
         assert.equal((await Courses.findRuns()).find(r => r.guid === run.guid).spaces_remaining, 0);
         assert.equal((await db.query('SELECT count(*)::int AS count FROM course_enrolments WHERE run_guid=$1', [run.guid])).rows[0].count, 2);
+        assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid));
+        const soldOutCourse = (await Courses.findAll({ availableOnly: true })).find(item => item.guid === course.guid);
+        assert.ok(soldOutCourse, 'The sold-out course remains visible with no places');
+        const soldOutCustomerCourse = (await Courses.findAll({ availableOnly: true, includeUnscheduled: true }))
+            .find(item => item.guid === course.guid);
+        assert.equal(soldOutCustomerCourse.has_scheduled_classes, true);
+        assert.equal(soldOutCustomerCourse.runs.length, 0);
+        assert.equal(soldOutCourse.runs.length, 0);
+        await db.query('UPDATE course_runs SET capacity = 1 WHERE guid = $1', [run.guid]);
+        assert.ok(!(await Courses.findRuns({ availableOnly: true })).some(item => item.guid === run.guid), 'Overbooked runs are excluded');
+        await db.query('UPDATE course_runs SET capacity = 2 WHERE guid = $1', [run.guid]);
+        const { rows: [cancelled] } = await db.query(`UPDATE course_enrolments SET cancelled_at = now()
+            WHERE guid = (SELECT guid FROM course_enrolments WHERE run_guid = $1 LIMIT 1) RETURNING guid`, [run.guid]);
+        assert.equal((await Courses.findRuns({ availableOnly: true })).find(item => item.guid === run.guid).spaces_remaining, 1);
+        await db.query('UPDATE course_enrolments SET cancelled_at = NULL WHERE guid = $1', [cancelled.guid]);
 
         const another = await Orders.addFamilyMember(rival.guid, 'Another child');
         await Orders.removeFamilyMember(buyer.guid, another.guid).then(() => assert.fail('Foreign member removed'),
@@ -1299,7 +1349,7 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         const custom = await Roles.create({ name: 'Role test', description: null, permissions: ['bookings.manage'] });
         await Profiles.update(created.guid, { name: created.name, email: created.email, roles: ['Resident', custom.name] });
         assert.equal((await Roles.findByGuid(custom.guid)).member_count, 1);
-        await assert.rejects(Roles.remove(custom.guid), error => ['23503', '23001'].includes(error.code));
+        await assert.rejects(Roles.remove(custom.guid), { code: 'ROLE_IN_USE' });
         await Roles.update(custom.guid, { name: 'Renamed role test', description: null, permissions: [] });
         assert.deepEqual((await Profiles.findByGuid(created.guid)).roles, ['Renamed role test', 'Resident']);
         await assert.rejects(Profiles.update(created.guid, { name: 'Invalid edit', email: created.email, roles: ['Resident', 'Missing role'] }),
@@ -1450,6 +1500,10 @@ test('booking credit ledger and bank refunds (PostgreSQL)', { skip: !databaseUrl
         assert.equal(run.published, false);
         assert.equal(run.capacity, null);
         assert.equal(run.full_price_pence, 21000);
+        const datedRun = (await require('../models/Courses').findRuns()).find(item => item.guid === run.guid);
+        assert.equal(datedRun.start_date, null);
+        assert.equal(datedRun.end_date, '2026-11-03');
+        assert.equal(datedRun.incomplete_history, true);
         await db.query("UPDATE courses SET description='Admin edited' WHERE guid=$1", [stored.guid]);
         assert.deepEqual(await importCourses(db, data),
             { courses_added: 0, runs_added: 0, runs_skipped: 1, sessions_added: 0 });

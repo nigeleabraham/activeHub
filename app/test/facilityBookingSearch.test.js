@@ -36,7 +36,7 @@ test('facility booking searches constrain SQL by facility, escaped filters, UK d
     assert.equal(result.bookings.length, 100);
     assert.equal(result.truncated, true);
     const [sql, values] = query.mock.calls[0].arguments;
-    assert.deepEqual(values, [guid, null, null, '%BK\\_\\%%', '%Resident%', filters.from, filters.to, 101]);
+    assert.deepEqual(values, [guid, null, null, '%BK\\_\\%%', '%Resident%', filters.from, filters.to, 101, null]);
     assert.match(sql, /WHERE bookings.facility_guid = \$1/);
     assert.match(sql, /profiles.name ILIKE \$5 OR profiles.email ILIKE \$5/);
     assert.match(sql, /Europe\/London/);
