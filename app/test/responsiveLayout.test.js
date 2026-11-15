@@ -19,4 +19,9 @@ test('customer course titles match FAQs while inner disclosures are smaller and 
     assert.match(courses, /\.sport-faqs \{[^}]*background: #fff;[^}]*border: 1px solid #b1b4b6;/);
     assert.match(courses, /\[data-course-description\] > summary,\s*\[data-course-runs\] > summary \{ font-size: 1rem;/);
     assert.match(courses, /<summary class="h6">Choose a class/);
+    assert.match(courses, /\.course-run-full \{[^}]*border:[^}]*background:/);
+    assert.match(courses, /\.course-run-actions \{[^}]*flex-wrap: wrap;[^}]*justify-content: space-between;/);
+    assert.match(courses, /\.course-run-full-status \{[^}]*background: #b10e1e; color: #fff;/);
+    assert.match(courses, /min-height: var\(--course-run-summary-height, 0px\)/);
+    assert.match(courses, /summary > \.course-run-actions \{ margin-top: auto;/);
 });

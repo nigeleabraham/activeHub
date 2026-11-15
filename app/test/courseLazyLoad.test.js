@@ -60,6 +60,24 @@ test('class endpoint scopes its query, renders booking details and rejects inval
     assert.equal(find.mock.callCount(), 1);
 });
 
+test('full and overbooked class cards have prominent status and no booking controls', async () => {
+    const render = spaces => ejs.renderFile(path.join(__dirname, '../views/partials/course-run-groups.ejs'), {
+        runs: [{ ...run, spaces_remaining: spaces }], groupId, courseHeadingId: headingId,
+        currentProfile: { name: 'Resident' }
+    });
+    for (const spaces of [0, -1]) {
+        const html = await render(spaces);
+        assert.match(html, /<article class="border rounded bg-light p-3 course-run-full"/);
+        assert.match(html, /<h5[\s\S]*?View details &#8595;[\s\S]*?<span class="course-run-full-status">Fully booked<\/span>/);
+        assert.match(html, /View details &#8595;/);
+        assert.doesNotMatch(html, /action="\/basket\/add"|View details and book|Spaces remaining:/);
+    }
+    const available = await render(1);
+    assert.doesNotMatch(available, /course-run-full|Fully booked/);
+    assert.match(available, /View details and book/);
+    assert.match(available, /action="\/basket\/add"/);
+});
+
 test('no-script link loads the selected course and opens its sport and class sections', async t => {
     const course = { guid: courseGuid, name: 'Tennis', sport_guids: [sportGuid], runs: [run] };
     t.mock.method(Settings, 'getAll', async () => ({ site_title: 'ActiveHub' }));

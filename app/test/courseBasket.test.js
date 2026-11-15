@@ -244,11 +244,12 @@ test('course run controls include saved family members and replace purchase cont
         currentProfile: { name: 'Resident' }, familyMembers: [{ guid: other, name: 'Child' }], returnTo: '/facilities'
     };
     const soldOut = await ejs.renderFile(filename, values);
-    assert.match(soldOut, /Fully booked/);
+    assert.match(soldOut, /<h5[\s\S]*?View details &#8595;[\s\S]*?<span class="course-run-full-status">Fully booked<\/span>/);
     assert.match(soldOut, /View details &#8595;/);
     assert.doesNotMatch(soldOut, /View details and book/);
     assert.doesNotMatch(soldOut, /action="\/basket\/add"|Add to basket/);
     const html = await ejs.renderFile(filename, { ...values, run: { ...values.run, spaces_remaining: 2 } });
+    assert.doesNotMatch(html, /course-run-full-status|Fully booked/);
     assert.match(html, /<details class="course-run-disclosure" data-run-disclosure[^>]*>\s*<summary>/);
     const summary = html.match(/<details class="course-run-disclosure"[^>]*>\s*<summary>([\s\S]*?)<\/summary>/)[1];
     assert.match(summary, /Hall/);

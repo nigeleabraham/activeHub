@@ -22,7 +22,11 @@
         .sport-panel[open] > summary, .sport-panel > .sport-panel-heading { border-bottom: 1px solid #b1b4b6; }
         .sport-courses { padding: 1rem; }
         .sport-courses > .course-card:last-child { margin-bottom: 0 !important; }
-        .course-run-disclosure > summary { cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+        .course-run-full { border: 1px solid #b10e1e !important; border-left-width: 0.4rem !important; background: #fff6f5 !important; }
+        .course-run-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.5rem; }
+        .course-run-full-status { margin-left: auto; padding: 0.1rem 0.5rem; background: #b10e1e; color: #fff; font-weight: 700; line-height: 1.25; }
+        .course-run-disclosure > summary { display: flex; flex-direction: column; min-height: var(--course-run-summary-height, 0px); cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+        .course-run-disclosure > summary > .course-run-actions { margin-top: auto; }
         .course-run-disclosure > summary::-webkit-details-marker { display: none; }
         .course-run-disclosure > summary:focus-visible { outline: 3px solid #ffde02; outline-offset: 3px; }
         .course-run-toggle { display: inline-block; color: #003e90; text-decoration: underline; font-weight: 600; }
@@ -144,6 +148,7 @@
         <% }); %>
     </main>
     <%- include('partials/course-lazy-load') %>
+    <%- include('partials/course-card-sizing') %>
     <%- include('partials/course-basket-return') %>
     <script>
         (() => {

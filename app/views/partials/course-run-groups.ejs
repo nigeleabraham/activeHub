@@ -15,7 +15,7 @@ groups.forEach(statusGroup => {
     <div class="row">
         <% groupedRuns.forEach(run => { %>
         <div class="col-12 col-lg-6 col-xl-4 mb-3">
-            <article class="border rounded bg-light p-3" data-course-run>
+            <article class="border rounded bg-light p-3<% if ((run.spaces_remaining ?? run.capacity) <= 0) { %> course-run-full<% } %>" data-course-run>
                 <%- include('course-run-details', { run, returnTo: '/courses#' + courseHeadingId,
                     attendeeId: 'attendee-' + run.guid + '-' + groupId }) %>
             </article>

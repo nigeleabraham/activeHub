@@ -13,12 +13,13 @@ const schedules = [...new Set(run.sessions.map(session => {
 <% } %>
 <p class="small mb-1"><%= run.facility_name %></p>
 <p class="mb-1"><strong>&pound;<%= (run.current_price_pence / 100).toFixed(2) %></strong> for <%= run.remaining_sessions %> remaining <%= run.remaining_sessions === 1 ? 'session' : 'sessions' %></p>
-<% if (spaces <= 0) { %>
-    <span class="font-weight-bold text-danger">Fully booked</span>
-<% } else { %>
+<% if (spaces > 0) { %>
     <p class="small mb-1">Spaces remaining: <%= spaces %>.</p>
 <% } %>
-<span class="course-run-toggle"><span class="course-run-open"><%= spaces > 0 ? 'View details and book' : 'View details' %> &#8595;</span><span class="course-run-close">Hide details &#8593;</span></span>
+<span class="course-run-actions">
+    <span class="course-run-toggle"><span class="course-run-open"><%= spaces > 0 ? 'View details and book' : 'View details' %> &#8595;</span><span class="course-run-close">Hide details &#8593;</span></span>
+    <% if (spaces <= 0) { %><span class="course-run-full-status">Fully booked</span><% } %>
+</span>
 </summary>
 <div class="course-run-expanded">
 <% if (run.sessions.length) {

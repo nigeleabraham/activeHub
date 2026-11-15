@@ -1,0 +1,26 @@
+<script>
+    (() => {
+        let scheduled = false;
+        function sizeCards() {
+            scheduled = false;
+            const root = document.documentElement;
+            const summaries = Array.from(document.querySelectorAll('[data-course-run] > [data-run-disclosure] > summary'))
+                .filter(summary => summary.getClientRects().length);
+            root.style.removeProperty('--course-run-summary-height');
+            if (!summaries.length) return;
+            const height = summaries.reduce((maximum, summary) =>
+                Math.max(maximum, summary.getBoundingClientRect().height), 0);
+            root.style.setProperty('--course-run-summary-height', `${height}px`);
+        }
+        function scheduleSizing() {
+            if (scheduled) return;
+            scheduled = true;
+            window.setTimeout(sizeCards, 0);
+        }
+        document.addEventListener('toggle', scheduleSizing, true);
+        window.addEventListener('resize', scheduleSizing);
+        new MutationObserver(scheduleSizing).observe(document.querySelector('main'), { childList: true, subtree: true });
+        if (document.fonts) document.fonts.ready.then(scheduleSizing);
+        scheduleSizing();
+    })();
+</script>
